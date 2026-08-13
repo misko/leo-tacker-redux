@@ -15,6 +15,12 @@ dev = [
   "pytest>=8",
   "pytest-cov>=5",
 ]
+server = [
+  "psycopg[binary]>=3.2",
+]
+hardware = [
+  "pyadi-iio>=0.0.21",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/leo_flow"]
