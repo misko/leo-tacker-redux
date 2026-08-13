@@ -128,7 +128,11 @@ Each real deployment plugin must:
    preflight/units;
 5. run under systemd or a container runtime in forever mode.
 
-No console script is registered until a production assembly is deliberately
-packaged; `python -m` always requires the explicit plugin argument. No NFS files,
-shell orchestration, legacy repository imports, ambient model aliases, or
-implicit environment secret provider are part of this design.
+No console script is registered; `python -m` always requires the explicit
+plugin argument. The first deliberately packaged production-shaped assembly is
+the dashboard-only `leo_flow.deployments.dashboard_v1:PLUGIN`, documented in
+[`dashboard-v1.md`](dashboard-v1.md). It is loopback-only, reads PostgreSQL
+projections through the `leo_dashboard` role, and resolves only its named
+systemd credential. No NFS files, shell orchestration, legacy repository
+imports, ambient model aliases, or general environment secret provider are part
+of this design.

@@ -1,17 +1,34 @@
 from __future__ import annotations
 
 import hashlib
+import socket
 
 import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.adapters.dashboard_postgres import PostgresDashboardRepository
 from leo_flow.contracts.capture import ActivityKind
 from leo_flow.contracts.core import RadioId, RecordingId, UtcNs
 from leo_flow.contracts.dashboard import TimeRangeQuery
 from leo_flow.dashboard.repository import DashboardNotFound, InvalidCursor
+from leo_flow.deployments import dashboard_v1
+from leo_flow.services import (
+    AdapterBuildContext,
+    Capability,
+    DashboardServiceConfig,
+    Process,
+    RuntimeConfig,
+)
+from leo_flow.services.lifecycle import NullDiagnosticSink
 from leo_flow.storage.postgres_catalog import connection_factory
+
+
+def _unused_loopback_port() -> int:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return int(listener.getsockname()[1])
 
 
 def _dashboard_connection(postgres_dsn: str) -> psycopg.Connection[dict[str, object]]:
@@ -248,3 +265,38 @@ def test_repository_runs_with_dashboard_role_and_read_only_transaction(
     )
     page = repository.recent_recordings(TimeRangeQuery(UtcNs(0), UtcNs(200)))
     assert [str(row.recording_id) for row in page.items] == ["rec_1"]
+
+
+@pytest.mark.integration
+def test_dashboard_v1_becomes_ready_only_after_real_read_only_query_preflight(
+    postgres_dsn: str,
+) -> None:
+    context = AdapterBuildContext(
+        Process.DASHBOARD,
+        Capability.QUERY_PROJECTION,
+        dashboard_v1.QUERY_PROJECTION_REF,
+        {dashboard_v1.DATABASE_SECRET: postgres_dsn},
+    )
+    queries = dashboard_v1._postgres_query_projection(context)
+    server = StdlibDashboardServer(request_timeout_s=0.01)
+    config = DashboardServiceConfig(
+        1,
+        "dashboard",
+        RuntimeConfig("dashboard-pg-test", 0.01, 0.1, ()),
+        dashboard_v1.QUERY_PROJECTION_REF,
+        dashboard_v1.SERVER_REF,
+        "127.0.0.1",
+        _unused_loopback_port(),
+    )
+    service = dashboard_v1._build_dashboard(
+        config,
+        {
+            Capability.QUERY_PROJECTION: queries,
+            Capability.DASHBOARD_SERVER: server,
+        },
+        NullDiagnosticSink(),
+    )
+    assert not service.health().ready
+    assert not service.run_once()
+    assert service.health().ready
+    service.shutdown()

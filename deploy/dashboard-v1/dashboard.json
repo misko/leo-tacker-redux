@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "process": "dashboard",
+  "runtime": {
+    "instance_id": "station-a-dashboard-1",
+    "poll_interval_s": 0.1,
+    "shutdown_timeout_s": 5.0,
+    "secret_refs": [
+      {"provider": "systemd-credential", "name": "catalog-dsn"}
+    ]
+  },
+  "adapters": {
+    "query_projection_ref": "dashboard.postgres-projection-v1",
+    "server_ref": "dashboard.stdlib-loopback-http-v1",
+    "bind_host": "127.0.0.1",
+    "bind_port": 8090
+  }
+}
