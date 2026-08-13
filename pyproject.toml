@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "leo-tracker-redux"
+version = "0.1.0"
+description = "Contract-first capture, analysis, and dashboard pipeline for LEO radio experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/leo_flow"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "hardware: requires an attached radio or capture host",
+  "integration: requires PostgreSQL or external storage",
+  "provider: performs a live external provider canary",
+]
