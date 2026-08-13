@@ -61,4 +61,3 @@ change, stored-offset error, overflow flags, and contradictory gap extents.
 Contract and codec tests cover single and multiple gaps, exact round trips,
 legacy 1.1 decoding, and safe span/window boundaries. Capture tests prove the
 explicit gapped policy publishes while the contiguous policy aborts atomically.
-

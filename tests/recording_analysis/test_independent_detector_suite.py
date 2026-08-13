@@ -4,6 +4,7 @@ import cmath
 import math
 import struct
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -21,6 +22,11 @@ from leo_flow.analysis.recording.detectors import (
     coarse_energy,
     paired_common_mode,
     periodic_coherence,
+)
+from leo_flow.contracts.continuity import (
+    ContinuityStatus,
+    SafeSampleWindow,
+    SegmentContinuity,
 )
 from leo_flow.contracts.core import Digest, SchemaRef, SegmentId
 from leo_flow.contracts.features import (
@@ -183,6 +189,60 @@ def test_suite_publishes_three_aligned_pair_scores_and_separate_firings() -> Non
         "periodic-coherence@0.1.0",
     )
     assert report.shared_window_count == ((4, 4, 4), (4, 4, 4), (4, 4, 4))
+
+
+def test_suite_uses_only_reader_proven_safe_windows_across_source_gap() -> None:
+    samples = periodic_tone(192)
+    base, recording_ref = make_view(
+        SegmentFixture(paired_bytes(samples, samples), 64_000)
+    )
+
+    class GappedView:
+        manifest = base.manifest
+
+        def read_iq_bytes(
+            self, segment_id: SegmentId, start_sample: int, stop_sample: int
+        ) -> bytes:
+            return base.read_iq_bytes(segment_id, start_sample, stop_sample)
+
+        def continuity(self, segment_id: SegmentId) -> SegmentContinuity | None:
+            assert segment_id == self.manifest.segments[0].segment_id
+            return cast(
+                SegmentContinuity,
+                SimpleNamespace(status=ContinuityStatus.VERIFIED_GAPPED),
+            )
+
+        def iter_safe_windows(
+            self,
+            segment_id: SegmentId,
+            window_samples: int,
+            stride_samples: int,
+        ):
+            assert segment_id == self.manifest.segments[0].segment_id
+            assert (window_samples, stride_samples) == (64, 32)
+            yield SafeSampleWindow(0, 64)
+            yield SafeSampleWindow(128, 192)
+
+    config = DetectorSuiteConfig(
+        window_samples=64,
+        stride_samples=32,
+        periodic_lag_samples=8,
+        max_pair_delay_samples=0,
+    )
+    bundle = IndependentDetectorSuite(config, execution_context()).analyze(
+        cast(RecordingView, GappedView()), request(recording_ref, config)
+    )
+
+    windows = {
+        (score.window_start_sample, score.window_stop_sample)
+        for score in bundle.method_scores
+    }
+    assert windows == {(0, 64), (128, 192)}
+    assert base.calls == [
+        (SegmentId("seg_00"), 0, 64),
+        (SegmentId("seg_00"), 128, 192),
+    ]
+    assert "verified-source-gaps" in bundle.reason_codes
 
 
 def test_deterministic_integer_noise_null_and_channel_swap() -> None:

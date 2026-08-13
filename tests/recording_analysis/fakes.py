@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from leo_flow.analysis.recording import (
@@ -18,6 +19,11 @@ from leo_flow.contracts.capture import (
     RecordingManifest,
     SegmentManifest,
     SegmentRequest,
+)
+from leo_flow.contracts.continuity import (
+    ContiguousRfSpan,
+    SafeSampleWindow,
+    SegmentContinuity,
 )
 from leo_flow.contracts.core import (
     ActivityId,
@@ -81,6 +87,32 @@ class FakeRecordingView:
         if self.mutable_result:
             return bytearray(result)  # type: ignore[return-value]
         return result
+
+    def continuity(self, segment_id: SegmentId) -> SegmentContinuity | None:
+        if segment_id not in self._data:
+            raise KeyError(segment_id)
+        return None
+
+    def contiguous_rf_spans(
+        self, segment_id: SegmentId
+    ) -> tuple[ContiguousRfSpan, ...]:
+        sample_count = len(self._data[segment_id]) // 8
+        return (ContiguousRfSpan(0, sample_count, 0, sample_count),)
+
+    def iter_safe_windows(
+        self,
+        segment_id: SegmentId,
+        window_samples: int,
+        stride_samples: int,
+    ) -> Iterator[SafeSampleWindow]:
+        sample_count = len(self._data[segment_id]) // 8
+        if sample_count < window_samples:
+            return
+        starts = list(range(0, sample_count - window_samples + 1, stride_samples))
+        last = sample_count - window_samples
+        if starts[-1] != last:
+            starts.append(last)
+        yield from (SafeSampleWindow(start, start + window_samples) for start in starts)
 
 
 def make_view(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from leo_flow.contracts.continuity import ContinuityStatus
 from leo_flow.contracts.core import (
     AnalysisRunId,
     ArtifactRef,
@@ -117,16 +118,6 @@ def detector_suite_config_ref(config: DetectorSuiteConfig) -> ArtifactRef:
     )
 
 
-def _starts(count: int, size: int, stride: int) -> tuple[int, ...]:
-    if count < size:
-        return ()
-    starts = list(range(0, count - size + 1, stride))
-    last = count - size
-    if starts[-1] != last:
-        starts.append(last)
-    return tuple(starts)
-
-
 def _id(prefix: str, value: object) -> str:
     return f"{prefix}_{canonical_digest(value).value[:32]}"
 
@@ -190,17 +181,27 @@ class IndependentDetectorSuite:
                 continue
             pair_id = ReceiverPairId(f"rxpair_{receivers[0]}_{receivers[1]}")
             receiver_key = str(pair_id)
-            starts = _starts(
-                segment.sample_count,
-                self._config.window_samples,
-                self._config.stride_samples,
+            continuity = recording.continuity(segment.segment_id)
+            if (
+                continuity is not None
+                and continuity.status is ContinuityStatus.VERIFIED_GAPPED
+            ):
+                warnings.add(f"{segment.segment_id}:verified-source-gaps")
+                reasons.add("verified-source-gaps")
+            windows = tuple(
+                recording.iter_safe_windows(
+                    segment.segment_id,
+                    self._config.window_samples,
+                    self._config.stride_samples,
+                )
             )
-            if not starts:
+            if not windows:
                 warnings.add(f"{segment.segment_id}:segment-too-short")
                 reasons.add("detectors-skipped-short-segment")
                 continue
-            for start in starts:
-                stop = start + self._config.window_samples
+            for window in windows:
+                start = window.start_sample
+                stop = window.stop_sample
                 raw = self._read_exact(recording, segment.segment_id, start, stop)
                 try:
                     values, decoded = decode_ci16(raw, 2)
