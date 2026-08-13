@@ -12,3 +12,19 @@ format before production implementation begins.
 
 No production detector, model, dashboard, or hardware deployment begins until
 the Wave 0 gate is recorded in an ADR.
+
+## Completion
+
+Wave 0 completed on 2026-08-13:
+
+| Gate | Result |
+|---|---|
+| Contract v0.1 | Frozen; atomic logical recording pair and RFC 8785 vector tested |
+| Recording format | SigMF data + canonical metadata selected in ADR 0002 |
+| Development benchmark | Nine recordings, about 14.1 GB referenced without copying IQ |
+| Combined repository suite | 45 passed; 7 optional HDF5 spike tests skipped |
+| Scientific promotion | Deliberately blocked pending stronger truth and holdouts |
+
+Wave 1 may implement storage/catalog/jobs, capture against fake ports, and the
+first independent quality/PSD analyzer. Production capture still requires the
+hardware gates in ADR 0002.
