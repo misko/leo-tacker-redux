@@ -22,6 +22,7 @@ packages = ["src/leo_flow"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
   "hardware: requires an attached radio or capture host",
   "integration: requires PostgreSQL or external storage",
