@@ -13,3 +13,4 @@ golden fixtures that change.
 - [0008: Verified-gapped recordings](0008-verified-gapped-recordings.md)
 - [0009: Independent-recording detector suite](0009-independent-recording-detector-suite.md)
 - [0010: Durable dataset snapshot boundary](0010-durable-dataset-snapshot-boundary.md)
+- [0011: PostgreSQL dashboard projections](0011-dashboard-postgresql-projections.md)

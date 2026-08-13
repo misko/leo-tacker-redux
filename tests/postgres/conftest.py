@@ -89,6 +89,7 @@ def postgres_dsn() -> str:
             "0001_first_slice.sql",
             "0002_capability_roles.sql",
             "0003_ephemeris_catalog.sql",
+            "0004_dashboard_projections.sql",
         )
         yield dsn
     finally:
@@ -104,4 +105,12 @@ def postgres_dsn() -> str:
 @pytest.fixture(autouse=True)
 def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
-        connection.execute("TRUNCATE ephemeris_snapshot, recording, object_blob, job")
+        connection.execute(
+            """
+            TRUNCATE dashboard_storage_health_projection,
+                     dashboard_track_projection, dashboard_model_projection,
+                     dashboard_feature_projection, dashboard_activity_projection,
+                     dashboard_recording_projection, ephemeris_snapshot,
+                     recording, object_blob, job
+            """
+        )

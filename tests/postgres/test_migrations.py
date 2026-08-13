@@ -19,6 +19,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0001_first_slice.sql",),
         ("0002_capability_roles.sql",),
         ("0003_ephemeris_catalog.sql",),
+        ("0004_dashboard_projections.sql",),
     ]
 
 
@@ -82,3 +83,37 @@ def test_server_is_postgresql_16(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         version = connection.execute("SHOW server_version_num").fetchone()[0]
     assert 160000 <= int(version) < 170000
+
+
+@pytest.mark.integration
+def test_dashboard_projection_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        (
+            dashboard_read,
+            dashboard_write,
+            dashboard_sequence_read,
+            dashboard_sequence_usage,
+            analysis_append,
+            analysis_update,
+        ) = connection.execute(
+            """
+                SELECT has_table_privilege(
+                           'leo_dashboard', 'dashboard_feature_projection', 'SELECT'),
+                       has_table_privilege(
+                           'leo_dashboard', 'dashboard_feature_projection', 'INSERT'),
+                       has_sequence_privilege(
+                           'leo_dashboard', 'dashboard_projection_sequence', 'SELECT'),
+                       has_sequence_privilege(
+                           'leo_dashboard', 'dashboard_projection_sequence', 'USAGE'),
+                       has_table_privilege(
+                           'leo_analysis', 'dashboard_feature_projection', 'INSERT'),
+                       has_table_privilege(
+                           'leo_analysis', 'dashboard_feature_projection', 'UPDATE')
+                """
+        ).fetchone()
+    assert dashboard_read
+    assert not dashboard_write
+    assert dashboard_sequence_read
+    assert not dashboard_sequence_usage
+    assert analysis_append
+    assert not analysis_update
