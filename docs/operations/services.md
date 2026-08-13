@@ -80,19 +80,55 @@ recorded through the active token and generation and then propagated for the
 supervisor to restart. The dashboard receives only the existing read-only JSON
 handler.
 
-## Deployment wiring still required
+## Deployment bootstrap
 
-The integration/deployment layer must provide executable bootstraps that:
+`leo_flow.services.bootstrap` is the deployment boundary. Its immutable
+`AdapterManifest` partitions exact-reference factory registries by process and
+capability. A capture manifest cannot register or resolve analysis/dashboard
+capabilities, and the same rule applies in both directions. Bootstrap validates
+the complete selection and every named secret provider before invoking any
+adapter factory. Factories receive resolved secrets through an immutable build
+context; they must construct objects without I/O and defer external contact to
+service preflight.
 
-1. load and validate one configuration document;
-2. resolve its named adapters from an immutable deployment manifest;
-3. resolve each secret reference through the selected secret provider;
-4. construct only the capabilities allowed to that process;
-5. attach `JsonLineDiagnosticSink` to standard output;
-6. run preflight and then `run_forever()` under systemd or a container runtime.
+A deployment supplies a `DeploymentPlugin` containing the manifest, explicitly
+injected secret providers, and only the process builders it supports. There are
+no built-in production plugins. In particular, importing this package does not
+select a radio, database, filesystem, secret store, or dashboard server.
 
-Console entry points are intentionally not registered yet. Registering a CLI
-before those production adapter assemblies exist would create a command that
-can validate configuration but cannot safely run a service. No NFS files,
-shell orchestration, legacy repository imports, or ambient model aliases are
-part of this design.
+The stdlib-only host can run a fully supplied plugin without implying that
+placeholder references are runnable:
+
+```console
+python -m leo_flow.services --config /etc/leo/capture.json \
+  --plugin station_a.deployment:PLUGIN --once
+python -m leo_flow.services --config /etc/leo/capture.json \
+  --plugin station_a.deployment:PLUGIN --forever
+```
+
+The plugin module and attribute are exact deployment selections. `latest` and
+`default` adapter aliases are rejected. Plugin modules must be import-side-effect
+free. One-shot mode performs preflight, at most one unit, and a clean bounded
+close. Forever mode installs the existing SIGINT/SIGTERM drain behavior. JSONL
+diagnostics go to stdout and sanitized process errors go to stderr.
+
+| Exit | Meaning |
+|---:|---|
+| 0 | clean one-shot or supervised shutdown |
+| 2 | usage/configuration failure |
+| 3 | plugin, manifest, adapter, or secret bootstrap failure |
+| 4 | preflight, unit, or shutdown failure |
+
+Each real deployment plugin must:
+
+1. provide exact adapter references in an immutable manifest;
+2. inject named secret providers rather than reading ambient secret values;
+3. construct only capabilities allowed to its process;
+4. keep factories side-effect free and perform all external I/O in bounded
+   preflight/units;
+5. run under systemd or a container runtime in forever mode.
+
+No console script is registered until a production assembly is deliberately
+packaged; `python -m` always requires the explicit plugin argument. No NFS files,
+shell orchestration, legacy repository imports, ambient model aliases, or
+implicit environment secret provider are part of this design.
