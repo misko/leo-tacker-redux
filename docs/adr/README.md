@@ -15,3 +15,4 @@ golden fixtures that change.
 - [0010: Durable dataset snapshot boundary](0010-durable-dataset-snapshot-boundary.md)
 - [0011: PostgreSQL dashboard projections](0011-dashboard-postgresql-projections.md)
 - [0012: Atomic dataset snapshot persistence](0012-atomic-dataset-snapshot-persistence.md)
+- [0013: Authoritative identity for dashboard projection retries](0013-authoritative-projection-identity.md)

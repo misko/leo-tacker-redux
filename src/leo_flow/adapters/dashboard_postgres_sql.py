@@ -107,16 +107,25 @@ LIMIT %(limit)s
 """
 
 MODEL_SQL = """
-WITH latest_model AS (
-    SELECT DISTINCT ON (model_snapshot_id)
+WITH direct_model AS (
+    SELECT model_snapshot_id, release_alias, parameter_count, warnings,
+           projection_sequence
+    FROM dashboard_model_projection
+    WHERE model_snapshot_id = %(identity)s
+), released_model AS (
+    SELECT DISTINCT ON (release_alias)
            model_snapshot_id, release_alias, parameter_count, warnings,
            projection_sequence
     FROM dashboard_model_projection
-    ORDER BY model_snapshot_id, projection_sequence DESC
+    WHERE release_alias = %(identity)s
+    ORDER BY release_alias, projection_sequence DESC
+), matching_model AS (
+    SELECT * FROM direct_model
+    UNION ALL
+    SELECT * FROM released_model
 )
 SELECT model_snapshot_id, release_alias, parameter_count, warnings
-FROM latest_model
-WHERE model_snapshot_id = %(identity)s OR release_alias = %(identity)s
+FROM matching_model
 ORDER BY projection_sequence DESC
 """
 

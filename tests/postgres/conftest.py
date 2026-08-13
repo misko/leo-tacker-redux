@@ -91,6 +91,7 @@ def postgres_dsn() -> str:
             "0003_ephemeris_catalog.sql",
             "0004_dashboard_projections.sql",
             "0005_dataset_snapshots.sql",
+            "0006_dashboard_projection_identity.sql",
         )
         yield dsn
     finally:
@@ -109,6 +110,8 @@ def clean_database(postgres_dsn: str) -> None:
         connection.execute(
             """
             TRUNCATE dashboard_storage_health_projection,
+                     dashboard_analysis_projection_identity,
+                     dashboard_capture_projection_identity,
                      dashboard_track_projection, dashboard_model_projection,
                      dashboard_feature_projection, dashboard_activity_projection,
                      dashboard_recording_projection, dataset_member,

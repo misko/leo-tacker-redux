@@ -21,6 +21,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0003_ephemeris_catalog.sql",),
         ("0004_dashboard_projections.sql",),
         ("0005_dataset_snapshots.sql",),
+        ("0006_dashboard_projection_identity.sql",),
     ]
 
 
@@ -152,3 +153,26 @@ def test_dashboard_projection_capabilities_are_narrow(postgres_dsn: str) -> None
     assert not dashboard_sequence_usage
     assert analysis_append
     assert not analysis_update
+
+
+@pytest.mark.integration
+def test_projection_identity_capabilities_are_owner_scoped(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        capture_own, capture_analysis, analysis_own, dashboard_read = (
+            connection.execute(
+                """
+            SELECT has_table_privilege(
+                       'leo_capture', 'dashboard_capture_projection_identity', 'INSERT'),
+                   has_table_privilege(
+                       'leo_capture', 'dashboard_analysis_projection_identity', 'SELECT'),
+                   has_table_privilege(
+                       'leo_analysis', 'dashboard_analysis_projection_identity', 'INSERT'),
+                   has_table_privilege(
+                       'leo_dashboard', 'dashboard_capture_projection_identity', 'SELECT')
+            """
+            ).fetchone()
+        )
+    assert capture_own
+    assert not capture_analysis
+    assert analysis_own
+    assert not dashboard_read
