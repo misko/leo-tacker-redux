@@ -14,12 +14,16 @@ from .core import ReceiverChainId
 
 
 class ContinuityPolicy(str, Enum):
-    REQUIRE_VERIFIED = "require_verified"
+    REQUIRE_CONTIGUOUS = "require_verified"
+    REQUIRE_VERIFIED = "require_verified"  # noqa: PIE796 - compatibility alias
+    ALLOW_VERIFIED_GAPPED = "allow_verified_gapped"
     ALLOW_UNVERIFIED = "allow_unverified"
 
 
 class ContinuityStatus(str, Enum):
-    VERIFIED = "verified"
+    VERIFIED_CONTIGUOUS = "verified_contiguous"
+    VERIFIED = "verified_contiguous"  # noqa: PIE796 - compatibility alias
+    VERIFIED_GAPPED = "verified_gapped"
     UNVERIFIED = "unverified"
 
 
@@ -148,25 +152,176 @@ class RefillMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class ContinuityGap:
+    """A radio-time discontinuity at one exact stored-IQ boundary."""
+
+    prior_refill_index: int
+    next_refill_index: int
+    stored_sample_offset: int
+    first_missing_sample_sequence: int
+    next_sample_sequence: int
+    missing_sample_count: int
+    missing_buffer_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            self.prior_refill_index < 0
+            or self.next_refill_index != self.prior_refill_index + 1
+            or self.stored_sample_offset <= 0
+            or self.first_missing_sample_sequence < 0
+            or self.next_sample_sequence <= self.first_missing_sample_sequence
+            or self.missing_sample_count
+            != self.next_sample_sequence - self.first_missing_sample_sequence
+            or self.missing_buffer_count < 0
+        ):
+            raise ValueError("invalid continuity gap extent")
+        if self.missing_sample_count <= 0 and self.missing_buffer_count <= 0:
+            raise ValueError("continuity gap must describe missing source data")
+
+
+@dataclass(frozen=True, slots=True)
+class ContiguousRfSpan:
+    """Stored sample interval proven contiguous in radio sample sequence."""
+
+    start_sample: int
+    stop_sample: int
+    first_sample_sequence: int
+    stop_sample_sequence: int
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.start_sample < self.stop_sample:
+            raise ValueError("RF span stored range must be non-empty")
+        if (
+            self.first_sample_sequence < 0
+            or self.stop_sample_sequence <= self.first_sample_sequence
+            or self.stop_sample - self.start_sample
+            != self.stop_sample_sequence - self.first_sample_sequence
+        ):
+            raise ValueError("RF span sample sequences differ from stored extent")
+
+
+@dataclass(frozen=True, slots=True)
+class SafeSampleWindow:
+    start_sample: int
+    stop_sample: int
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.start_sample < self.stop_sample:
+            raise ValueError("safe sample window must be non-empty")
+
+
+@dataclass(frozen=True, slots=True)
 class SegmentContinuity:
     status: ContinuityStatus
     receiver_chain_ids: tuple[ReceiverChainId, ...]
     provenance: CaptureProvenance
     refills: tuple[RefillMetadata, ...]
+    gaps: tuple[ContinuityGap, ...] = ()
 
     def __post_init__(self) -> None:
         if len(self.receiver_chain_ids) != 2 or len(set(self.receiver_chain_ids)) != 2:
             raise ValueError("paired continuity requires two unique receiver chains")
-        if self.status is ContinuityStatus.VERIFIED:
+        if self.status in {
+            ContinuityStatus.VERIFIED_CONTIGUOUS,
+            ContinuityStatus.VERIFIED_GAPPED,
+        }:
             if not self.refills:
                 raise ValueError("verified continuity requires refill metadata")
-            _verify_refills(self.refills)
-        elif self.refills:
-            raise ValueError("unverified continuity cannot contain trusted refills")
+            derived = _verify_refills(self.refills)
+            if self.status is ContinuityStatus.VERIFIED_CONTIGUOUS and derived:
+                if any(gap.missing_buffer_count for gap in derived):
+                    raise ValueError("capture buffer sequence gap")
+                raise ValueError("hardware sample sequence gap")
+            if self.status is ContinuityStatus.VERIFIED_GAPPED and not derived:
+                raise ValueError("verified-gapped continuity requires a source gap")
+            if self.gaps != derived:
+                raise ValueError("declared continuity gaps differ from refill evidence")
+        elif self.refills or self.gaps:
+            raise ValueError("unverified continuity cannot contain trusted evidence")
+
+    @classmethod
+    def from_refills(
+        cls,
+        receiver_chain_ids: tuple[ReceiverChainId, ...],
+        provenance: CaptureProvenance,
+        refills: tuple[RefillMetadata, ...],
+    ) -> SegmentContinuity:
+        if not refills:
+            return cls(
+                ContinuityStatus.UNVERIFIED,
+                receiver_chain_ids,
+                provenance,
+                (),
+            )
+        gaps = _verify_refills(refills)
+        return cls(
+            ContinuityStatus.VERIFIED_GAPPED
+            if gaps
+            else ContinuityStatus.VERIFIED_CONTIGUOUS,
+            receiver_chain_ids,
+            provenance,
+            refills,
+            gaps,
+        )
+
+    @property
+    def is_verified(self) -> bool:
+        return self.status is not ContinuityStatus.UNVERIFIED
+
+    def contiguous_rf_spans(self) -> tuple[ContiguousRfSpan, ...]:
+        if not self.is_verified:
+            raise ValueError("unverified recording has no proven RF spans")
+        boundaries = {gap.next_refill_index for gap in self.gaps}
+        starts = [0]
+        starts.extend(sorted(boundaries))
+        stops = starts[1:] + [len(self.refills)]
+        return tuple(
+            ContiguousRfSpan(
+                self.refills[start].segment_sample_offset,
+                self.refills[stop - 1].segment_sample_offset
+                + self.refills[stop - 1].sample_count,
+                self.refills[start].first_sample_sequence,
+                self.refills[stop - 1].sample_sequence_end_exclusive,
+            )
+            for start, stop in zip(starts, stops, strict=True)
+        )
+
+    def safe_windows(
+        self, window_samples: int, stride_samples: int
+    ) -> tuple[SafeSampleWindow, ...]:
+        if (
+            isinstance(window_samples, bool)
+            or isinstance(stride_samples, bool)
+            or window_samples <= 0
+            or stride_samples <= 0
+        ):
+            raise ValueError("window and stride samples must be positive integers")
+        windows: list[SafeSampleWindow] = []
+        for span in self.contiguous_rf_spans():
+            span_count = span.stop_sample - span.start_sample
+            if span_count < window_samples:
+                continue
+            starts = list(
+                range(
+                    span.start_sample,
+                    span.stop_sample - window_samples + 1,
+                    stride_samples,
+                )
+            )
+            last = span.stop_sample - window_samples
+            if starts[-1] != last:
+                starts.append(last)
+            windows.extend(
+                SafeSampleWindow(start, start + window_samples) for start in starts
+            )
+        return tuple(windows)
 
 
-def _verify_refills(refills: tuple[RefillMetadata, ...]) -> None:
+def _verify_refills(
+    refills: tuple[RefillMetadata, ...],
+) -> tuple[ContinuityGap, ...]:
     prior: RefillMetadata | None = None
+    gaps: list[ContinuityGap] = []
     for expected_index, refill in enumerate(refills):
         if refill.refill_index != expected_index:
             raise ValueError("refill indexes must be consecutive from zero")
@@ -182,15 +337,35 @@ def _verify_refills(refills: tuple[RefillMetadata, ...]) -> None:
         else:
             if refill.stream_id != prior.stream_id:
                 raise ValueError("stream identity changed within a segment")
-            if refill.buffer_sequence != prior.buffer_sequence + 1:
-                raise ValueError("capture buffer sequence gap")
-            if refill.first_sample_sequence != prior.sample_sequence_end_exclusive:
-                raise ValueError("hardware sample sequence gap")
+            if refill.buffer_sequence <= prior.buffer_sequence:
+                raise ValueError("capture buffer sequence regressed")
+            if refill.first_sample_sequence < prior.sample_sequence_end_exclusive:
+                raise ValueError("hardware sample sequence regressed or overlapped")
             if (
                 refill.segment_sample_offset
                 != prior.segment_sample_offset + prior.sample_count
             ):
                 raise ValueError("stored IQ refill ranges have a gap or overlap")
+            missing_buffers = refill.buffer_sequence - prior.buffer_sequence - 1
+            missing_samples = (
+                refill.first_sample_sequence - prior.sample_sequence_end_exclusive
+            )
+            if missing_buffers or missing_samples:
+                if missing_samples <= 0:
+                    raise ValueError(
+                        "capture buffer sequence gap lacks a hardware sample sequence gap"
+                    )
+                gaps.append(
+                    ContinuityGap(
+                        prior_refill_index=prior.refill_index,
+                        next_refill_index=refill.refill_index,
+                        stored_sample_offset=refill.segment_sample_offset,
+                        first_missing_sample_sequence=prior.sample_sequence_end_exclusive,
+                        next_sample_sequence=refill.first_sample_sequence,
+                        missing_sample_count=missing_samples,
+                        missing_buffer_count=missing_buffers,
+                    )
+                )
             prior_end_lower_bound = prior.monotonic_end_ns - prior.time_uncertainty_ns
             current_start_upper_bound = (
                 refill.monotonic_start_ns + refill.time_uncertainty_ns
@@ -198,3 +373,4 @@ def _verify_refills(refills: tuple[RefillMetadata, ...]) -> None:
             if current_start_upper_bound < prior_end_lower_bound:
                 raise ValueError("refill monotonic times contradict their uncertainty")
         prior = refill
+    return tuple(gaps)

@@ -27,10 +27,13 @@ from leo_flow.contracts.capture import (
 )
 from leo_flow.contracts.continuity import (
     CaptureProvenance,
+    ContiguousRfSpan,
+    ContinuityGap,
     ContinuityStatus,
     GainObservation,
     RefillFlag,
     RefillMetadata,
+    SafeSampleWindow,
     SegmentContinuity,
 )
 from leo_flow.contracts.core import (
@@ -67,8 +70,12 @@ class MalformedRecordingError(RecordingCodecError):
     pass
 
 
+class UnverifiedContinuityError(RecordingCodecError):
+    pass
+
+
 _META_SCHEMA = "org.leo-flow.recording-object-metadata"
-_META_VERSION = "1.1"
+_META_VERSION = "1.2"
 _DATA_FILENAME = "recording.data"
 _METADATA_FILENAME = "recording.meta"
 _MAX_METADATA_BYTES = 16 * 1024 * 1024
@@ -197,6 +204,14 @@ class RecordingWriteSession:
             for segment in manifest.segments
         ):
             raise RecordingCodecError("finished segment facts differ from manifest")
+        for segment in manifest.segments:
+            continuity = self._continuity.get(segment.segment_id)
+            if continuity is not None and continuity.is_verified:
+                covered = sum(refill.sample_count for refill in continuity.refills)
+                if covered != segment.sample_count:
+                    raise RecordingCodecError(
+                        "verified refill evidence does not cover the whole segment"
+                    )
 
         self._data.flush()
         os.fsync(self._data.fileno())
@@ -206,7 +221,7 @@ class RecordingWriteSession:
             "schema": _META_SCHEMA,
             "version": _META_VERSION,
             "core:datatype": "ci16_le",
-            "leo:namespace_version": "1.1",
+            "leo:namespace_version": "1.2",
             "manifest": _wire(manifest),
             "manifest_digest": str(manifest_digest),
             "segments": [
@@ -329,6 +344,29 @@ class RecordingView:
             raise KeyError(f"unknown segment {segment_id}")
         return self._metadata.continuity.get(segment_id)
 
+    def contiguous_rf_spans(
+        self, segment_id: SegmentId
+    ) -> tuple[ContiguousRfSpan, ...]:
+        continuity = self.continuity(segment_id)
+        if continuity is None or not continuity.is_verified:
+            raise UnverifiedContinuityError(
+                "segment has no metadata-verified RF continuity"
+            )
+        return continuity.contiguous_rf_spans()
+
+    def iter_safe_windows(
+        self,
+        segment_id: SegmentId,
+        window_samples: int,
+        stride_samples: int,
+    ) -> Iterator[SafeSampleWindow]:
+        continuity = self.continuity(segment_id)
+        if continuity is None or not continuity.is_verified:
+            raise UnverifiedContinuityError(
+                "segment has no metadata-verified RF continuity"
+            )
+        yield from continuity.safe_windows(window_samples, stride_samples)
+
 
 class _ParsedSegment:
     def __init__(
@@ -369,13 +407,17 @@ def _parse_metadata(data: bytes, ref: RecordingObjectRef) -> _ParsedMetadata:
         "manifest_digest",
         "segments",
     }
-    if version == "1.1":
+    if version in {"1.1", "1.2"}:
         required_fields.add("continuity")
     if set(value) != required_fields:
         raise MalformedRecordingError("metadata has missing or unknown required fields")
-    if value["schema"] != _META_SCHEMA or version not in {"1.0", _META_VERSION}:
+    if value["schema"] != _META_SCHEMA or version not in {
+        "1.0",
+        "1.1",
+        _META_VERSION,
+    }:
         raise MalformedRecordingError("unsupported recording metadata schema")
-    expected_namespace = "1.1" if version == "1.1" else "1.0"
+    expected_namespace = version
     if (
         value["core:datatype"] != "ci16_le"
         or value["leo:namespace_version"] != expected_namespace
@@ -442,7 +484,9 @@ def _parse_metadata(data: bytes, ref: RecordingObjectRef) -> _ParsedMetadata:
         if segment_id not in parsed or segment_id in continuity:
             raise MalformedRecordingError("unknown or duplicate continuity segment")
         try:
-            continuity[segment_id] = _continuity_from_wire(item["value"])
+            continuity[segment_id] = _continuity_from_wire(
+                item["value"], legacy=version == "1.1"
+            )
         except (KeyError, TypeError, ValueError) as error:
             raise MalformedRecordingError("invalid continuity metadata") from error
         if continuity[segment_id].receiver_chain_ids != next(
@@ -451,6 +495,14 @@ def _parse_metadata(data: bytes, ref: RecordingObjectRef) -> _ParsedMetadata:
             if segment.segment_id == segment_id
         ):
             raise MalformedRecordingError("continuity receiver order differs")
+        if (
+            continuity[segment_id].is_verified
+            and sum(refill.sample_count for refill in continuity[segment_id].refills)
+            != parsed[segment_id].sample_count
+        ):
+            raise MalformedRecordingError(
+                "verified refill evidence does not cover the whole segment"
+            )
     return _ParsedMetadata(manifest, parsed, continuity)
 
 
@@ -466,9 +518,12 @@ def _wire(value: Any) -> Any:
     return value
 
 
-def _continuity_from_wire(value: Any) -> SegmentContinuity:
+def _continuity_from_wire(value: Any, *, legacy: bool) -> SegmentContinuity:
     item = _mapping(value, "segment continuity")
-    if set(item) != {"status", "receiver_chain_ids", "provenance", "refills"}:
+    expected_fields = {"status", "receiver_chain_ids", "provenance", "refills"}
+    if not legacy:
+        expected_fields.add("gaps")
+    if set(item) != expected_fields:
         raise ValueError("segment continuity fields differ")
     provenance_value = _mapping(item["provenance"], "capture provenance")
     if set(provenance_value) != {
@@ -492,8 +547,14 @@ def _continuity_from_wire(value: Any) -> SegmentContinuity:
         ),
         capability=_string(provenance_value["capability"], "capability"),
     )
+    raw_status = _string(item["status"], "continuity status")
+    status = (
+        ContinuityStatus.VERIFIED_CONTIGUOUS
+        if legacy and raw_status == "verified"
+        else ContinuityStatus(raw_status)
+    )
     return SegmentContinuity(
-        status=ContinuityStatus(_string(item["status"], "continuity status")),
+        status=status,
         receiver_chain_ids=tuple(
             ReceiverChainId(raw)
             for raw in _string_list(item["receiver_chain_ids"], "receiver_chain_ids")
@@ -501,6 +562,47 @@ def _continuity_from_wire(value: Any) -> SegmentContinuity:
         provenance=provenance,
         refills=tuple(
             _refill_from_wire(raw) for raw in _list(item["refills"], "refills")
+        ),
+        gaps=()
+        if legacy
+        else tuple(_gap_from_wire(raw) for raw in _list(item["gaps"], "gaps")),
+    )
+
+
+def _gap_from_wire(value: Any) -> ContinuityGap:
+    item = _mapping(value, "continuity gap")
+    fields = {
+        "prior_refill_index",
+        "next_refill_index",
+        "stored_sample_offset",
+        "first_missing_sample_sequence",
+        "next_sample_sequence",
+        "missing_sample_count",
+        "missing_buffer_count",
+    }
+    if set(item) != fields:
+        raise ValueError("continuity gap fields differ")
+    return ContinuityGap(
+        prior_refill_index=_nonnegative_int(
+            item["prior_refill_index"], "prior_refill_index"
+        ),
+        next_refill_index=_nonnegative_int(
+            item["next_refill_index"], "next_refill_index"
+        ),
+        stored_sample_offset=_positive_int(
+            item["stored_sample_offset"], "stored_sample_offset"
+        ),
+        first_missing_sample_sequence=_nonnegative_int(
+            item["first_missing_sample_sequence"], "first_missing_sample_sequence"
+        ),
+        next_sample_sequence=_nonnegative_int(
+            item["next_sample_sequence"], "next_sample_sequence"
+        ),
+        missing_sample_count=_positive_int(
+            item["missing_sample_count"], "missing_sample_count"
+        ),
+        missing_buffer_count=_nonnegative_int(
+            item["missing_buffer_count"], "missing_buffer_count"
         ),
     )
 

@@ -13,6 +13,7 @@ from leo_flow.storage.recording_codec import (
     MalformedRecordingError,
     SigMFRecordingObjectReader,
     SigMFRecordingWriter,
+    UnverifiedContinuityError,
 )
 from testkit import capture_plan, recording_manifest
 
@@ -68,6 +69,8 @@ def test_writer_reader_round_trip_exact_ci16_and_manifest(tmp_path) -> None:
         assert (
             view.read_iq_bytes(local.manifest.segments[0].segment_id, 1, 3) == iq[8:24]
         )
+        with pytest.raises(UnverifiedContinuityError, match="no metadata-verified"):
+            tuple(view.iter_safe_windows(local.manifest.segments[0].segment_id, 2, 2))
 
 
 def test_metadata_embeds_exact_canonical_manifest_value(tmp_path) -> None:

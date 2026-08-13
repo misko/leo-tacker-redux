@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol, runtime_checkable
@@ -13,7 +13,12 @@ from leo_flow.contracts.capture import (
     RecordingManifest,
     SegmentManifest,
 )
-from leo_flow.contracts.continuity import RefillMetadata, SegmentContinuity
+from leo_flow.contracts.continuity import (
+    ContiguousRfSpan,
+    RefillMetadata,
+    SafeSampleWindow,
+    SegmentContinuity,
+)
 from leo_flow.contracts.core import Digest, HardwareSnapshotId, RecordingId, SegmentId
 from leo_flow.contracts.storage import (
     ByteRange,
@@ -88,6 +93,17 @@ class RecordingView(Protocol):
     ) -> bytes: ...
 
     def continuity(self, segment_id: SegmentId) -> SegmentContinuity | None: ...
+
+    def contiguous_rf_spans(
+        self, segment_id: SegmentId
+    ) -> tuple[ContiguousRfSpan, ...]: ...
+
+    def iter_safe_windows(
+        self,
+        segment_id: SegmentId,
+        window_samples: int,
+        stride_samples: int,
+    ) -> Iterator[SafeSampleWindow]: ...
 
 
 class RecordingObjectReader(Protocol):

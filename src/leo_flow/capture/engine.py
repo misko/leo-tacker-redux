@@ -119,6 +119,7 @@ class PlanCaptureEngine:
                             append_refill,
                         )
                         refills: list[RefillMetadata] = []
+                        missing_metadata_refills = 0
                         current_segment_id = request.segment_id
 
                         def write_refill(
@@ -130,7 +131,9 @@ class PlanCaptureEngine:
                             ] = typed_append_refill,
                             refill_list: list[RefillMetadata] = refills,
                         ) -> None:
+                            nonlocal missing_metadata_refills
                             if metadata is None:
+                                missing_metadata_refills += 1
                                 session.append_iq(segment_id, data)
                             else:
                                 append(segment_id, data, metadata)
@@ -138,24 +141,31 @@ class PlanCaptureEngine:
 
                         segment = metadata_acquire(request, write_refill)
                         policy = continuity_hardware.continuity_policy
-                        status = (
-                            ContinuityStatus.VERIFIED
-                            if refills
-                            else ContinuityStatus.UNVERIFIED
+                        if refills and missing_metadata_refills:
+                            raise ContinuityError(
+                                "segment mixed metadata-verified and unverified refills"
+                            )
+                        continuity = SegmentContinuity.from_refills(
+                            request.receiver_chain_ids,
+                            continuity_hardware.capture_provenance,
+                            tuple(refills),
                         )
+                        status = continuity.status
                         if (
-                            policy is ContinuityPolicy.REQUIRE_VERIFIED
-                            and status is not ContinuityStatus.VERIFIED
+                            policy is ContinuityPolicy.REQUIRE_CONTIGUOUS
+                            and status is not ContinuityStatus.VERIFIED_CONTIGUOUS
                         ):
                             raise ContinuityError(
-                                "contiguous IQ was required but v5 metadata was unavailable"
+                                "contiguous IQ was required but a sample sequence gap "
+                                "or unavailable metadata prevented proof"
                             )
-                        continuity = SegmentContinuity(
-                            status=status,
-                            receiver_chain_ids=request.receiver_chain_ids,
-                            provenance=continuity_hardware.capture_provenance,
-                            refills=tuple(refills),
-                        )
+                        if (
+                            policy is ContinuityPolicy.ALLOW_VERIFIED_GAPPED
+                            and status is ContinuityStatus.UNVERIFIED
+                        ):
+                            raise ContinuityError(
+                                "verified IQ was required but v5 metadata was unavailable"
+                            )
                         record_continuity(request.segment_id, continuity)
                     else:
                         segment = hardware.acquire_segment(request, write_ci16)

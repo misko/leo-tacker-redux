@@ -125,3 +125,79 @@ def test_timestamp_fit_overlap_is_allowed_only_within_reported_uncertainty() -> 
             provenance(),
             (first, contradicted),
         )
+
+
+def test_verified_gapped_derives_exact_extents_spans_and_safe_windows() -> None:
+    evidence = (
+        refill(),
+        replace(refill(1, sequence=108), buffer_sequence=22),
+        replace(refill(2, sequence=116), buffer_sequence=25),
+    )
+    value = SegmentContinuity.from_refills(
+        (ReceiverChainId("rx_a"), ReceiverChainId("rx_b")),
+        provenance(),
+        evidence,
+    )
+
+    assert value.status is ContinuityStatus.VERIFIED_GAPPED
+    assert [
+        (
+            gap.stored_sample_offset,
+            gap.first_missing_sample_sequence,
+            gap.next_sample_sequence,
+            gap.missing_sample_count,
+            gap.missing_buffer_count,
+        )
+        for gap in value.gaps
+    ] == [(4, 104, 108, 4, 1), (8, 112, 116, 4, 2)]
+    assert [
+        (
+            span.start_sample,
+            span.stop_sample,
+            span.first_sample_sequence,
+            span.stop_sample_sequence,
+        )
+        for span in value.contiguous_rf_spans()
+    ] == [(0, 4, 100, 104), (4, 8, 108, 112), (8, 12, 116, 120)]
+    assert [
+        (window.start_sample, window.stop_sample) for window in value.safe_windows(3, 2)
+    ] == [(0, 3), (1, 4), (4, 7), (5, 8), (8, 11), (9, 12)]
+
+
+@pytest.mark.parametrize(
+    ("bad_second", "match"),
+    [
+        (replace(refill(1, sequence=104), buffer_sequence=20), "buffer.*regressed"),
+        (refill(1, sequence=103), "sample sequence regressed"),
+        (replace(refill(1, sequence=104), stream_id=8), "stream identity"),
+        (replace(refill(1, sequence=104), segment_sample_offset=5), "ranges"),
+        (
+            replace(
+                refill(1, sequence=108),
+                buffer_sequence=22,
+                flags=(RefillFlag.DEVICE_IIO_OVERFLOW,),
+            ),
+            "failure flags",
+        ),
+    ],
+)
+def test_gapped_status_never_weakens_refill_evidence_validation(
+    bad_second: RefillMetadata, match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        SegmentContinuity.from_refills(
+            (ReceiverChainId("rx_a"), ReceiverChainId("rx_b")),
+            provenance(),
+            (refill(), bad_second),
+        )
+
+
+def test_unverified_has_no_safe_radio_frequency_spans() -> None:
+    value = SegmentContinuity(
+        ContinuityStatus.UNVERIFIED,
+        (ReceiverChainId("rx_a"), ReceiverChainId("rx_b")),
+        provenance(),
+        (),
+    )
+    with pytest.raises(ValueError, match="no proven RF spans"):
+        value.safe_windows(4, 4)

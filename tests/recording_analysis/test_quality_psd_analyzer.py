@@ -18,6 +18,11 @@ from leo_flow.analysis.recording import (
     quality_psd_algorithm_ref,
 )
 from leo_flow.analysis.recording.psd import compact_psd, radix2_fft
+from leo_flow.contracts.continuity import (
+    CaptureProvenance,
+    RefillMetadata,
+    SegmentContinuity,
+)
 from leo_flow.contracts.core import ArtifactRef, Digest, RecordingId, SchemaRef
 from leo_flow.contracts.features import FeatureSetBundle
 
@@ -123,6 +128,60 @@ def test_reads_are_bounded_and_never_cross_segment_or_window_bounds() -> None:
     )
     for score in bundle.method_scores:
         assert 0 <= score.window_start_sample < score.window_stop_sample <= sample_count
+
+
+def test_verified_gap_splits_quality_and_no_analysis_read_crosses_boundary() -> None:
+    _, segment = fixture("02-clean-chirp-two-receiver")
+    sample_count = len(segment.data) // 8
+    boundary = sample_count // 2
+    config = QualityPsdConfig(psd_window_samples=256, psd_stride_samples=512)
+    analyzer, view, request = analyzer_and_request(
+        segment, config=config, read_chunk_samples=333
+    )
+
+    def refill(index: int, offset: int, source: int, buffer: int) -> RefillMetadata:
+        return RefillMetadata(
+            index,
+            offset,
+            boundary,
+            7,
+            buffer,
+            source,
+            1_000 + index * 1_000,
+            1_900 + index * 1_000,
+            1_800_000_000_000_001_000 + index * 1_000,
+            1_800_000_000_000_001_900 + index * 1_000,
+            10,
+            (20.0, 20.0),
+            (20.0, 20.0),
+            (-40.0, -40.0),
+            (-40.0, -40.0),
+        )
+
+    continuity = SegmentContinuity.from_refills(
+        view.manifest.receiver_chain_ids,
+        CaptureProvenance("v5", "commit", "0.25", "v3", "metadata=1"),
+        (
+            refill(0, 0, 100, 10),
+            refill(1, boundary, 100 + boundary + 64, 12),
+        ),
+    )
+    view.continuity = lambda segment_id: continuity  # type: ignore[attr-defined]
+
+    bundle = analyzer.analyze(view, request)
+
+    assert all(not (start < boundary < stop) for _, start, stop in view.calls)
+    assert all(
+        not (score.window_start_sample < boundary < score.window_stop_sample)
+        for score in bundle.method_scores
+    )
+    quality = [
+        item for item in bundle.observations if item.method_id == "sample-quality"
+    ]
+    assert {
+        (item.window_start_sample, item.window_stop_sample) for item in quality
+    } == {(0, boundary), (boundary, sample_count)}
+    assert "verified-source-gaps" in bundle.reason_codes
 
 
 def test_method_score_windows_are_aligned_across_receivers() -> None:

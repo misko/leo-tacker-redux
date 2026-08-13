@@ -7,6 +7,7 @@ import pytest
 from leo_flow.capture import FakeV5PairedRadio, V5Refill
 from leo_flow.contracts.continuity import (
     CaptureProvenance,
+    ContinuityPolicy,
     ContinuityStatus,
     RefillFlag,
     RefillMetadata,
@@ -44,7 +45,11 @@ def metadata(index: int, sequence: int, *, flags=()) -> RefillMetadata:
     )
 
 
-def radio(second: RefillMetadata) -> FakeV5PairedRadio:
+def radio(
+    second: RefillMetadata,
+    *,
+    policy: ContinuityPolicy = ContinuityPolicy.REQUIRE_CONTIGUOUS,
+) -> FakeV5PairedRadio:
     segment_id = plan_with_activities().activities[0].segments[0].segment_id
     return FakeV5PairedRadio(
         RADIO_ID,
@@ -56,6 +61,7 @@ def radio(second: RefillMetadata) -> FakeV5PairedRadio:
             )
         },
         CaptureProvenance("v5", "commit", "0.25", "v3", "metadata=1"),
+        continuity_policy=policy,
         clock=FakeClock(),
     )
 
@@ -84,8 +90,51 @@ def test_engine_aborts_gap_or_overflow_instead_of_claiming_contiguous(
     tmp_path, second, match
 ) -> None:
     writer = FakeRecordingWriter()
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises((ValueError, RuntimeError), match=match):
         engine(FakeClock()).execute(
             plan_with_activities(), radio(second), writer, spool(tmp_path)
+        )
+    assert writer.session.aborted_reason is not None
+
+
+def test_explicit_gapped_policy_publishes_useful_iq_with_gap_evidence(tmp_path) -> None:
+    writer = FakeRecordingWriter()
+    completed = engine(FakeClock()).execute(
+        plan_with_activities(),
+        radio(
+            replace(metadata(1, 104), buffer_sequence=32),
+            policy=ContinuityPolicy.ALLOW_VERIFIED_GAPPED,
+        ),
+        writer,
+        spool(tmp_path),
+    )
+    continuity = writer.session.continuities[completed.manifest.segments[0].segment_id]
+    assert continuity.status is ContinuityStatus.VERIFIED_GAPPED
+    assert continuity.gaps[0].stored_sample_offset == 2
+    assert continuity.gaps[0].missing_sample_count == 2
+    assert continuity.gaps[0].missing_buffer_count == 1
+
+
+def test_mixed_verified_and_missing_refill_metadata_always_aborts(tmp_path) -> None:
+    inner = radio(metadata(1, 102), policy=ContinuityPolicy.ALLOW_VERIFIED_GAPPED)
+
+    class MixedMetadataRadio:
+        radio_id = inner.radio_id
+        continuity_policy = inner.continuity_policy
+        capture_provenance = inner.capture_provenance
+
+        def acquire_segment_with_metadata(self, request, write_refill):
+            events = []
+            segment = inner.acquire_segment_with_metadata(
+                request, lambda data, item: events.append((data, item))
+            )
+            write_refill(*events[0])
+            write_refill(events[1][0], None)
+            return segment
+
+    writer = FakeRecordingWriter()
+    with pytest.raises(RuntimeError, match="mixed metadata-verified and unverified"):
+        engine(FakeClock()).execute(
+            plan_with_activities(), MixedMetadataRadio(), writer, spool(tmp_path)
         )
     assert writer.session.aborted_reason is not None

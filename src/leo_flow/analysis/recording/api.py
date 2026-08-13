@@ -159,6 +159,35 @@ def _window_starts(sample_count: int, window: int, stride: int) -> tuple[int, ..
     return tuple(starts)
 
 
+def _safe_analysis_spans(
+    recording: RecordingView, segment: SegmentManifest
+) -> tuple[tuple[int, int], ...]:
+    continuity_method = getattr(recording, "continuity", None)
+    if not callable(continuity_method):
+        return ((0, segment.sample_count),)
+    continuity = continuity_method(segment.segment_id)
+    if continuity is None or not continuity.is_verified:
+        # Legacy and explicitly unverified recordings remain analyzable, but only
+        # V5 evidence can split them into proven source-contiguous spans.
+        return ((0, segment.sample_count),)
+    return tuple(
+        (span.start_sample, span.stop_sample)
+        for span in continuity.contiguous_rf_spans()
+    )
+
+
+def _safe_window_starts(
+    spans: tuple[tuple[int, int], ...], window: int, stride: int
+) -> tuple[int, ...]:
+    starts: list[int] = []
+    for span_start, span_stop in spans:
+        starts.extend(
+            span_start + relative
+            for relative in _window_starts(span_stop - span_start, window, stride)
+        )
+    return tuple(starts)
+
+
 class QualityPsdAnalyzer:
     """Analyze exactly one supplied recording with no external capabilities."""
 
@@ -235,81 +264,88 @@ class QualityPsdAnalyzer:
         for segment in manifest.segments:
             receiver_ids = segment.requested.receiver_chain_ids
             receiver_count = len(receiver_ids)
-            accumulators = [ReceiverQualityAccumulator() for _ in receiver_ids]
-            for start in range(0, segment.sample_count, self._read_chunk_samples):
-                stop = min(segment.sample_count, start + self._read_chunk_samples)
-                raw = self._read_exact(
-                    recording, segment.segment_id, start, stop, receiver_count
+            spans = _safe_analysis_spans(recording, segment)
+            if len(spans) > 1:
+                warnings.append(
+                    f"{segment.segment_id}:verified-gapped:{len(spans) - 1}-gaps"
                 )
-                try:
-                    values, decoded_samples = decode_ci16(raw, receiver_count)
-                except Ci16DecodeError as exc:
-                    raise AnalysisInputError(
-                        f"segment {segment.segment_id} has malformed CI16: {exc}"
-                    ) from exc
-                if decoded_samples != stop - start:
-                    raise AnalysisInputError(
-                        f"segment {segment.segment_id} decoded sample count differs"
+                reason_codes.add("verified-source-gaps")
+            for span_start, span_stop in spans:
+                accumulators = [ReceiverQualityAccumulator() for _ in receiver_ids]
+                for start in range(span_start, span_stop, self._read_chunk_samples):
+                    stop = min(span_stop, start + self._read_chunk_samples)
+                    raw = self._read_exact(
+                        recording, segment.segment_id, start, stop, receiver_count
                     )
-                for receiver_index, accumulator in enumerate(accumulators):
-                    accumulator.consume(
-                        values,
-                        receiver_index=receiver_index,
-                        receiver_count=receiver_count,
-                        sample_count=decoded_samples,
-                        clip_threshold_abs=self._config.clip_threshold_abs,
+                    try:
+                        values, decoded_samples = decode_ci16(raw, receiver_count)
+                    except Ci16DecodeError as exc:
+                        raise AnalysisInputError(
+                            f"segment {segment.segment_id} has malformed CI16: {exc}"
+                        ) from exc
+                    if decoded_samples != stop - start:
+                        raise AnalysisInputError(
+                            f"segment {segment.segment_id} decoded sample count differs"
+                        )
+                    for receiver_index, accumulator in enumerate(accumulators):
+                        accumulator.consume(
+                            values,
+                            receiver_index=receiver_index,
+                            receiver_count=receiver_count,
+                            sample_count=decoded_samples,
+                            clip_threshold_abs=self._config.clip_threshold_abs,
+                        )
+                for receiver_id, accumulator in zip(
+                    receiver_ids, accumulators, strict=True
+                ):
+                    quality = accumulator.summary(
+                        dc_warning_fraction=self._config.dc_warning_fraction
                     )
-            for receiver_id, accumulator in zip(
-                receiver_ids, accumulators, strict=True
-            ):
-                quality = accumulator.summary(
-                    dc_warning_fraction=self._config.dc_warning_fraction
-                )
-                feature_id = FeatureId(
-                    _derived_id(
-                        "feature",
-                        {
-                            "run": run_token,
-                            "method": QUALITY_METHOD_ID,
-                            "segment": str(segment.segment_id),
-                            "receiver": str(receiver_id),
-                            "start": 0,
-                            "stop": segment.sample_count,
-                        },
+                    feature_id = FeatureId(
+                        _derived_id(
+                            "feature",
+                            {
+                                "run": run_token,
+                                "method": QUALITY_METHOD_ID,
+                                "segment": str(segment.segment_id),
+                                "receiver": str(receiver_id),
+                                "start": span_start,
+                                "stop": span_stop,
+                            },
+                        )
                     )
-                )
-                observations.append(
-                    FeatureObservation(
-                        feature_id=feature_id,
-                        recording_id=request.recording_id,
-                        segment_id=segment.segment_id,
-                        method_id=QUALITY_METHOD_ID,
-                        method_version=ALGORITHM_VERSION,
-                        window_start_sample=0,
-                        window_stop_sample=segment.sample_count,
-                        segment_sample_count=segment.sample_count,
-                        midpoint_utc_ns=_midpoint_utc_ns(
-                            segment, 0, segment.sample_count
-                        ),
-                        feature_kind="sample-quality",
-                        score=quality.rms_magnitude,
-                        score_semantics="rms-magnitude-counts",
-                        receiver_chain_id=receiver_id,
-                        noise_estimate=quality.ac_power,
-                        uncertainty=(("status", "descriptive-only"),),
-                        quality_flags=quality.flags,
-                        diagnostics=quality.diagnostics(),
+                    observations.append(
+                        FeatureObservation(
+                            feature_id=feature_id,
+                            recording_id=request.recording_id,
+                            segment_id=segment.segment_id,
+                            method_id=QUALITY_METHOD_ID,
+                            method_version=ALGORITHM_VERSION,
+                            window_start_sample=span_start,
+                            window_stop_sample=span_stop,
+                            segment_sample_count=segment.sample_count,
+                            midpoint_utc_ns=_midpoint_utc_ns(
+                                segment, span_start, span_stop
+                            ),
+                            feature_kind="sample-quality",
+                            score=quality.rms_magnitude,
+                            score_semantics="rms-magnitude-counts",
+                            receiver_chain_id=receiver_id,
+                            noise_estimate=quality.ac_power,
+                            uncertainty=(("status", "descriptive-only"),),
+                            quality_flags=quality.flags,
+                            diagnostics=quality.diagnostics(),
+                        )
                     )
-                )
-                warnings.extend(
-                    f"{segment.segment_id}:{receiver_id}:{flag}"
-                    for flag in quality.flags
-                )
-                if quality.flags:
-                    reason_codes.add("quality-flags-present")
+                    warnings.extend(
+                        f"{segment.segment_id}:{receiver_id}:{flag}"
+                        for flag in quality.flags
+                    )
+                    if quality.flags:
+                        reason_codes.add("quality-flags-present")
 
-            starts = _window_starts(
-                segment.sample_count,
+            starts = _safe_window_starts(
+                spans,
                 self._config.psd_window_samples,
                 self._config.psd_stride_samples,
             )

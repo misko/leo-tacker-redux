@@ -10,7 +10,11 @@ from .ports import (
     RecordingWriter,
     RecordingWriteSession,
 )
-from .recording_codec import SigMFRecordingObjectReader, SigMFRecordingWriter
+from .recording_codec import (
+    SigMFRecordingObjectReader,
+    SigMFRecordingWriter,
+    UnverifiedContinuityError,
+)
 
 __all__ = [
     "BlobIntegrityError",
@@ -24,4 +28,5 @@ __all__ = [
     "RecordingWriter",
     "SigMFRecordingObjectReader",
     "SigMFRecordingWriter",
+    "UnverifiedContinuityError",
 ]

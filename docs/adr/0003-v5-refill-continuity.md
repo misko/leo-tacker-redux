@@ -1,6 +1,8 @@
 # ADR 0003: V5 refill continuity is a first-class recording fact
 
-Status: accepted for the Wave 4 implementation; target-hardware gates remain.
+Status: accepted for the Wave 4 implementation; gap rejection and metadata
+version portions are superseded by
+[ADR 0008](0008-verified-gapped-recordings.md); target-hardware gates remain.
 
 ## Context
 
