@@ -22,7 +22,6 @@ from benchmark.validate import (
     validate_synthetic_spec,
 )
 
-
 MANIFEST_PATH = ROOT / "benchmark/manifests/development-2026-08-13.json"
 ORACLE_PATH = ROOT / "benchmark/oracles/development-2026-08-13.legacy-summary.json"
 SYNTHETIC_PATH = ROOT / "benchmark/specs/synthetic-iq-v1.json"
@@ -75,10 +74,16 @@ class BenchmarkManifestTests(unittest.TestCase):
             coverage_gaps(self.manifest),
             {
                 "evidence_class": [
-                    "exact_injection_positive", "hardware_positive",
-                    "independent_positive", "hard_null",
+                    "exact_injection_positive",
+                    "hardware_positive",
+                    "independent_positive",
+                    "hard_null",
                 ],
-                "confound": ["real_interference", "interrupted_source", "corrupt_source"],
+                "confound": [
+                    "real_interference",
+                    "interrupted_source",
+                    "corrupt_source",
+                ],
             },
         )
         with self.assertRaisesRegex(ValidationError, "promotion coverage gaps"):
@@ -91,15 +96,21 @@ class BenchmarkManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "parent traversal"):
             validate_manifest(changed)
 
-    def test_payload_index_hash_is_order_independent_but_content_sensitive(self) -> None:
+    def test_payload_index_hash_is_order_independent_but_content_sensitive(
+        self,
+    ) -> None:
         entries = [
             {"path": "b.ci16", "bytes": 8, "sha256": "b" * 64},
             {"path": "a.ci16", "bytes": 4, "sha256": "a" * 64},
         ]
-        self.assertEqual(payload_index_digest(entries), payload_index_digest(reversed(entries)))
+        self.assertEqual(
+            payload_index_digest(entries), payload_index_digest(reversed(entries))
+        )
         changed = copy.deepcopy(entries)
         changed[0]["bytes"] += 1
-        self.assertNotEqual(payload_index_digest(entries), payload_index_digest(changed))
+        self.assertNotEqual(
+            payload_index_digest(entries), payload_index_digest(changed)
+        )
 
     def test_frozen_legacy_oracle_matches_every_member_and_source_hash(self) -> None:
         oracle = load_json(ORACLE_PATH)

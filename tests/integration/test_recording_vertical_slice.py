@@ -73,9 +73,7 @@ def test_capture_publish_read_and_independently_analyze_one_recording(tmp_path) 
         radio_id=RadioId("radio_vertical"),
         receiver_chain_ids=segment.receiver_chain_ids,
         activities=(
-            ActivityRequest(
-                ActivityId("act_vertical"), ActivityKind.DWELL, (segment,)
-            ),
+            ActivityRequest(ActivityId("act_vertical"), ActivityKind.DWELL, (segment,)),
         ),
     )
     clock = FakeClock()

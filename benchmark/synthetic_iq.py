@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import struct
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from benchmark.validate import ValidationError, load_json, validate_synthetic_spec
-
 
 MASK64 = (1 << 64) - 1
 Q20 = 1 << 20
@@ -45,8 +44,9 @@ def _round_q20(value: int, gain_q20: int) -> int:
     return -((-numerator + Q20 // 2) // Q20)
 
 
-def _signal_component(case: Mapping[str, Any], source_index: int,
-                      receiver: Mapping[str, Any]) -> tuple[int, int]:
+def _signal_component(
+    case: Mapping[str, Any], source_index: int, receiver: Mapping[str, Any]
+) -> tuple[int, int]:
     if source_index < 0:
         return 0, 0
     signal = case["signal_truth"]
@@ -109,8 +109,11 @@ def verify_spec(spec: Mapping[str, Any]) -> None:
         _, observed = generate_case(case)
         expected = case["expected_truth"]
         for key in (
-            "bytes", "ci16_sha256", "clipped_component_count",
-            "clipped_component_count_by_receiver", "final_prng_state_u64",
+            "bytes",
+            "ci16_sha256",
+            "clipped_component_count",
+            "clipped_component_count_by_receiver",
+            "final_prng_state_u64",
         ):
             if observed[key] != expected[key]:
                 raise ValidationError(
@@ -122,8 +125,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("spec", type=Path)
     parser.add_argument("--case", dest="case_id")
-    parser.add_argument("--output", type=Path,
-                        help="explicitly materialize one small fixture")
+    parser.add_argument(
+        "--output", type=Path, help="explicitly materialize one small fixture"
+    )
     args = parser.parse_args(argv)
     try:
         spec = load_json(args.spec)
@@ -131,7 +135,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.output:
             if not args.case_id:
                 raise ValidationError("--output requires --case")
-            matches = [case for case in spec["cases"] if case["case_id"] == args.case_id]
+            matches = [
+                case for case in spec["cases"] if case["case_id"] == args.case_id
+            ]
             if len(matches) != 1:
                 raise ValidationError(f"unknown --case {args.case_id}")
             data, _ = generate_case(matches[0])

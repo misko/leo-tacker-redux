@@ -17,4 +17,82 @@ jobs:
         with:
           python-version: "3.11"
       - run: uv sync --frozen --extra dev
-      - run: uv run --frozen pytest -q
+      - run: uv run --frozen pytest -q --ignore=tests/postgres
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync --frozen --extra dev --extra server
+      - run: uv run --frozen pytest -q tests/postgres tests/ephemeris/test_worker.py
+
+  hardware-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync --frozen --extra dev --extra hardware
+      - run: >-
+          uv run --frozen pytest -q
+          tests/capture/drivers
+          tests/capture/test_v5_engine.py
+          tests/contracts/test_continuity.py
+          tests/storage/test_v5_continuity_codec.py
+
+  format-spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync --frozen --extra dev --extra format
+      - run: uv run --frozen pytest -q tests/format_spike
+
+  quality-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync --frozen --extra dev --extra server
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen ruff format --check .
+      - run: uv run --frozen mypy --strict src
+      - run: uv build
+
+  v5-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          docker build
+          --file deploy/v5-runtime/Dockerfile
+          --tag leo-flow-v5:ci .
+      - run: docker run --rm leo-flow-v5:ci
+      - run: >-
+          docker run --rm leo-flow-v5:ci
+          /opt/leo-v5/bin/verify-runtime --json
