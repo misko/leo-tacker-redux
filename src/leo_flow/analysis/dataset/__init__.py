@@ -18,6 +18,14 @@ from .codec import (
     decode_dataset_snapshot,
     encode_dataset_snapshot,
 )
+from .persistence import (
+    DATASET_SNAPSHOT_FORMAT_ID,
+    DATASET_SNAPSHOT_MEDIA_TYPE,
+    DatasetSnapshotIntegrityError,
+    DatasetSnapshotNotFoundError,
+    DatasetSnapshotPersistenceError,
+    DurableDatasetSnapshotRepository,
+)
 from .ports import DatasetSnapshotPublisher, DatasetSnapshotReader
 from .snapshot import (
     DatasetMember,
@@ -30,6 +38,8 @@ from .snapshot import (
 )
 
 __all__ = [
+    "DATASET_SNAPSHOT_FORMAT_ID",
+    "DATASET_SNAPSHOT_MEDIA_TYPE",
     "MAX_DATASET_SNAPSHOT_BYTES",
     "DatasetCandidate",
     "DatasetMember",
@@ -37,10 +47,14 @@ __all__ = [
     "DatasetRole",
     "DatasetSnapshot",
     "DatasetSnapshotBundle",
+    "DatasetSnapshotIntegrityError",
+    "DatasetSnapshotNotFoundError",
+    "DatasetSnapshotPersistenceError",
     "DatasetSnapshotPublisher",
     "DatasetSnapshotReader",
     "DatasetSnapshotRef",
     "DatasetSplit",
+    "DurableDatasetSnapshotRepository",
     "LabelEvidence",
     "LabelSource",
     "MalformedDatasetSnapshotError",

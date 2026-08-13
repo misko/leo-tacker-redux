@@ -20,6 +20,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0002_capability_roles.sql",),
         ("0003_ephemeris_catalog.sql",),
         ("0004_dashboard_projections.sql",),
+        ("0005_dataset_snapshots.sql",),
     ]
 
 
@@ -83,6 +84,40 @@ def test_server_is_postgresql_16(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         version = connection.execute("SHOW server_version_num").fetchone()[0]
     assert 160000 <= int(version) < 170000
+
+
+@pytest.mark.integration
+def test_dataset_snapshot_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        (
+            analysis_read,
+            analysis_append,
+            analysis_update,
+            dashboard_read,
+            dashboard_append,
+            capture_read,
+        ) = connection.execute(
+            """
+            SELECT has_table_privilege(
+                       'leo_analysis', 'dataset_snapshot', 'SELECT'),
+                   has_table_privilege(
+                       'leo_analysis', 'dataset_member', 'INSERT'),
+                   has_table_privilege(
+                       'leo_analysis', 'dataset_snapshot', 'UPDATE'),
+                   has_table_privilege(
+                       'leo_dashboard', 'dataset_snapshot', 'SELECT'),
+                   has_table_privilege(
+                       'leo_dashboard', 'dataset_member', 'INSERT'),
+                   has_table_privilege(
+                       'leo_capture', 'dataset_snapshot', 'SELECT')
+            """
+        ).fetchone()
+    assert analysis_read
+    assert analysis_append
+    assert not analysis_update
+    assert dashboard_read
+    assert not dashboard_append
+    assert not capture_read
 
 
 @pytest.mark.integration

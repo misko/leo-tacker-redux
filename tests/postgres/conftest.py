@@ -90,6 +90,7 @@ def postgres_dsn() -> str:
             "0002_capability_roles.sql",
             "0003_ephemeris_catalog.sql",
             "0004_dashboard_projections.sql",
+            "0005_dataset_snapshots.sql",
         )
         yield dsn
     finally:
@@ -110,7 +111,8 @@ def clean_database(postgres_dsn: str) -> None:
             TRUNCATE dashboard_storage_health_projection,
                      dashboard_track_projection, dashboard_model_projection,
                      dashboard_feature_projection, dashboard_activity_projection,
-                     dashboard_recording_projection, ephemeris_snapshot,
+                     dashboard_recording_projection, dataset_member,
+                     dataset_snapshot, ephemeris_snapshot,
                      recording, object_blob, job
             """
         )
