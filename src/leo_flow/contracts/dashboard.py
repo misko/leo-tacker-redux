@@ -59,7 +59,7 @@ class ActivitySummary:
 class RecordingDetail:
     summary: RecordingSummary
     segment_count: int
-    raw_object_available: bool
+    recording_object_available: bool
 
 
 @dataclass(frozen=True)

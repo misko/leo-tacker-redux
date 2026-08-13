@@ -7,9 +7,19 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol, runtime_checkable
 
-from leo_flow.contracts.capture import CapturePlan, RecordingManifest, SegmentManifest
+from leo_flow.contracts.capture import (
+    CapturePlan,
+    CompletedLocalRecording,
+    RecordingManifest,
+    SegmentManifest,
+)
 from leo_flow.contracts.core import Digest, HardwareSnapshotId, RecordingId, SegmentId
-from leo_flow.contracts.storage import ByteRange, ObjectMetadata, ObjectRef
+from leo_flow.contracts.storage import (
+    ByteRange,
+    ObjectMetadata,
+    ObjectRef,
+    RecordingObjectRef,
+)
 
 
 @runtime_checkable
@@ -43,7 +53,7 @@ class RecordingWriteSession(Protocol):
 
     def finish_segment(self, segment: SegmentManifest) -> None: ...
 
-    def finalize(self, manifest: RecordingManifest) -> None: ...
+    def finalize(self, manifest: RecordingManifest) -> CompletedLocalRecording: ...
 
     def abort(self, reason: str) -> None: ...
 
@@ -68,7 +78,7 @@ class RecordingView(Protocol):
 
 class RecordingObjectReader(Protocol):
     def open(
-        self, raw_ref: ObjectRef, manifest_digest: Digest
+        self, recording_ref: RecordingObjectRef
     ) -> AbstractContextManager[RecordingView]: ...
 
 

@@ -251,14 +251,31 @@ class CapturePlanRef:
 
 
 @dataclass(frozen=True)
-class CompletedLocalRecording:
-    recording_id: RecordingId
-    local_locator: str
-    manifest: RecordingManifest
-    manifest_digest: Digest
+class LocalObjectRef:
+    """Verified local bytes awaiting publication; the locator is opaque."""
+
+    locator: str
+    digest: Digest
     byte_count: int
 
     def __post_init__(self) -> None:
         require_positive(self.byte_count, "byte_count")
+        if not self.locator:
+            raise ValueError("local object locator cannot be empty")
+
+
+@dataclass(frozen=True)
+class CompletedLocalRecording:
+    """A locally complete pair; neither object is independently publishable."""
+
+    recording_id: RecordingId
+    data_object: LocalObjectRef
+    metadata_object: LocalObjectRef
+    manifest: RecordingManifest
+    manifest_digest: Digest
+
+    def __post_init__(self) -> None:
         if self.recording_id != self.manifest.recording_id:
             raise ValueError("recording IDs differ")
+        if self.data_object.digest == self.metadata_object.digest:
+            raise ValueError("recording data and metadata must be distinct objects")

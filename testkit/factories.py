@@ -7,8 +7,10 @@ from leo_flow.contracts.capture import (
     ActivityManifest,
     ActivityRequest,
     CapturePlan,
+    CompletedLocalRecording,
     GainMode,
     GainSetting,
+    LocalObjectRef,
     RecordingManifest,
     SegmentManifest,
     SegmentRequest,
@@ -26,7 +28,7 @@ from leo_flow.contracts.core import (
     StationId,
     UtcNs,
 )
-from leo_flow.contracts.storage import ObjectRef
+from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 
 
 def digest(seed: str = "fixture") -> Digest:
@@ -36,6 +38,26 @@ def digest(seed: str = "fixture") -> Digest:
 def object_ref(seed: str = "fixture") -> ObjectRef:
     return ObjectRef(
         digest(seed), 128, "application/octet-stream", "fixture-v1", f"opaque:{seed}"
+    )
+
+
+def recording_object_ref() -> RecordingObjectRef:
+    return RecordingObjectRef(
+        RecordingId("rec_01"),
+        object_ref("recording-data"),
+        object_ref("recording-metadata"),
+        digest("embedded-manifest"),
+    )
+
+
+def completed_local_recording() -> CompletedLocalRecording:
+    manifest = recording_manifest()
+    return CompletedLocalRecording(
+        manifest.recording_id,
+        LocalObjectRef("local:data", digest("recording-data"), 128),
+        LocalObjectRef("local:metadata", digest("recording-metadata"), 128),
+        manifest,
+        digest("embedded-manifest"),
     )
 
 

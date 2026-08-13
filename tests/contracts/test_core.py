@@ -32,6 +32,24 @@ def test_canonical_json_rejects_nonfinite_and_normalizes_negative_zero() -> None
             canonical_json_bytes({"value": invalid})
 
 
+def test_rfc8785_serialization_sample_and_companion_sha256_vector() -> None:
+    """RFC 8785 section 3.2.2 sample, plus a fixed digest of those exact bytes."""
+    sample = {
+        "numbers": [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27],
+        "string": '€$\u000f\nA\'B"\\"/',
+        "literals": [None, True, False],
+    }
+    expected = (
+        b'{"literals":[null,true,false],"numbers":[333333333.3333333,'
+        b'1e+30,4.5,0.002,1e-27],"string":"\xe2\x82\xac$\\u000f\\nA\'B'
+        b'\\"\\\\\\"/"}'
+    )
+    assert canonical_json_bytes(sample) == expected
+    assert Digest.sha256(expected).value == (
+        "6d77565c0fe51d7346bd5debb08f2eebbe9bde01eade30b34e2011f360f91b0e"
+    )
+
+
 def test_schema_compatibility_is_explicit_within_one_major() -> None:
     reader = SchemaVersion.parse("1.3")
     assert reader.can_read(SchemaVersion.parse("1.0"))

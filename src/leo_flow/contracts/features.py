@@ -26,7 +26,7 @@ from .core import (
     SegmentId,
     UtcNs,
 )
-from .storage import ObjectRef
+from .storage import ObjectRef, RecordingObjectRef
 
 
 @dataclass(frozen=True)
@@ -156,8 +156,7 @@ class MethodScore:
 class RecordingAnalysisRequest:
     schema: SchemaRef
     recording_id: RecordingId
-    raw_object_ref: ObjectRef
-    recording_manifest_digest: Digest
+    recording_object_ref: RecordingObjectRef
     algorithm_ref: ArtifactRef
     config_ref: ArtifactRef
     dependency_refs: tuple[ArtifactRef, ...]
@@ -168,6 +167,8 @@ class RecordingAnalysisRequest:
     def __post_init__(self) -> None:
         if self.schema.schema_id != self.SCHEMA_ID or self.schema.version != V0_1:
             raise ValueError("unsupported recording analysis request")
+        if self.recording_id != self.recording_object_ref.recording_id:
+            raise ValueError("analysis request recording IDs differ")
 
 
 @dataclass(frozen=True)
@@ -176,7 +177,7 @@ class FeatureSetBundle:
     feature_set_id: FeatureSetId
     analysis_run_id: AnalysisRunId
     recording_id: RecordingId
-    input_recording_digest: Digest
+    input_recording_identity_digest: Digest
     provenance: Provenance
     observations: tuple[FeatureObservation, ...]
     method_scores: tuple[MethodScore, ...]
