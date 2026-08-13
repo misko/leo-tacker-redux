@@ -9,3 +9,6 @@ cross-recording state from frozen feature sets, and the dashboard is read-only.
 
 This repository is under initial construction. The legacy `leo-tracker`
 repository is a reference and numerical oracle, not a runtime dependency.
+
+V5 Pluto capture uses the isolated, fail-closed host environment documented in
+[Pluto V5 host runtime](docs/v5-host-runtime.md).

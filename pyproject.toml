@@ -19,7 +19,7 @@ server = [
   "psycopg[binary]>=3.2",
 ]
 hardware = [
-  "pyadi-iio>=0.0.21",
+  "pyadi-iio==0.0.21",
 ]
 
 [tool.hatch.build.targets.wheel]

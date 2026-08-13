@@ -163,7 +163,7 @@ server = [
 [package.metadata]
 requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.2" },
-    { name = "pyadi-iio", marker = "extra == 'hardware'", specifier = ">=0.0.21" },
+    { name = "pyadi-iio", marker = "extra == 'hardware'", specifier = "==0.0.21" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
 ]
