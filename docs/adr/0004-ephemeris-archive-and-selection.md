@@ -1,4 +1,4 @@
-# ADR 0003: Immutable ephemeris archive and temporal selection
+# ADR 0004: Immutable ephemeris archive and temporal selection
 
 Status: accepted for Wave 4
 Date: 2026-08-13
