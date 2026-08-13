@@ -6,7 +6,7 @@ INSERT INTO object_blob
 VALUES
     (%(digest_algorithm)s, %(digest_value)s, %(byte_count)s,
      %(media_type)s, %(format_id)s, %(locator)s)
-ON CONFLICT (digest_algorithm, digest_value) DO NOTHING
+ON CONFLICT DO NOTHING
 """
 
 VERIFY_OBJECT_SQL = """
@@ -28,7 +28,7 @@ VALUES
     (%(recording_id)s, %(data_digest_algorithm)s, %(data_digest_value)s,
      %(metadata_digest_algorithm)s, %(metadata_digest_value)s,
      %(manifest_digest_value)s, %(idempotency_key)s, 'published')
-ON CONFLICT (recording_id) DO NOTHING
+ON CONFLICT DO NOTHING
 RETURNING recording_id
 """
 
