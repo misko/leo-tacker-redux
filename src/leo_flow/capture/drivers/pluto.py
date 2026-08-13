@@ -123,6 +123,7 @@ class PlutoPairedRadio:
         serial_reader: SerialReader | None = None,
         health_reader: HealthReader | None = None,
         metadata_reader: MetadataReader | None = None,
+        attested_provenance: CaptureProvenance | None = None,
         clock: CaptureClock | None = None,
     ) -> None:
         self.config = config
@@ -131,6 +132,7 @@ class PlutoPairedRadio:
         self._serial_reader = serial_reader or _default_serial_reader
         self._health_reader = health_reader or _default_health_reader
         self._metadata_reader = metadata_reader
+        self._attested_provenance = attested_provenance
         self._clock = clock or SystemCaptureClock()
         self._device: PlutoDevice | None = None
 
@@ -144,6 +146,8 @@ class PlutoPairedRadio:
 
     @property
     def capture_provenance(self) -> CaptureProvenance:
+        if self._attested_provenance is not None:
+            return self._attested_provenance
         capability = (
             self.config.metadata_capability
             if self._metadata_reader is not None
@@ -175,7 +179,8 @@ class PlutoPairedRadio:
                     "v5 contiguous capture requires a patched-libiio metadata reader"
                 )
             return self.acquire_segment(request, lambda data: write_refill(data, None))
-        if self.config.host_libiio_version == "unknown":
+        provenance = self.capture_provenance
+        if provenance.host_libiio_version == "unknown":
             raise RadioConfigurationError(
                 "verified v5 capture requires exact host libiio provenance"
             )
@@ -237,9 +242,9 @@ class PlutoPairedRadio:
                 "block_samples": self.config.block_samples,
                 "byte_count": samples_written * 8,
                 "continuity": "verified",
-                "firmware_release": self.config.firmware_release,
-                "host_libiio_version": self.config.host_libiio_version,
-                "metadata_protocol": self.config.metadata_protocol,
+                "firmware_release": provenance.firmware_release,
+                "host_libiio_version": provenance.host_libiio_version,
+                "metadata_protocol": provenance.metadata_protocol,
                 "refill_count": refill_count,
                 "serial": self.config.expected_serial,
             },
