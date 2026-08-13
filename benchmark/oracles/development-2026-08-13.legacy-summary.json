@@ -1,0 +1,86 @@
+{
+  "schema": "leo-flow.legacy-oracle-summary/v1",
+  "oracle_id": "legacy-pilot-symbolwise-v3-development-2026-08-13-v1",
+  "corpus_id": "leo-flow-development-2026-08-13-v1",
+  "membership_digest_sha256": "b7d8c18ac3a7933c13bf38de3b8056eec208c4cac4198cab962ab724aeeaf0f9",
+  "field_semantics": {
+    "scientific_truth": false,
+    "purpose": "Frozen regression observations from exact legacy report bytes",
+    "comparison_rule": "Ported kernels may compare documented fields within an approved tolerance; these values must never become labels or acceptance thresholds",
+    "confirmation_warning": "Legacy confirmed may mean one same-receiver link; it does not imply dual-receiver or independent confirmation"
+  },
+  "entries": [
+    {
+      "oracle_entry_id": "oracle-dev-0001",
+      "recording_id": "ch1-upper-edge-narrow-pluto-5d4d-20260813T165809Z",
+      "analysis_report_sha256": "cfdf08c70783665ffcdc0a629fb1dbacf7b2ba5474b66015bdcd3129d4585eb9",
+      "followup_report_sha256": "00de30a68f5a5b9f9a9c776f2193d836a2f57f7c6eddc9a0d35158f29c98033f",
+      "analysis_summary": {"window_count": 120, "exact_check_count": 120, "exact_candidate_count": 0, "exact_qualified_count": 0, "single_receiver_candidate_count": 7, "single_receiver_qualified_count": 2, "followup_trigger_count": 7, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": true, "same_receiver_confirmed": true, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0002",
+      "recording_id": "ch2-lower-edge-narrow-pluto-5d4d-20260813T173752Z",
+      "analysis_report_sha256": "09804af00dce915e5ab47f8dafaf29f85d3bd602b2623328b85595601ce5d933",
+      "followup_report_sha256": "42b6c8c339197af2d86f54dfb80635e25bb4bd5aea80f52ad912c36cf9a73aec",
+      "analysis_summary": {"window_count": 120, "exact_check_count": 120, "exact_candidate_count": 0, "exact_qualified_count": 0, "single_receiver_candidate_count": 3, "single_receiver_qualified_count": 0, "followup_trigger_count": 3, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": false, "same_receiver_confirmed": false, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0003",
+      "recording_id": "ch2-lower-edge-narrow-pluto-19f2-20260813T161632Z",
+      "analysis_report_sha256": "c46cab5f4ff49d97d8734b0c6a4f48bea5a8d8c884f6ed12474f1dc37a42d179",
+      "followup_report_sha256": "83ebdd6fcc4e5bd8a8aee729948072ba093d6682c54f1c0f8da69da1d4ef74af",
+      "analysis_summary": {"window_count": 120, "exact_check_count": 120, "exact_candidate_count": 0, "exact_qualified_count": 0, "single_receiver_candidate_count": 0, "single_receiver_qualified_count": 0, "followup_trigger_count": 1, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": false, "same_receiver_confirmed": false, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0004",
+      "recording_id": "ch3-upper-edge-narrow-pluto-19f2-20260813T144951Z",
+      "analysis_report_sha256": "5f007478271f9bd8991a6405886f1f6c1032f3ee49eda646326ddce37c550504",
+      "followup_report_sha256": "bb1f5f6877cc287d01f10c83a5fab5763ed2655bb7303fee66346c863ebc170a",
+      "analysis_summary": {"window_count": 120, "exact_check_count": 120, "exact_candidate_count": 5, "exact_qualified_count": 0, "single_receiver_candidate_count": 26, "single_receiver_qualified_count": 1, "followup_trigger_count": 24, "doppler_track_qualified": true},
+      "confirmation": {"confirmed": true, "same_receiver_confirmed": true, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0005",
+      "recording_id": "ch4-upper-edge-narrow-pluto-19f2-20260813T151313Z",
+      "analysis_report_sha256": "fc78da4176b4de94822559a09ee0e67dd65149aa189c0f695d4d1a2b51d6abab",
+      "followup_report_sha256": "aa746d1114871bab660324e3c7fafd1fea4f10d26801d477a5f699741ea108b1",
+      "analysis_summary": {"window_count": 120, "exact_check_count": 120, "exact_candidate_count": 1, "exact_qualified_count": 0, "single_receiver_candidate_count": 10, "single_receiver_qualified_count": 0, "followup_trigger_count": 14, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": true, "same_receiver_confirmed": true, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0006",
+      "recording_id": "ch4-upper-edge-oversample-pluto-5d4d-20260813T162816Z",
+      "analysis_report_sha256": "6c5582aa431df160dbae286eebe6765f4a91c95bed128cee7efc227244624d04",
+      "followup_report_sha256": "953085c6e3938a4ba4fe78033da8106df7c39b7cf916fb1eea900c1486462bc3",
+      "analysis_summary": {"window_count": 15, "exact_check_count": 15, "exact_candidate_count": 0, "exact_qualified_count": 0, "single_receiver_candidate_count": 6, "single_receiver_qualified_count": 3, "followup_trigger_count": 6, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": false, "same_receiver_confirmed": false, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0007",
+      "recording_id": "ch4-upper-edge-oversample-pluto-5d4d-20260813T150636Z",
+      "analysis_report_sha256": "f20fbd10b52107793aeb4147558531ab869994070f7f4cc9acb0ce467bfd7835",
+      "followup_report_sha256": "04da4fa47a808adf291154c73ccdcb2e9119b44c0eef32bef2c584dca046cff4",
+      "analysis_summary": {"window_count": 15, "exact_check_count": 15, "exact_candidate_count": 0, "exact_qualified_count": 0, "single_receiver_candidate_count": 0, "single_receiver_qualified_count": 0, "followup_trigger_count": 0, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": false, "same_receiver_confirmed": false, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0008",
+      "recording_id": "ch1-upper-edge-wide-pluto-5d4d-20260813T175013Z",
+      "analysis_report_sha256": "aa66c90be090e0db2ee687388747e150e0649f0003bfc49f394f5b37d69d9e8d",
+      "followup_report_sha256": "4c7b0e0aea8a4b82d05bb3685eb98a6ed3407dab1428f57d1f09cef9abbd8b71",
+      "analysis_summary": {"window_count": 10, "exact_check_count": 5, "exact_candidate_count": 0, "exact_qualified_count": 0, "single_receiver_candidate_count": 0, "single_receiver_qualified_count": 0, "followup_trigger_count": 0, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": false, "same_receiver_confirmed": false, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    },
+    {
+      "oracle_entry_id": "oracle-dev-0009",
+      "recording_id": "hop-lower-edge-pluto-5d4d-20260810T172608Z-b02-03-ch4-lower-edge",
+      "analysis_report_sha256": "83cdfcbf62a4cb64e39a50d3d2406956b76202777172f35e40c1d273ef02fdd2",
+      "followup_report_sha256": "02884e1d91466a76edcb98d73be8c5f9062a735fb7da0578e8d951ad6fafd2bb",
+      "analysis_summary": {"window_count": 2, "exact_check_count": 3, "exact_candidate_count": 0, "exact_qualified_count": 0, "single_receiver_candidate_count": 0, "single_receiver_qualified_count": 0, "followup_trigger_count": 0, "doppler_track_qualified": false},
+      "confirmation": {"confirmed": false, "same_receiver_confirmed": false, "dual_receiver_confirmed": false, "cross_receiver_confirmed": false}
+    }
+  ]
+}

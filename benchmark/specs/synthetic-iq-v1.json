@@ -1,0 +1,186 @@
+{
+  "schema": "leo-flow.synthetic-iq-fixtures/v1",
+  "generator_contract": {
+    "detector_independent": true,
+    "implementation": "benchmark.synthetic_iq/v1",
+    "noise_prng": "xorshift64star-2685821657736338717",
+    "oscillator": "qpsk-quadrant-nco-q64",
+    "phase_recurrence": "phase[n]=phase_start+n*phase_step_start+n*(n-1)/2*phase_step_delta (mod 2**64)",
+    "frequency_truth": "frequency_start_hz=phase_step_start_q64*sample_rate_hz/2**64",
+    "drift_truth": "drift_hz_s=phase_step_delta_q64*sample_rate_hz**2/2**64",
+    "snr_truth": "snr_linear=amplitude_counts**2/(2*noise_peak*(noise_peak+1)/3); snr_db=10*log10(snr_linear)",
+    "receiver_order": "apply integer delay to signal; add independent PRNG noise; multiply signal+noise by gain_q20/2**20 with ties away from zero; add DC; clip",
+    "cross_platform_rule": "the generated CI16 bytes and SHA-256 are normative; decimal frequency, drift, gain and SNR strings document the corresponding physical truth"
+  },
+  "sample_contract": {
+    "dtype": "int16_le",
+    "layout": "sample,receiver,component",
+    "receiver_order": ["rx0", "rx1"],
+    "component_order": ["i", "q"],
+    "bytes_per_sample_pair": 8
+  },
+  "cases": [
+    {
+      "case_id": "01-clipped-chirp-two-receiver",
+      "sample_rate_hz": 1000000,
+      "sample_count": 4096,
+      "seed_u64": 81985529216486895,
+      "signal_truth": {
+        "amplitude_counts": 1800,
+        "phase_start_q64": 1152921504606846976,
+        "phase_step_start_q64": 2305843009213693952,
+        "phase_step_delta_q64": -18446744073,
+        "frequency_start_hz": "125000.000000000000000000",
+        "drift_hz_s": "-999.999999961535129822",
+        "snr_linear_ratio": "16200/301",
+        "snr_db": "17.309485189"
+      },
+      "noise_truth": {
+        "distribution": "independent discrete uniform integer [-300,300] per component before gain",
+        "uniform_component_peak_counts": 300
+      },
+      "receiver_truth": [
+        {
+          "receiver_id": "rx0",
+          "delay_samples": 0,
+          "gain_q20": 1572864,
+          "gain_db": "3.521825181",
+          "phase_offset_q64": 0,
+          "phase_offset_rad": "0.000000000",
+          "dc_i_counts": 50,
+          "dc_q_counts": -25
+        },
+        {
+          "receiver_id": "rx1",
+          "delay_samples": 5,
+          "gain_q20": 2097152,
+          "gain_db": "6.020599913",
+          "phase_offset_q64": 4611686018427387904,
+          "phase_offset_rad": "1.570796327",
+          "dc_i_counts": -30,
+          "dc_q_counts": 40
+        }
+      ],
+      "quantization_truth": {
+        "rounding": "nearest_ties_away_from_zero",
+        "clip_min": -2048,
+        "clip_max": 2047
+      },
+      "expected_truth": {
+        "bytes": 32768,
+        "ci16_sha256": "70782d3df6c33778af68927aaa62104f93bedf6600e5703ddbb4f5a198ceb5b2",
+        "clipped_component_count": 8187,
+        "clipped_component_count_by_receiver": [4096, 4091],
+        "final_prng_state_u64": 11357998422789622907
+      }
+    },
+    {
+      "case_id": "02-clean-chirp-two-receiver",
+      "sample_rate_hz": 1000000,
+      "sample_count": 4096,
+      "seed_u64": 1311768467463790320,
+      "signal_truth": {
+        "amplitude_counts": 1024,
+        "phase_start_q64": 0,
+        "phase_step_start_q64": 2305843009213693952,
+        "phase_step_delta_q64": -18446744073,
+        "frequency_start_hz": "125000.000000000000000000",
+        "drift_hz_s": "-999.999999961535129822",
+        "snr_linear_ratio": "24576/65",
+        "snr_db": "25.775978417"
+      },
+      "noise_truth": {
+        "distribution": "independent discrete uniform integer [-64,64] per component before gain",
+        "uniform_component_peak_counts": 64
+      },
+      "receiver_truth": [
+        {
+          "receiver_id": "rx0",
+          "delay_samples": 0,
+          "gain_q20": 1048576,
+          "gain_db": "0.000000000",
+          "phase_offset_q64": 0,
+          "phase_offset_rad": "0.000000000",
+          "dc_i_counts": 0,
+          "dc_q_counts": 0
+        },
+        {
+          "receiver_id": "rx1",
+          "delay_samples": 3,
+          "gain_q20": 524288,
+          "gain_db": "-6.020599913",
+          "phase_offset_q64": 4611686018427387904,
+          "phase_offset_rad": "1.570796327",
+          "dc_i_counts": 7,
+          "dc_q_counts": -11
+        }
+      ],
+      "quantization_truth": {
+        "rounding": "nearest_ties_away_from_zero",
+        "clip_min": -2048,
+        "clip_max": 2047
+      },
+      "expected_truth": {
+        "bytes": 32768,
+        "ci16_sha256": "caf941c8a06b1c1bee337ebe665cdfd5ba608973db4ec2571b05157e0067e1ae",
+        "clipped_component_count": 0,
+        "clipped_component_count_by_receiver": [0, 0],
+        "final_prng_state_u64": 11903927418095591097
+      }
+    },
+    {
+      "case_id": "03-weak-static-two-receiver",
+      "sample_rate_hz": 2500000,
+      "sample_count": 8192,
+      "seed_u64": 1084818905618843912,
+      "signal_truth": {
+        "amplitude_counts": 64,
+        "phase_start_q64": 9223372036854775808,
+        "phase_step_start_q64": 1701411834604692317,
+        "phase_step_delta_q64": 0,
+        "frequency_start_hz": "230584.300921369395",
+        "drift_hz_s": "0.000000000000000000",
+        "snr_linear_ratio": "4/171",
+        "snr_db": "-16.309361191"
+      },
+      "noise_truth": {
+        "distribution": "independent discrete uniform integer [-512,512] per component before gain",
+        "uniform_component_peak_counts": 512
+      },
+      "receiver_truth": [
+        {
+          "receiver_id": "rx0",
+          "delay_samples": 0,
+          "gain_q20": 1048576,
+          "gain_db": "0.000000000",
+          "phase_offset_q64": 0,
+          "phase_offset_rad": "0.000000000",
+          "dc_i_counts": 0,
+          "dc_q_counts": 0
+        },
+        {
+          "receiver_id": "rx1",
+          "delay_samples": -2,
+          "gain_q20": 786432,
+          "gain_db": "-2.498774732",
+          "phase_offset_q64": 13835058055282163712,
+          "phase_offset_rad": "4.712388980",
+          "dc_i_counts": 100,
+          "dc_q_counts": -100
+        }
+      ],
+      "quantization_truth": {
+        "rounding": "nearest_ties_away_from_zero",
+        "clip_min": -2048,
+        "clip_max": 2047
+      },
+      "expected_truth": {
+        "bytes": 65536,
+        "ci16_sha256": "6911cbe40b468a53bcd112929522ccca7323eee911e691bdaf6ce5a62a8109f2",
+        "clipped_component_count": 0,
+        "clipped_component_count_by_receiver": [0, 0],
+        "final_prng_state_u64": 1632017412560556146
+      }
+    }
+  ]
+}
