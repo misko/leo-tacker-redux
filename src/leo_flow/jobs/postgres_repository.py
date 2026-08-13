@@ -21,6 +21,7 @@ from leo_flow.contracts.core import (
 
 from . import postgres_sql
 from .contracts import JobLease, JobPayload, JobType
+from .ports import StaleLeaseError
 
 
 class PostgresJobError(RuntimeError):
@@ -28,10 +29,6 @@ class PostgresJobError(RuntimeError):
 
 
 class JobConflictError(PostgresJobError):
-    pass
-
-
-class StaleLeaseError(PostgresJobError):
     pass
 
 

@@ -9,6 +9,10 @@ from leo_flow.contracts.core import ArtifactRef, JobId, UtcNs
 from .contracts import JobLease, JobType
 
 
+class StaleLeaseError(RuntimeError):
+    """A mutation was attempted without the currently active lease generation."""
+
+
 class JobLeaseRepository(Protocol):
     def claim(
         self,

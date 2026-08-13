@@ -12,13 +12,10 @@ from enum import Enum
 from leo_flow.contracts.core import ArtifactRef, JobId, UtcNs
 
 from .contracts import JobLease, JobPayload, JobType
+from .ports import StaleLeaseError
 
 
 class LeaseError(RuntimeError):
-    pass
-
-
-class StaleLeaseError(LeaseError):
     pass
 
 

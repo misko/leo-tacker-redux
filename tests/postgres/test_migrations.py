@@ -15,7 +15,11 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         rows = connection.execute(
             "SELECT name FROM schema_migration ORDER BY name"
         ).fetchall()
-    assert rows == [("0001_first_slice.sql",), ("0002_capability_roles.sql",)]
+    assert rows == [
+        ("0001_first_slice.sql",),
+        ("0002_capability_roles.sql",),
+        ("0003_ephemeris_catalog.sql",),
+    ]
 
 
 @pytest.mark.integration
@@ -48,6 +52,29 @@ def test_capability_roles_are_narrow(postgres_dsn: str) -> None:
     assert not capture_job
     assert dashboard_select
     assert not dashboard_mutate
+
+
+@pytest.mark.integration
+def test_ephemeris_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        analysis_insert, analysis_update, dashboard_read, capture_read = (
+            connection.execute(
+                """
+                SELECT has_table_privilege(
+                           'leo_analysis', 'ephemeris_snapshot', 'INSERT'),
+                       has_table_privilege(
+                           'leo_analysis', 'ephemeris_snapshot', 'UPDATE'),
+                       has_table_privilege(
+                           'leo_dashboard', 'ephemeris_snapshot', 'SELECT'),
+                       has_table_privilege(
+                           'leo_capture', 'ephemeris_snapshot', 'SELECT')
+                """
+            ).fetchone()
+        )
+    assert analysis_insert
+    assert not analysis_update
+    assert dashboard_read
+    assert not capture_read
 
 
 @pytest.mark.integration

@@ -67,6 +67,17 @@ class EphemerisIngestionService:
         self._config = config
 
     def acquire(self, request: EphemerisRetrievalRequest) -> ArchivedEphemerisSnapshot:
+        archived = self.prepare(request)
+        self._catalog.publish(archived)
+        return archived
+
+    def prepare(self, request: EphemerisRetrievalRequest) -> ArchivedEphemerisSnapshot:
+        """Build an archived candidate without making it catalog-visible.
+
+        Fenced workers use this boundary so catalog publication and lease
+        completion can share one database transaction. Direct callers retain
+        the original ``acquire`` behavior.
+        """
         prior = self._catalog.get_by_retrieval(request.retrieval_id)
         if prior is not None:
             expected_request_digest = _request_digest(
@@ -143,7 +154,6 @@ class EphemerisIngestionService:
         archived = ArchivedEphemerisSnapshot(
             snapshot, provenance_ref, request_digest.value
         )
-        self._catalog.publish(archived)
         return archived
 
 

@@ -12,6 +12,7 @@ from .normalization import TLECatalogNormalizer, TLEValidationPolicy, TLEValidat
 from .providers import HuggingFaceRetriever, SpaceTrackRetriever
 from .resolver import SnapshotRecord, TemporalEphemerisResolver
 from .scheduling import EphemerisRetryPolicy, EphemerisSchedule, EphemerisScheduler
+from .worker import EphemerisRetrievalWorker
 
 __all__ = [
     "ArchivedEphemerisSnapshot",
@@ -20,6 +21,7 @@ __all__ = [
     "CasRawEphemerisArchive",
     "EphemerisIngestionConfig",
     "EphemerisIngestionService",
+    "EphemerisRetrievalWorker",
     "EphemerisRetryPolicy",
     "EphemerisSchedule",
     "EphemerisScheduler",

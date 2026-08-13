@@ -85,7 +85,11 @@ def postgres_dsn() -> str:
             pytest.fail(f"PostgreSQL 16 did not become ready: {last_error}")
         with psycopg.connect(dsn) as connection:
             applied = apply_migrations(connection, Path("migrations"))
-        assert applied == ("0001_first_slice.sql", "0002_capability_roles.sql")
+        assert applied == (
+            "0001_first_slice.sql",
+            "0002_capability_roles.sql",
+            "0003_ephemeris_catalog.sql",
+        )
         yield dsn
     finally:
         subprocess.run(
@@ -100,4 +104,4 @@ def postgres_dsn() -> str:
 @pytest.fixture(autouse=True)
 def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
-        connection.execute("TRUNCATE recording, object_blob, job")
+        connection.execute("TRUNCATE ephemeris_snapshot, recording, object_blob, job")

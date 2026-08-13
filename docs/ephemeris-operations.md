@@ -28,6 +28,38 @@ terms and rate limits before enabling the scheduler.
 5. Enqueue stable cadence slots with `EphemerisScheduler`; execute them under
    the existing fenced `EPHEMERIS_RETRIEVAL` job lease.
 
+## Persistent catalog and fenced completion
+
+Migration `0003_ephemeris_catalog.sql` adds the immutable
+`ephemeris_snapshot` catalog. The catalog row is the single visibility point
+for the raw, normalized, and provenance object references. Retrieval IDs and
+snapshot IDs are each unique; replaying identical content is idempotent, while
+reusing either identity for different content is an error. History is ordered
+by exact `retrieved_at_utc_ns` and then snapshot ID, preserving deterministic
+`AVAILABLE_THEN` and `FIRST_AFTER` selection.
+
+Production workers must call `EphemerisIngestionService.prepare`, then commit
+with `PostgresFencedEphemerisCommitter`. The committer locks and validates the
+active `EPHEMERIS_RETRIEVAL` lease, registers all object references, publishes
+the snapshot, and marks the job succeeded in one transaction. Do not compose a
+worker from `catalog.publish` followed by `jobs.complete`: that split permits a
+lease-expiry race. A stale token or generation cannot publish or complete.
+
+The job payload is an allowlisted description containing retrieval ID, source,
+scope, request-spec label, and schedule slot only. Credentials remain a
+separate provider-transport capability. Failures store retry-policy reason
+codes, never provider exception text.
+
+Database capabilities are intentionally asymmetric: `leo_analysis` may insert
+catalog/object references and update jobs; `leo_dashboard` can only read the
+catalog; `leo_capture` has no ephemeris access. Snapshot rows are immutable for
+all component roles.
+
+Before enabling production schedules, integration still needs to supply the
+provider-specific retriever factory and secret-store capability, run one
+explicit opt-in provider canary, define operator handling for non-retryable job
+failures, and install the cadence scheduler as a supervised process.
+
 No live provider calls run during normal unit/integration tests. A separately
 marked, opt-in provider canary should fetch once into a temporary CAS, validate
 checksums/count/epoch bounds, verify no secret appears in diagnostics, and then
