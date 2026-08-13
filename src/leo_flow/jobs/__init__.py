@@ -1,6 +1,14 @@
 """Database-backed job lease contracts and interfaces."""
 
 from .contracts import JobLease, JobPayload, JobType
+from .memory import InMemoryJobLeaseRepository, StaleLeaseError
 from .ports import JobLeaseRepository
 
-__all__ = ["JobLease", "JobLeaseRepository", "JobPayload", "JobType"]
+__all__ = [
+    "InMemoryJobLeaseRepository",
+    "JobLease",
+    "JobLeaseRepository",
+    "JobPayload",
+    "JobType",
+    "StaleLeaseError",
+]
