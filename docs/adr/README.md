@@ -11,3 +11,4 @@ golden fixtures that change.
 - [0005: Ground truth and dataset partitions](0005-ground-truth-and-dataset-partitions.md)
 - [0007: Fail-closed V5 startup attestation](0007-v5-startup-attestation.md)
 - [0008: Verified-gapped recordings](0008-verified-gapped-recordings.md)
+- [0009: Independent-recording detector suite](0009-independent-recording-detector-suite.md)
