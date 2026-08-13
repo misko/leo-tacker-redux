@@ -18,6 +18,7 @@ from leo_flow.contracts.capture import (
     SegmentManifest,
     SegmentRequest,
 )
+from leo_flow.contracts.continuity import RefillMetadata, SegmentContinuity
 from leo_flow.contracts.core import (
     ActivityId,
     Digest,
@@ -37,7 +38,6 @@ from leo_flow.contracts.storage import (
     PublishedRecordingRef,
     RecordingObjectRef,
 )
-from leo_flow.contracts.continuity import RefillMetadata, SegmentContinuity
 from testkit import FakeClock
 
 RECORDING_ID = RecordingId("rec_01J00000000000000000000000")

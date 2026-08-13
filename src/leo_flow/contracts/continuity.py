@@ -191,6 +191,10 @@ def _verify_refills(refills: tuple[RefillMetadata, ...]) -> None:
                 != prior.segment_sample_offset + prior.sample_count
             ):
                 raise ValueError("stored IQ refill ranges have a gap or overlap")
-            if refill.monotonic_start_ns < prior.monotonic_end_ns:
-                raise ValueError("refill monotonic times overlap")
+            prior_end_lower_bound = prior.monotonic_end_ns - prior.time_uncertainty_ns
+            current_start_upper_bound = (
+                refill.monotonic_start_ns + refill.time_uncertainty_ns
+            )
+            if current_start_upper_bound < prior_end_lower_bound:
+                raise ValueError("refill monotonic times contradict their uncertainty")
         prior = refill

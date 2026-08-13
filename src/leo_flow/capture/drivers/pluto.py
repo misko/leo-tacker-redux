@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol, TypeAlias
+from typing import Protocol, TypeAlias, cast
 
 from leo_flow.contracts._validation import freeze_mapping
 from leo_flow.contracts.capture import (
@@ -509,7 +509,7 @@ def _lazy_pluto_factory(uri: str) -> PlutoDevice:
         raise ImportError(
             "pyadi-iio does not provide the AD9361 device adapter"
         ) from error
-    return device_type(uri=uri)
+    return cast(PlutoDevice, device_type(uri=uri))
 
 
 def _lazy_numpy_interleaver(refill: object, expected_channels: int) -> bytes:
@@ -542,7 +542,7 @@ def _lazy_numpy_interleaver(refill: object, expected_channels: int) -> bytes:
         for component_index in range(IQ_COMPONENTS):
             source = components[receiver_index * IQ_COMPONENTS + component_index]
             output[:, receiver_index, component_index] = source
-    return output.tobytes(order="C")
+    return cast(bytes, output.tobytes(order="C"))
 
 
 def _default_serial_reader(device: PlutoDevice) -> str | None:

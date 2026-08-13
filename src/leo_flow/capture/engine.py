@@ -114,20 +114,27 @@ class PlanCaptureEngine:
                             raise ContinuityError(
                                 "metadata-aware radio requires a continuity-aware writer"
                             )
+                        typed_append_refill = cast(
+                            Callable[[SegmentId, bytes, RefillMetadata], None],
+                            append_refill,
+                        )
                         refills: list[RefillMetadata] = []
+                        current_segment_id = request.segment_id
 
                         def write_refill(
                             data: bytes,
                             metadata: RefillMetadata | None,
-                            segment_id: SegmentId = request.segment_id,
-                            append_refill=append_refill,
-                            refills: list[RefillMetadata] = refills,
+                            segment_id: SegmentId = current_segment_id,
+                            append: Callable[
+                                [SegmentId, bytes, RefillMetadata], None
+                            ] = typed_append_refill,
+                            refill_list: list[RefillMetadata] = refills,
                         ) -> None:
                             if metadata is None:
                                 session.append_iq(segment_id, data)
                             else:
-                                append_refill(segment_id, data, metadata)
-                                refills.append(metadata)
+                                append(segment_id, data, metadata)
+                                refill_list.append(metadata)
 
                         segment = metadata_acquire(request, write_refill)
                         policy = continuity_hardware.continuity_policy

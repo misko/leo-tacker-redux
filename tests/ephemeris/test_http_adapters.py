@@ -57,8 +57,14 @@ def test_space_track_logs_in_once_then_reuses_cookie_session() -> None:
     transport = SpaceTrackSessionTransport(opener=opener)
     credentials = ProviderCredentials("operator@example.test", "secret")
     request = HttpRequest("GET", "https://www.space-track.org/query")
-    assert b"".join(transport.send(request, credentials=credentials).body_chunks) == b"tle-one"
-    assert b"".join(transport.send(request, credentials=credentials).body_chunks) == b"tle-two"
+    assert (
+        b"".join(transport.send(request, credentials=credentials).body_chunks)
+        == b"tle-one"
+    )
+    assert (
+        b"".join(transport.send(request, credentials=credentials).body_chunks)
+        == b"tle-two"
+    )
     assert len(opener.requests) == 3
     login = opener.requests[0][0]
     assert login.full_url == SpaceTrackSessionTransport.LOGIN_URL

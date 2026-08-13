@@ -66,9 +66,7 @@ class EphemerisIngestionService:
         self._catalog = catalog
         self._config = config
 
-    def acquire(
-        self, request: EphemerisRetrievalRequest
-    ) -> ArchivedEphemerisSnapshot:
+    def acquire(self, request: EphemerisRetrievalRequest) -> ArchivedEphemerisSnapshot:
         prior = self._catalog.get_by_retrieval(request.retrieval_id)
         if prior is not None:
             expected_request_digest = _request_digest(
@@ -88,7 +86,9 @@ class EphemerisIngestionService:
             retrieval.raw_object_ref, self._config.parser_ref
         )
         if candidate.source is not request.source or candidate.scope != request.scope:
-            raise ValueError("normalized candidate differs from requested provider/scope")
+            raise ValueError(
+                "normalized candidate differs from requested provider/scope"
+            )
         validation = self._validator.validate(
             candidate, self._config.validation_policy_ref
         )

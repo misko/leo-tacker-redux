@@ -7,7 +7,7 @@ import json
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from leo_flow.contracts.capture import ActivityKind
 from leo_flow.contracts.core import RadioId, RecordingId, UtcNs
@@ -234,7 +234,9 @@ class InMemoryDashboardRepository:
         identities = {row.view.model_snapshot_id for row in matches}
         if len(identities) != 1:
             raise RuntimeError("model release alias is ambiguous")
-        return max(matches, key=lambda row: row.projection_sequence).view
+        return cast(
+            ModelView, max(matches, key=lambda row: row.projection_sequence).view
+        )
 
     def tracks(
         self, query: TimeRangeQuery, cursor: str | None = None
@@ -352,4 +354,4 @@ def _decode_cursor(
             raise ValueError
     except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise InvalidCursor("cursor is invalid for this query") from error
-    return value
+    return cast(dict[str, Any], value)

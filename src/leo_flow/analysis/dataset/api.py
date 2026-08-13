@@ -45,18 +45,24 @@ class LabelEvidence:
     injection_spec_digest: Digest | None = None
 
     def __post_init__(self) -> None:
-        if not self.producer_id or any(character.isspace() for character in self.producer_id):
+        if not self.producer_id or any(
+            character.isspace() for character in self.producer_id
+        ):
             raise ValueError("producer_id must be a token")
         if self.produced_utc_ns < 0:
             raise ValueError("produced_utc_ns must be non-negative")
-        if len(set(self.independent_of_method_ids)) != len(self.independent_of_method_ids):
+        if len(set(self.independent_of_method_ids)) != len(
+            self.independent_of_method_ids
+        ):
             raise ValueError("independent method IDs must be unique")
         has_injection_pair = (
             self.base_recording_digest is not None
             and self.injection_spec_digest is not None
         )
         if self.source is LabelSource.INJECTED and not has_injection_pair:
-            raise ValueError("injected truth must pin base recording and injection spec")
+            raise ValueError(
+                "injected truth must pin base recording and injection spec"
+            )
         if self.source is not LabelSource.INJECTED and (
             self.base_recording_digest is not None
             or self.injection_spec_digest is not None
@@ -168,10 +174,15 @@ def carve_dataset(
         raise ValueError(f"groups lack explicit partition assignment: {missing_groups}")
 
     # An injection and its real-noise parent must remain in the same group.
-    group_by_recording = {item.recording_id: item.split_group_id for item in materialized}
+    group_by_recording = {
+        item.recording_id: item.split_group_id for item in materialized
+    }
     for item in materialized:
         parent = item.derived_from_recording_id
-        if parent in group_by_recording and group_by_recording[parent] != item.split_group_id:
+        if (
+            parent in group_by_recording
+            and group_by_recording[parent] != item.split_group_id
+        ):
             raise ValueError(
                 f"injection/base leakage: {item.recording_id} and {parent} differ"
             )
@@ -257,8 +268,7 @@ def _diagnostics(
     unusable = [
         item.feature_set_id
         for item in candidates
-        if item.scored_truth
-        and not item.truth.usable_as_truth_for(evaluated_method_id)
+        if item.scored_truth and not item.truth.usable_as_truth_for(evaluated_method_id)
     ]
     if unusable:
         warnings.append(f"non-independent-or-non-truth-labels:{len(unusable)}")

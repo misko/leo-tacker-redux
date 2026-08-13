@@ -170,9 +170,7 @@ class _ProviderRetriever:
         if response.status >= 500:
             raise RetryableProviderError(self._source, f"HTTP {response.status}")
         if response.status in (401, 403):
-            raise AuthenticationProviderError(
-                self._source, "authentication rejected"
-            )
+            raise AuthenticationProviderError(self._source, "authentication rejected")
         if response.status != 200:
             raise ProviderResponseError(self._source, f"HTTP {response.status}")
         content_type = headers.get("content-type", "").lower()

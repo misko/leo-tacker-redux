@@ -15,7 +15,6 @@ from leo_flow.storage.ports import BlobWriter
 
 
 class _CasArchive:
-
     def __init__(self, writer: BlobWriter) -> None:
         self._writer = writer
 

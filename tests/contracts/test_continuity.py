@@ -97,3 +97,31 @@ def test_unverified_fallback_is_explicit_and_cannot_carry_trusted_records() -> N
     assert value.status is ContinuityStatus.UNVERIFIED
     with pytest.raises(ValueError, match="cannot contain trusted"):
         replace(value, refills=(refill(),))
+
+
+def test_timestamp_fit_overlap_is_allowed_only_within_reported_uncertainty() -> None:
+    first = refill()
+    within_uncertainty = replace(
+        refill(1, sequence=104),
+        monotonic_start_ns=1_045,
+        monotonic_end_ns=1_145,
+    )
+    SegmentContinuity(
+        ContinuityStatus.VERIFIED,
+        (ReceiverChainId("rx_a"), ReceiverChainId("rx_b")),
+        provenance(),
+        (first, within_uncertainty),
+    )
+
+    contradicted = replace(
+        within_uncertainty,
+        monotonic_start_ns=1_020,
+        monotonic_end_ns=1_120,
+    )
+    with pytest.raises(ValueError, match="contradict their uncertainty"):
+        SegmentContinuity(
+            ContinuityStatus.VERIFIED,
+            (ReceiverChainId("rx_a"), ReceiverChainId("rx_b")),
+            provenance(),
+            (first, contradicted),
+        )

@@ -20,8 +20,10 @@ The domain uses immutable normalized contracts in `contracts.continuity`. They
 contain no pyadi, libiio, or SPF wire types. A radio adapter emits IQ bytes and
 an optional `RefillMetadata` together. The capture engine constructs a
 `SegmentContinuity`, whose validator rejects capture-sequence gaps, hardware
-sample-sequence gaps, IQ-offset gaps/overlap, stream changes, time overlap, and
-all overflow/read-failure flags.
+sample-sequence gaps, IQ-offset gaps/overlap, stream changes, time ordering that
+contradicts the reported uncertainty intervals, and all overflow/read-failure
+flags. Sample and buffer sequences—not fitted timestamp point estimates—are
+the authoritative continuity evidence.
 
 `REQUIRE_VERIFIED` is the default Pluto policy. Missing metadata fails before a
 recording is published. An explicitly configured `ALLOW_UNVERIFIED` ordinary
@@ -40,8 +42,9 @@ The patched-host boundary is an injected `MetadataReader` in the Pluto adapter.
 It returns ordinary native IQ plus the normalized contract. This keeps the core
 independent of private pyadi/libiio objects and permits deterministic fakes.
 The deployment adapter that parses SPF protocol-v3 bytes belongs in the host
-integration package/environment containing the pinned patched libiio, not in
-the dependency-free core.
+integration package/environment containing the pinned patched libiio. Redux's
+structural translator imports neither SPF nor libiio wire types into the
+dependency-free core.
 
 Verified segments currently require a sample count that is an exact multiple
 of the IIO block size. V5 endpoint observations describe the entire hardware
@@ -58,8 +61,9 @@ metadata with the stored prefix.
 - Legacy objects remain readable but cannot be promoted to verified continuity.
 - Capture aborts atomically on a late gap or overflow; partial IQ and metadata
   never enter CAS/catalog publication.
-- A target-host bridge must translate the pinned SPF V3 parser/time fit into
-  these contracts and pass hardware acceptance before deployment.
+- The target-host bridge translates the pinned SPF V3 parser/time fit into
+  these contracts. Its first hardware canary is recorded in
+  `docs/hardware/v5-canary-2026-08-13.md`.
 
 ## Target-hardware acceptance gates
 

@@ -47,7 +47,9 @@ class EphemerisSnapshotCatalog(Protocol):
         self, snapshot_id: EphemerisSnapshotId
     ) -> ArchivedEphemerisSnapshot | None: ...
 
-    def history(self, source: EphemerisSource, scope: str) -> tuple[SnapshotRecord, ...]: ...
+    def history(
+        self, source: EphemerisSource, scope: str
+    ) -> tuple[SnapshotRecord, ...]: ...
 
 
 class InMemoryEphemerisSnapshotCatalog:
@@ -56,9 +58,7 @@ class InMemoryEphemerisSnapshotCatalog:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._snapshots: dict[EphemerisSnapshotId, ArchivedEphemerisSnapshot] = {}
-        self._retrievals: dict[
-            EphemerisRetrievalId, ArchivedEphemerisSnapshot
-        ] = {}
+        self._retrievals: dict[EphemerisRetrievalId, ArchivedEphemerisSnapshot] = {}
 
     def publish(self, archived: ArchivedEphemerisSnapshot) -> None:
         snapshot = archived.snapshot
@@ -79,9 +79,7 @@ class InMemoryEphemerisSnapshotCatalog:
         with self._lock:
             return self._retrievals.get(retrieval_id)
 
-    def get(
-        self, snapshot_id: EphemerisSnapshotId
-    ) -> ArchivedEphemerisSnapshot | None:
+    def get(self, snapshot_id: EphemerisSnapshotId) -> ArchivedEphemerisSnapshot | None:
         with self._lock:
             return self._snapshots.get(snapshot_id)
 
@@ -90,9 +88,7 @@ class InMemoryEphemerisSnapshotCatalog:
     ) -> tuple[SnapshotRecord, ...]:
         with self._lock:
             matches = [
-                SnapshotRecord(
-                    item.snapshot_ref(), item.snapshot.retrieved_at_utc_ns
-                )
+                SnapshotRecord(item.snapshot_ref(), item.snapshot.retrieved_at_utc_ns)
                 for item in self._snapshots.values()
                 if item.snapshot.source is source and item.snapshot.scope == scope
             ]

@@ -39,9 +39,9 @@ def resolve_recording_ephemeris(
     policy_ref: ArtifactRef,
     as_of_utc_ns: UtcNs,
 ) -> RecordingEphemerisInput:
-    selection = TemporalEphemerisResolver(catalog.history(source, scope), policy).resolve(
-        source, recording_interval, policy_ref, as_of_utc_ns
-    )
+    selection = TemporalEphemerisResolver(
+        catalog.history(source, scope), policy
+    ).resolve(source, recording_interval, policy_ref, as_of_utc_ns)
     archived = catalog.get(selection.snapshot_ref.snapshot_id)
     if archived is None:
         raise RuntimeError("catalog history referenced a missing snapshot")

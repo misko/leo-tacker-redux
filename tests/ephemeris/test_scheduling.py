@@ -70,7 +70,11 @@ def test_changed_schedule_cannot_reuse_job_identity() -> None:
     slot = UtcNs(1_000_000_000_000)
     original = scheduler.enqueue_slot(schedule(), slot)
     changed = EphemerisSchedule(
-        schedule().source, schedule().scope, "another-query", 60, schedule().anchor_utc_ns
+        schedule().source,
+        schedule().scope,
+        "another-query",
+        60,
+        schedule().anchor_utc_ns,
     )
     other = scheduler.enqueue_slot(changed, slot)
     assert original.job_id != other.job_id

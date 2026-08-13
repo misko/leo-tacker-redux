@@ -20,7 +20,9 @@ def score(method: str, window: int, value: float) -> MethodScore:
     )
 
 
-def test_covariance_between_firings_uses_shared_samples_and_reports_missingness() -> None:
+def test_covariance_between_firings_uses_shared_samples_and_reports_missingness() -> (
+    None
+):
     scores = [
         score("a", 0, 1),
         score("b", 0, 1),
@@ -60,6 +62,4 @@ def test_thresholds_are_versioned_and_duplicates_are_refused() -> None:
         method_firing_association([score("a", 0, 1)], {"a@2": 0.5})
     duplicate = score("a", 0, 2)
     with pytest.raises(ValueError, match="duplicate method score"):
-        method_firing_association(
-            [score("a", 0, 1), duplicate], {"a@1": 0.5}
-        )
+        method_firing_association([score("a", 0, 1), duplicate], {"a@1": 0.5})
