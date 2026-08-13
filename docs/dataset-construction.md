@@ -22,6 +22,21 @@ seed, percentage, or random-shuffle option. The stored member tuple pins the
 FeatureSet ID, its content digest, partition, and scored/context-only role;
 canonical hashing freezes it.
 
+## Durable model boundary
+
+`DatasetSnapshotBundle` is the persistence and handoff boundary after carving.
+It embeds the unchanged model-facing `FeatureDatasetSnapshot`, then aligns every
+ordered feature reference with its split group, split, scored/context role, and
+complete truth evidence. The model composition root verifies the bundle ref and
+passes only the embedded feature snapshot to an existing model fitter.
+
+The canonical JSON codec verifies two identities: the established feature
+membership digest and a richer digest covering split, role, truth provenance,
+evaluated-method independence, selection provenance, and promotion result.
+Opaque blob locators are deliberately absent from both digests. Readers and
+publishers transfer the bundle as one immutable object; implementations must
+not materialize a control-plane file per member.
+
 ## What counts as truth
 
 | Source | Accuracy truth? | Required provenance |
