@@ -5,12 +5,19 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 from leo_flow.contracts.capture import (
     ActivityManifest,
     CapturePlan,
     CompletedLocalRecording,
     RecordingManifest,
+)
+from leo_flow.contracts.continuity import (
+    ContinuityPolicy,
+    ContinuityStatus,
+    RefillMetadata,
+    SegmentContinuity,
 )
 from leo_flow.contracts.core import (
     HardwareSnapshotId,
@@ -20,11 +27,11 @@ from leo_flow.contracts.core import (
     UtcNs,
     canonical_digest,
 )
-from leo_flow.contracts.ports import LocalSpool, RadioDevice
+from leo_flow.contracts.ports import ContinuityRadioDevice, LocalSpool, RadioDevice
 from leo_flow.storage.ports import RecordingWriter, RecordingWriteSession
 
 from .clock import CaptureClock, SystemCaptureClock
-from .errors import RadioConfigurationError, WriterIdentityError
+from .errors import ContinuityError, RadioConfigurationError, WriterIdentityError
 
 
 @dataclass(frozen=True)
@@ -94,10 +101,57 @@ class PlanCaptureEngine:
                         assert session is not None
                         session.append_iq(segment_id, data)
 
-                    segment = hardware.acquire_segment(
-                        request,
-                        write_ci16,
+                    metadata_acquire = getattr(
+                        hardware, "acquire_segment_with_metadata", None
                     )
+                    if callable(metadata_acquire):
+                        continuity_hardware = cast(ContinuityRadioDevice, hardware)
+                        append_refill = getattr(session, "append_refill", None)
+                        record_continuity = getattr(session, "record_continuity", None)
+                        if not callable(append_refill) or not callable(
+                            record_continuity
+                        ):
+                            raise ContinuityError(
+                                "metadata-aware radio requires a continuity-aware writer"
+                            )
+                        refills: list[RefillMetadata] = []
+
+                        def write_refill(
+                            data: bytes,
+                            metadata: RefillMetadata | None,
+                            segment_id: SegmentId = request.segment_id,
+                            append_refill=append_refill,
+                            refills: list[RefillMetadata] = refills,
+                        ) -> None:
+                            if metadata is None:
+                                session.append_iq(segment_id, data)
+                            else:
+                                append_refill(segment_id, data, metadata)
+                                refills.append(metadata)
+
+                        segment = metadata_acquire(request, write_refill)
+                        policy = continuity_hardware.continuity_policy
+                        status = (
+                            ContinuityStatus.VERIFIED
+                            if refills
+                            else ContinuityStatus.UNVERIFIED
+                        )
+                        if (
+                            policy is ContinuityPolicy.REQUIRE_VERIFIED
+                            and status is not ContinuityStatus.VERIFIED
+                        ):
+                            raise ContinuityError(
+                                "contiguous IQ was required but v5 metadata was unavailable"
+                            )
+                        continuity = SegmentContinuity(
+                            status=status,
+                            receiver_chain_ids=request.receiver_chain_ids,
+                            provenance=continuity_hardware.capture_provenance,
+                            refills=tuple(refills),
+                        )
+                        record_continuity(request.segment_id, continuity)
+                    else:
+                        segment = hardware.acquire_segment(request, write_ci16)
                     if segment.requested != request:
                         raise RadioConfigurationError(
                             "radio returned a manifest for different requested settings"

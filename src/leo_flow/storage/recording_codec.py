@@ -25,6 +25,14 @@ from leo_flow.contracts.capture import (
     SegmentManifest,
     SegmentRequest,
 )
+from leo_flow.contracts.continuity import (
+    CaptureProvenance,
+    ContinuityStatus,
+    GainObservation,
+    RefillFlag,
+    RefillMetadata,
+    SegmentContinuity,
+)
 from leo_flow.contracts.core import (
     ActivityId,
     Digest,
@@ -60,7 +68,7 @@ class MalformedRecordingError(RecordingCodecError):
 
 
 _META_SCHEMA = "org.leo-flow.recording-object-metadata"
-_META_VERSION = "1.0"
+_META_VERSION = "1.1"
 _DATA_FILENAME = "recording.data"
 _METADATA_FILENAME = "recording.meta"
 _MAX_METADATA_BYTES = 16 * 1024 * 1024
@@ -93,6 +101,11 @@ class RecordingWriteSession:
     ) -> None:
         self._recording_id = recording_id
         self._plan = plan
+        self._requests = {
+            segment.segment_id: segment
+            for activity in plan.activities
+            for segment in activity.segments
+        }
         self._hardware_snapshot = hardware_metadata_snapshot_id
         self._final_dir = Path(destination)
         self._partial_dir = self._final_dir.with_name(self._final_dir.name + ".partial")
@@ -101,6 +114,8 @@ class RecordingWriteSession:
         self._data = self._data_path.open("xb", buffering=0)
         self._offsets: dict[SegmentId, tuple[int, int]] = {}
         self._finished: dict[SegmentId, SegmentManifest] = {}
+        self._refills: dict[SegmentId, list[RefillMetadata]] = {}
+        self._continuity: dict[SegmentId, SegmentContinuity] = {}
         self._active_segment: SegmentId | None = None
         self._active_start = 0
         self._closed = False
@@ -121,6 +136,35 @@ class RecordingWriteSession:
         if len(ci16_bytes) % 2:
             raise RecordingCodecError("CI16 byte blocks must align to int16 words")
         self._data.write(ci16_bytes)
+
+    def append_refill(
+        self, segment_id: SegmentId, ci16_bytes: bytes, metadata: RefillMetadata
+    ) -> None:
+        try:
+            receiver_count = len(self._requests[segment_id].receiver_chain_ids)
+        except KeyError as error:
+            raise RecordingCodecError("refill belongs to an unknown segment") from error
+        if len(ci16_bytes) != metadata.sample_count * receiver_count * 4:
+            raise RecordingCodecError(
+                "refill metadata sample count differs from IQ bytes"
+            )
+        expected_offset = sum(
+            item.sample_count for item in self._refills.get(segment_id, [])
+        )
+        if metadata.segment_sample_offset != expected_offset:
+            raise RecordingCodecError("refill metadata offset differs from stored IQ")
+        self.append_iq(segment_id, ci16_bytes)
+        self._refills.setdefault(segment_id, []).append(metadata)
+
+    def record_continuity(
+        self, segment_id: SegmentId, continuity: SegmentContinuity
+    ) -> None:
+        self._ensure_open()
+        if segment_id in self._continuity:
+            raise RecordingCodecError("segment continuity was already recorded")
+        if continuity.refills != tuple(self._refills.get(segment_id, ())):
+            raise RecordingCodecError("continuity facts differ from appended refills")
+        self._continuity[segment_id] = continuity
 
     def finish_segment(self, segment: SegmentManifest) -> None:
         self._ensure_open()
@@ -162,7 +206,7 @@ class RecordingWriteSession:
             "schema": _META_SCHEMA,
             "version": _META_VERSION,
             "core:datatype": "ci16_le",
-            "leo:namespace_version": "1.0",
+            "leo:namespace_version": "1.1",
             "manifest": _wire(manifest),
             "manifest_digest": str(manifest_digest),
             "segments": [
@@ -176,6 +220,14 @@ class RecordingWriteSession:
                     ],
                 }
                 for segment in manifest.segments
+            ],
+            "continuity": [
+                {
+                    "segment_id": str(segment.segment_id),
+                    "value": _wire(self._continuity[segment.segment_id]),
+                }
+                for segment in manifest.segments
+                if segment.segment_id in self._continuity
             ],
         }
         metadata_bytes = canonical_json_bytes(metadata)
@@ -272,6 +324,11 @@ class RecordingView:
             raise MalformedRecordingError("truncated data slice")
         return cast(bytes, data)
 
+    def continuity(self, segment_id: SegmentId) -> SegmentContinuity | None:
+        if segment_id not in self._metadata.segments:
+            raise KeyError(f"unknown segment {segment_id}")
+        return self._metadata.continuity.get(segment_id)
+
 
 class _ParsedSegment:
     def __init__(
@@ -285,10 +342,14 @@ class _ParsedSegment:
 
 class _ParsedMetadata:
     def __init__(
-        self, manifest: RecordingManifest, segments: dict[SegmentId, _ParsedSegment]
+        self,
+        manifest: RecordingManifest,
+        segments: dict[SegmentId, _ParsedSegment],
+        continuity: dict[SegmentId, SegmentContinuity],
     ) -> None:
         self.manifest = manifest
         self.segments = segments
+        self.continuity = continuity
 
 
 def _parse_metadata(data: bytes, ref: RecordingObjectRef) -> _ParsedMetadata:
@@ -298,7 +359,8 @@ def _parse_metadata(data: bytes, ref: RecordingObjectRef) -> _ParsedMetadata:
         raise MalformedRecordingError("metadata is not valid UTF-8 JSON") from error
     if not isinstance(value, dict) or canonical_json_bytes(value) != data:
         raise MalformedRecordingError("metadata is not canonical JSON")
-    if set(value) != {
+    version = value.get("version")
+    required_fields = {
         "schema",
         "version",
         "core:datatype",
@@ -306,11 +368,18 @@ def _parse_metadata(data: bytes, ref: RecordingObjectRef) -> _ParsedMetadata:
         "manifest",
         "manifest_digest",
         "segments",
-    }:
+    }
+    if version == "1.1":
+        required_fields.add("continuity")
+    if set(value) != required_fields:
         raise MalformedRecordingError("metadata has missing or unknown required fields")
-    if value["schema"] != _META_SCHEMA or value["version"] != _META_VERSION:
+    if value["schema"] != _META_SCHEMA or version not in {"1.0", _META_VERSION}:
         raise MalformedRecordingError("unsupported recording metadata schema")
-    if value["core:datatype"] != "ci16_le" or value["leo:namespace_version"] != "1.0":
+    expected_namespace = "1.1" if version == "1.1" else "1.0"
+    if (
+        value["core:datatype"] != "ci16_le"
+        or value["leo:namespace_version"] != expected_namespace
+    ):
         raise MalformedRecordingError("unsupported data representation")
     try:
         manifest = _manifest_from_wire(_mapping(value["manifest"], "manifest"))
@@ -364,7 +433,25 @@ def _parse_metadata(data: bytes, ref: RecordingObjectRef) -> _ParsedMetadata:
         prior_stop = stop
     if prior_stop != ref.data_object.byte_count:
         raise MalformedRecordingError("data object has truncation or trailing bytes")
-    return _ParsedMetadata(manifest, parsed)
+    continuity: dict[SegmentId, SegmentContinuity] = {}
+    for raw in _list(value.get("continuity", []), "continuity"):
+        item = _mapping(raw, "continuity entry")
+        if set(item) != {"segment_id", "value"}:
+            raise MalformedRecordingError("continuity entry fields differ")
+        segment_id = SegmentId(_string(item["segment_id"], "segment_id"))
+        if segment_id not in parsed or segment_id in continuity:
+            raise MalformedRecordingError("unknown or duplicate continuity segment")
+        try:
+            continuity[segment_id] = _continuity_from_wire(item["value"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise MalformedRecordingError("invalid continuity metadata") from error
+        if continuity[segment_id].receiver_chain_ids != next(
+            segment.requested.receiver_chain_ids
+            for segment in manifest.segments
+            if segment.segment_id == segment_id
+        ):
+            raise MalformedRecordingError("continuity receiver order differs")
+    return _ParsedMetadata(manifest, parsed, continuity)
 
 
 def _wire(value: Any) -> Any:
@@ -377,6 +464,130 @@ def _wire(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_wire(item) for item in value]
     return value
+
+
+def _continuity_from_wire(value: Any) -> SegmentContinuity:
+    item = _mapping(value, "segment continuity")
+    if set(item) != {"status", "receiver_chain_ids", "provenance", "refills"}:
+        raise ValueError("segment continuity fields differ")
+    provenance_value = _mapping(item["provenance"], "capture provenance")
+    if set(provenance_value) != {
+        "firmware_release",
+        "firmware_commit",
+        "host_libiio_version",
+        "metadata_protocol",
+        "capability",
+    }:
+        raise ValueError("capture provenance fields differ")
+    provenance = CaptureProvenance(
+        firmware_release=_string(
+            provenance_value["firmware_release"], "firmware_release"
+        ),
+        firmware_commit=_string(provenance_value["firmware_commit"], "firmware_commit"),
+        host_libiio_version=_string(
+            provenance_value["host_libiio_version"], "host_libiio_version"
+        ),
+        metadata_protocol=_string(
+            provenance_value["metadata_protocol"], "metadata_protocol"
+        ),
+        capability=_string(provenance_value["capability"], "capability"),
+    )
+    return SegmentContinuity(
+        status=ContinuityStatus(_string(item["status"], "continuity status")),
+        receiver_chain_ids=tuple(
+            ReceiverChainId(raw)
+            for raw in _string_list(item["receiver_chain_ids"], "receiver_chain_ids")
+        ),
+        provenance=provenance,
+        refills=tuple(
+            _refill_from_wire(raw) for raw in _list(item["refills"], "refills")
+        ),
+    )
+
+
+def _refill_from_wire(value: Any) -> RefillMetadata:
+    item = _mapping(value, "refill metadata")
+    expected = {
+        "refill_index",
+        "segment_sample_offset",
+        "sample_count",
+        "stream_id",
+        "buffer_sequence",
+        "first_sample_sequence",
+        "monotonic_start_ns",
+        "monotonic_end_ns",
+        "utc_start_ns",
+        "utc_end_ns",
+        "time_uncertainty_ns",
+        "gain_db_start",
+        "gain_db_end",
+        "rssi_db_start",
+        "rssi_db_end",
+        "gain_observation_overflow_count",
+        "gain_event_overflow_count",
+        "gain_observations",
+        "flags",
+    }
+    if set(item) != expected:
+        raise ValueError("refill metadata fields differ")
+    return RefillMetadata(
+        refill_index=_nonnegative_int(item["refill_index"], "refill_index"),
+        segment_sample_offset=_nonnegative_int(
+            item["segment_sample_offset"], "segment_sample_offset"
+        ),
+        sample_count=_positive_int(item["sample_count"], "sample_count"),
+        stream_id=_nonnegative_int(item["stream_id"], "stream_id"),
+        buffer_sequence=_nonnegative_int(item["buffer_sequence"], "buffer_sequence"),
+        first_sample_sequence=_nonnegative_int(
+            item["first_sample_sequence"], "first_sample_sequence"
+        ),
+        monotonic_start_ns=_nonnegative_int(
+            item["monotonic_start_ns"], "monotonic_start_ns"
+        ),
+        monotonic_end_ns=_nonnegative_int(item["monotonic_end_ns"], "monotonic_end_ns"),
+        utc_start_ns=_nonnegative_int(item["utc_start_ns"], "utc_start_ns"),
+        utc_end_ns=_nonnegative_int(item["utc_end_ns"], "utc_end_ns"),
+        time_uncertainty_ns=_nonnegative_int(
+            item["time_uncertainty_ns"], "time_uncertainty_ns"
+        ),
+        gain_db_start=_number_tuple(item["gain_db_start"], "gain_db_start"),
+        gain_db_end=_number_tuple(item["gain_db_end"], "gain_db_end"),
+        rssi_db_start=_number_tuple(item["rssi_db_start"], "rssi_db_start"),
+        rssi_db_end=_number_tuple(item["rssi_db_end"], "rssi_db_end"),
+        gain_observation_overflow_count=_nonnegative_int(
+            item["gain_observation_overflow_count"],
+            "gain_observation_overflow_count",
+        ),
+        gain_event_overflow_count=_nonnegative_int(
+            item["gain_event_overflow_count"], "gain_event_overflow_count"
+        ),
+        gain_observations=tuple(
+            _gain_observation_from_wire(raw)
+            for raw in _list(item["gain_observations"], "gain_observations")
+        ),
+        flags=tuple(RefillFlag(raw) for raw in _string_list(item["flags"], "flags")),
+    )
+
+
+def _gain_observation_from_wire(value: Any) -> GainObservation:
+    item = _mapping(value, "gain observation")
+    if set(item) != {
+        "sample_sequence_before",
+        "sample_sequence_after",
+        "read_duration_ns",
+        "gain_db",
+    }:
+        raise ValueError("gain observation fields differ")
+    return GainObservation(
+        sample_sequence_before=_nonnegative_int(
+            item["sample_sequence_before"], "sample_sequence_before"
+        ),
+        sample_sequence_after=_nonnegative_int(
+            item["sample_sequence_after"], "sample_sequence_after"
+        ),
+        read_duration_ns=_nonnegative_int(item["read_duration_ns"], "read_duration_ns"),
+        gain_db=_number_tuple(item["gain_db"], "gain_db"),
+    )
 
 
 def _manifest_from_wire(value: Mapping[str, Any]) -> RecordingManifest:
@@ -518,6 +729,10 @@ def _number(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"{field} must be numeric")
     return float(value)
+
+
+def _number_tuple(value: Any, field: str) -> tuple[float, ...]:
+    return tuple(_number(item, field) for item in _list(value, field))
 
 
 def _nonnegative_int(value: Any, field: str) -> int:

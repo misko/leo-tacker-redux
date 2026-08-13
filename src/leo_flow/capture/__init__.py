@@ -5,11 +5,13 @@ from .fake_radio import (
     Delay,
     Disconnect,
     FakePairedRadio,
+    FakeV5PairedRadio,
     MissingRefill,
     ReceiverSkew,
     Refill,
     ShortRead,
     TuningFailure,
+    V5Refill,
 )
 from .publication import PublicationReconciler, ReconciliationResult
 from .spool import SpoolEntry, SpoolState, SQLiteLocalSpool
@@ -19,6 +21,7 @@ __all__ = [
     "Delay",
     "Disconnect",
     "FakePairedRadio",
+    "FakeV5PairedRadio",
     "MissingRefill",
     "PlanCaptureEngine",
     "PublicationReconciler",
@@ -30,4 +33,5 @@ __all__ = [
     "SpoolEntry",
     "SpoolState",
     "TuningFailure",
+    "V5Refill",
 ]

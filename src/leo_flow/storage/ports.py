@@ -14,6 +14,7 @@ from leo_flow.contracts.capture import (
     SegmentManifest,
 )
 from leo_flow.contracts.core import Digest, HardwareSnapshotId, RecordingId, SegmentId
+from leo_flow.contracts.continuity import RefillMetadata, SegmentContinuity
 from leo_flow.contracts.storage import (
     ByteRange,
     ObjectMetadata,
@@ -58,6 +59,16 @@ class RecordingWriteSession(Protocol):
     def abort(self, reason: str) -> None: ...
 
 
+class ContinuityRecordingWriteSession(RecordingWriteSession, Protocol):
+    def append_refill(
+        self, segment_id: SegmentId, ci16_bytes: bytes, metadata: RefillMetadata
+    ) -> None: ...
+
+    def record_continuity(
+        self, segment_id: SegmentId, continuity: SegmentContinuity
+    ) -> None: ...
+
+
 class RecordingWriter(Protocol):
     def begin(
         self,
@@ -75,6 +86,8 @@ class RecordingView(Protocol):
     def read_iq_bytes(
         self, segment_id: SegmentId, start_sample: int, stop_sample: int
     ) -> bytes: ...
+
+    def continuity(self, segment_id: SegmentId) -> SegmentContinuity | None: ...
 
 
 class RecordingObjectReader(Protocol):

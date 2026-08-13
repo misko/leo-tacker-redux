@@ -18,6 +18,7 @@ from leo_flow.capture.errors import (
     SampleCountError,
 )
 from leo_flow.contracts.capture import GainMode, GainSetting, SegmentRequest
+from leo_flow.contracts.continuity import ContinuityPolicy, RefillMetadata
 from leo_flow.contracts.core import RadioId, ReceiverChainId, SegmentId
 from testkit import FakeClock
 
@@ -117,6 +118,26 @@ def expected_bytes(samples: int) -> bytes:
     return struct.pack(f"<{len(values)}h", *values)
 
 
+def metadata(index: int, offset: int, sequence: int) -> RefillMetadata:
+    return RefillMetadata(
+        index,
+        offset,
+        3,
+        5,
+        10 + index,
+        sequence,
+        1_000 + index * 100,
+        1_050 + index * 100,
+        1_700_000_000_000_001_000 + index * 100,
+        1_700_000_000_000_001_050 + index * 100,
+        10,
+        (40.0, 41.0),
+        (40.0, 41.0),
+        (50.0, 51.0),
+        (50.0, 51.0),
+    )
+
+
 def adapter(device: FakePluto, **changes) -> tuple[PlutoPairedRadio, DeviceFactory]:
     factory = DeviceFactory(device)
     return (
@@ -148,6 +169,58 @@ def test_one_context_and_one_paired_refill_preserve_exact_native_order() -> None
     assert device.rx_enabled_channels == [0, 1]
     assert device.rx_buffer_size == 3
     assert device.rx_output_type == "raw"
+
+
+def test_v5_path_keeps_iq_and_normalized_metadata_associated() -> None:
+    device = FakePluto([])
+    scripted = iter(
+        ((refill(0, 3), metadata(0, 0, 100)), (refill(3, 3), metadata(1, 3, 103)))
+    )
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=lambda _device, _index, _offset: next(scripted),
+        clock=FakeClock(),
+    )
+    captured: list[tuple[bytes, RefillMetadata | None]] = []
+    manifest = radio.acquire_segment_with_metadata(
+        request(6), lambda iq, md: captured.append((iq, md))
+    )
+    assert b"".join(item[0] for item in captured) == expected_bytes(6)
+    assert [item[1].first_sample_sequence for item in captured if item[1]] == [100, 103]
+    assert manifest.sample_count == 6
+    assert radio.capture_provenance.firmware_release.endswith("metadata-v5")
+
+
+def test_v5_fails_closed_without_metadata_but_opt_in_fallback_is_labeled() -> None:
+    strict, _ = adapter(FakePluto([refill(0, 3)]))
+    with pytest.raises(RadioConfigurationError, match="metadata reader"):
+        strict.acquire_segment_with_metadata(request(3), lambda _iq, _md: None)
+
+    fallback, _ = adapter(
+        FakePluto([refill(0, 3)]),
+        continuity_policy=ContinuityPolicy.ALLOW_UNVERIFIED,
+    )
+    captured: list[tuple[bytes, RefillMetadata | None]] = []
+    fallback.acquire_segment_with_metadata(
+        request(3), lambda iq, md: captured.append((iq, md))
+    )
+    assert captured[0][1] is None
+    assert (
+        fallback.capture_provenance.capability
+        == "ordinary-buffer;continuity-unverified"
+    )
+
+
+def test_v5_verified_capture_rejects_partial_refill_tail() -> None:
+    radio, _ = adapter(FakePluto([]), host_libiio_version="0.25+c26258b")
+    radio._metadata_reader = lambda _device, _index, _offset: (  # type: ignore[attr-defined]
+        refill(0, 3),
+        metadata(0, 0, 100),
+    )
+    with pytest.raises(RadioConfigurationError, match="align"):
+        radio.acquire_segment_with_metadata(request(5), lambda _iq, _md: None)
 
 
 def test_manual_gain_and_tuning_are_set_and_read_back() -> None:

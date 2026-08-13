@@ -37,6 +37,7 @@ from leo_flow.contracts.storage import (
     PublishedRecordingRef,
     RecordingObjectRef,
 )
+from leo_flow.contracts.continuity import RefillMetadata, SegmentContinuity
 from testkit import FakeClock
 
 RECORDING_ID = RecordingId("rec_01J00000000000000000000000")
@@ -89,6 +90,7 @@ class FakeWriteSession:
         self.blocks: dict[SegmentId, list[bytes]] = {}
         self.finished: list[SegmentManifest] = []
         self.aborted_reason: str | None = None
+        self.continuities: dict[SegmentId, SegmentContinuity] = {}
 
     @property
     def recording_id(self) -> RecordingId:
@@ -96,6 +98,16 @@ class FakeWriteSession:
 
     def append_iq(self, segment_id: SegmentId, ci16_bytes: bytes) -> None:
         self.blocks.setdefault(segment_id, []).append(bytes(ci16_bytes))
+
+    def append_refill(
+        self, segment_id: SegmentId, ci16_bytes: bytes, metadata: RefillMetadata
+    ) -> None:
+        self.append_iq(segment_id, ci16_bytes)
+
+    def record_continuity(
+        self, segment_id: SegmentId, continuity: SegmentContinuity
+    ) -> None:
+        self.continuities[segment_id] = continuity
 
     def finish_segment(self, segment: SegmentManifest) -> None:
         expected = segment.sample_count * segment.shape[1] * segment.shape[2] * 2

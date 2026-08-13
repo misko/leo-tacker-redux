@@ -14,6 +14,11 @@ from leo_flow.contracts.capture import (
     SegmentManifest,
     SegmentRequest,
 )
+from leo_flow.contracts.continuity import (
+    CaptureProvenance,
+    ContinuityPolicy,
+    RefillMetadata,
+)
 from leo_flow.contracts.core import RadioId, ReceiverChainId, UtcNs
 
 from ..clock import CaptureClock, SystemCaptureClock
@@ -37,6 +42,7 @@ class PlutoDevice(Protocol):
     rx_rf_bandwidth: int
     rx_lo: int
     rx_buffer_size: int
+    rx_output_type: str
 
     def _rx_buffered_data(self) -> object: ...
 
@@ -45,6 +51,12 @@ DeviceFactory: TypeAlias = Callable[[str], PlutoDevice]
 Interleaver: TypeAlias = Callable[[object, int], bytes]
 SerialReader: TypeAlias = Callable[[PlutoDevice], str | None]
 HealthReader: TypeAlias = Callable[[PlutoDevice], Mapping[str, int | bool]]
+MetadataReader: TypeAlias = Callable[
+    [PlutoDevice, int, int], tuple[object, RefillMetadata]
+]
+
+V5_FIRMWARE_RELEASE = "v0.38-plutoplus-spf-libiio-metadata-v5"
+V5_FIRMWARE_COMMIT = "d7c87a9a28094ee6f0b23cb47df9ff737b5a69d8"
 
 
 @dataclass(frozen=True)
@@ -60,6 +72,12 @@ class PlutoRadioConfig:
     sample_rate_tolerance_hz: float = 1.0
     bandwidth_tolerance_hz: float = 1.0
     gain_tolerance_db: float = 0.25
+    continuity_policy: ContinuityPolicy = ContinuityPolicy.REQUIRE_VERIFIED
+    host_libiio_version: str = "unknown"
+    firmware_release: str = V5_FIRMWARE_RELEASE
+    firmware_commit: str = V5_FIRMWARE_COMMIT
+    metadata_protocol: str = "spf-radio-metadata-v3"
+    metadata_capability: str = "iio,buffer-metadata=1"
 
     def __post_init__(self) -> None:
         if not self.uri or not self.expected_serial:
@@ -73,6 +91,16 @@ class PlutoRadioConfig:
             raise ValueError("block_samples must be positive")
         if not self.agc_mode:
             raise ValueError("agc_mode cannot be empty")
+        if not all(
+            (
+                self.host_libiio_version,
+                self.firmware_release,
+                self.firmware_commit,
+                self.metadata_protocol,
+                self.metadata_capability,
+            )
+        ):
+            raise ValueError("v5 provenance fields cannot be empty")
         tolerances = (
             self.frequency_tolerance_hz,
             self.sample_rate_tolerance_hz,
@@ -94,6 +122,7 @@ class PlutoPairedRadio:
         interleaver: Interleaver | None = None,
         serial_reader: SerialReader | None = None,
         health_reader: HealthReader | None = None,
+        metadata_reader: MetadataReader | None = None,
         clock: CaptureClock | None = None,
     ) -> None:
         self.config = config
@@ -101,12 +130,134 @@ class PlutoPairedRadio:
         self._interleaver = interleaver or _lazy_numpy_interleaver
         self._serial_reader = serial_reader or _default_serial_reader
         self._health_reader = health_reader or _default_health_reader
+        self._metadata_reader = metadata_reader
         self._clock = clock or SystemCaptureClock()
         self._device: PlutoDevice | None = None
 
     @property
     def radio_id(self) -> RadioId:
         return self.config.radio_id
+
+    @property
+    def continuity_policy(self) -> ContinuityPolicy:
+        return self.config.continuity_policy
+
+    @property
+    def capture_provenance(self) -> CaptureProvenance:
+        capability = (
+            self.config.metadata_capability
+            if self._metadata_reader is not None
+            else "ordinary-buffer;continuity-unverified"
+        )
+        return CaptureProvenance(
+            firmware_release=self.config.firmware_release,
+            firmware_commit=self.config.firmware_commit,
+            host_libiio_version=self.config.host_libiio_version,
+            metadata_protocol=self.config.metadata_protocol,
+            capability=capability,
+        )
+
+    def acquire_segment_with_metadata(
+        self,
+        request: SegmentRequest,
+        write_refill: Callable[[bytes, RefillMetadata | None], None],
+    ) -> SegmentManifest:
+        """Acquire paired CI16 and associate each write with normalized v5 facts.
+
+        The injected reader is the narrow boundary to patched libiio. It must
+        return ordinary pyadi native IQ plus a domain ``RefillMetadata``; no
+        libiio/SPF wire object crosses this adapter boundary.
+        """
+
+        if self._metadata_reader is None:
+            if self.continuity_policy is ContinuityPolicy.REQUIRE_VERIFIED:
+                raise RadioConfigurationError(
+                    "v5 contiguous capture requires a patched-libiio metadata reader"
+                )
+            return self.acquire_segment(request, lambda data: write_refill(data, None))
+        if self.config.host_libiio_version == "unknown":
+            raise RadioConfigurationError(
+                "verified v5 capture requires exact host libiio provenance"
+            )
+        target_samples = _requested_sample_count(request)
+        if target_samples % self.config.block_samples:
+            raise RadioConfigurationError(
+                "verified v5 capture sample count must align to the IIO block size"
+            )
+        self._validate_request(request)
+        device = self._connect()
+        try:
+            self._configure(device, request)
+        except RadioConfigurationError:
+            raise
+        except (OSError, RuntimeError) as error:
+            raise TuningError(f"Pluto configuration failed: {error}") from error
+
+        before_health = dict(self._health_reader(device))
+        start_utc_ns = UtcNs(self._clock.now_utc_ns())
+        monotonic_start_ns = self._clock.now_monotonic_ns()
+        samples_written = 0
+        refill_count = 0
+        try:
+            while samples_written < target_samples:
+                native, metadata = self._metadata_reader(
+                    device, refill_count, samples_written
+                )
+                encoded = self._interleaver(native, PAIRED_RECEIVERS)
+                expected_bytes = (
+                    self.config.block_samples
+                    * PAIRED_RECEIVERS
+                    * IQ_COMPONENTS
+                    * CI16_BYTES_PER_COMPONENT
+                )
+                if len(encoded) != expected_bytes:
+                    raise SampleCountError("v5 IQ refill has the wrong byte count")
+                if (
+                    metadata.refill_index != refill_count
+                    or metadata.segment_sample_offset != samples_written
+                    or metadata.sample_count != self.config.block_samples
+                ):
+                    raise RefillError("v5 metadata does not describe its IQ refill")
+                write_refill(encoded, metadata)
+                samples_written += metadata.sample_count
+                refill_count += 1
+        except (SampleCountError, ReceiverSkewError, RefillError):
+            raise
+        except (OSError, ConnectionError) as error:
+            raise RadioDisconnectedError(
+                f"Pluto receive disconnected: {error}"
+            ) from error
+        except Exception as error:
+            raise RefillError(f"Pluto v5 receive failed: {error}") from error
+        after_health = dict(self._health_reader(device))
+        _validate_health(before_health, after_health)
+        readback = self._readback(device, request)
+        diagnostics = freeze_mapping(
+            {
+                "block_samples": self.config.block_samples,
+                "byte_count": samples_written * 8,
+                "continuity": "verified",
+                "firmware_release": self.config.firmware_release,
+                "host_libiio_version": self.config.host_libiio_version,
+                "metadata_protocol": self.config.metadata_protocol,
+                "refill_count": refill_count,
+                "serial": self.config.expected_serial,
+            },
+            "diagnostics",
+        )
+        return SegmentManifest(
+            segment_id=request.segment_id,
+            requested=request,
+            actual_center_frequency_hz=readback.center_frequency_hz,
+            actual_sample_rate_hz=readback.sample_rate_hz,
+            actual_bandwidth_hz=readback.bandwidth_hz,
+            actual_gain=readback.actual_gain,
+            start_utc_ns=start_utc_ns,
+            monotonic_start_ns=monotonic_start_ns,
+            sample_count=samples_written,
+            shape=(samples_written, PAIRED_RECEIVERS, IQ_COMPONENTS),
+            diagnostics=diagnostics,
+        )
 
     def acquire_segment(
         self, request: SegmentRequest, write_ci16: Callable[[bytes], None]

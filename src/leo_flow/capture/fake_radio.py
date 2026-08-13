@@ -9,6 +9,11 @@ from typing import TypeAlias
 
 from leo_flow.contracts._validation import freeze_mapping
 from leo_flow.contracts.capture import SegmentManifest, SegmentRequest
+from leo_flow.contracts.continuity import (
+    CaptureProvenance,
+    ContinuityPolicy,
+    RefillMetadata,
+)
 from leo_flow.contracts.core import RadioId, ReceiverChainId, SegmentId, UtcNs
 
 from .clock import CaptureClock, SystemCaptureClock
@@ -28,6 +33,12 @@ IQ_COMPONENTS = 2
 @dataclass(frozen=True)
 class Refill:
     ci16_bytes: bytes
+
+
+@dataclass(frozen=True)
+class V5Refill:
+    ci16_bytes: bytes
+    metadata: RefillMetadata
 
 
 @dataclass(frozen=True)
@@ -206,3 +217,84 @@ def _requested_sample_count(request: SegmentRequest) -> int:
     if samples <= 0:
         raise SampleCountError("duration resolves to no samples")
     return samples
+
+
+class FakeV5PairedRadio:
+    """Strict metadata-aware paired radio for hardware-free capture tests."""
+
+    def __init__(
+        self,
+        radio_id: RadioId,
+        receiver_chain_ids: tuple[ReceiverChainId, ReceiverChainId],
+        scripts: Mapping[SegmentId, Sequence[V5Refill]],
+        provenance: CaptureProvenance,
+        *,
+        continuity_policy: ContinuityPolicy = ContinuityPolicy.REQUIRE_VERIFIED,
+        clock: CaptureClock | None = None,
+    ) -> None:
+        if len(set(receiver_chain_ids)) != 2:
+            raise ValueError("FakeV5PairedRadio requires two receiver chains")
+        self._radio_id = radio_id
+        self.receiver_chain_ids = receiver_chain_ids
+        self._scripts = {key: tuple(value) for key, value in scripts.items()}
+        self._provenance = provenance
+        self._policy = continuity_policy
+        self._clock = clock or SystemCaptureClock()
+
+    @property
+    def radio_id(self) -> RadioId:
+        return self._radio_id
+
+    @property
+    def continuity_policy(self) -> ContinuityPolicy:
+        return self._policy
+
+    @property
+    def capture_provenance(self) -> CaptureProvenance:
+        return self._provenance
+
+    def acquire_segment_with_metadata(
+        self,
+        request: SegmentRequest,
+        write_refill: Callable[[bytes, RefillMetadata | None], None],
+    ) -> SegmentManifest:
+        if request.receiver_chain_ids != self.receiver_chain_ids:
+            raise RadioConfigurationError("request receiver order differs from radio")
+        events = self._scripts.get(request.segment_id, ())
+        target_samples = _requested_sample_count(request)
+        frame_bytes = (
+            len(self.receiver_chain_ids) * IQ_COMPONENTS * CI16_COMPONENT_BYTES
+        )
+        start_utc_ns = UtcNs(self._clock.now_utc_ns())
+        monotonic_start_ns = self._clock.now_monotonic_ns()
+        written = 0
+        for event in events:
+            if not event.ci16_bytes or len(event.ci16_bytes) % frame_bytes:
+                raise SampleCountError("v5 refill is not paired CI16")
+            samples = len(event.ci16_bytes) // frame_bytes
+            if event.metadata.sample_count != samples:
+                raise RefillError("v5 metadata sample count differs from IQ")
+            if written + samples > target_samples:
+                raise SampleCountError("v5 refill exceeds requested sample count")
+            write_refill(event.ci16_bytes, event.metadata)
+            written += samples
+        if written != target_samples:
+            raise SampleCountError(
+                f"segment ended at {written} of {target_samples} samples"
+            )
+        return SegmentManifest(
+            segment_id=request.segment_id,
+            requested=request,
+            actual_center_frequency_hz=request.center_frequency_hz,
+            actual_sample_rate_hz=request.sample_rate_hz,
+            actual_bandwidth_hz=request.bandwidth_hz,
+            actual_gain=request.gain,
+            start_utc_ns=start_utc_ns,
+            monotonic_start_ns=monotonic_start_ns,
+            sample_count=written,
+            shape=(written, 2, IQ_COMPONENTS),
+            diagnostics=freeze_mapping(
+                {"continuity": "verified", "refill_count": len(events)},
+                "diagnostics",
+            ),
+        )

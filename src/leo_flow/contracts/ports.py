@@ -16,6 +16,7 @@ from .capture import (
     SegmentManifest,
     SegmentRequest,
 )
+from .continuity import CaptureProvenance, ContinuityPolicy, RefillMetadata
 from .core import ArtifactRef, PlanId, RadioId, RecordingId, UtcNs
 from .dashboard import (
     ActivitySummary,
@@ -70,6 +71,25 @@ class RadioDevice(Protocol):
 
     def acquire_segment(
         self, request: SegmentRequest, write_ci16: Callable[[bytes], None]
+    ) -> SegmentManifest: ...
+
+
+class ContinuityRadioDevice(Protocol):
+    """Metadata-aware acquisition without exposing a vendor driver type."""
+
+    @property
+    def radio_id(self) -> RadioId: ...
+
+    @property
+    def continuity_policy(self) -> ContinuityPolicy: ...
+
+    @property
+    def capture_provenance(self) -> CaptureProvenance: ...
+
+    def acquire_segment_with_metadata(
+        self,
+        request: SegmentRequest,
+        write_refill: Callable[[bytes, RefillMetadata | None], None],
     ) -> SegmentManifest: ...
 
 

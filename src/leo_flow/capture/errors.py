@@ -31,3 +31,7 @@ class SampleCountError(CaptureError):
 
 class WriterIdentityError(CaptureError):
     pass
+
+
+class ContinuityError(CaptureError):
+    pass
