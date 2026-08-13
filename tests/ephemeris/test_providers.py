@@ -75,6 +75,14 @@ def test_space_track_credentials_are_separate_and_exact_host_only() -> None:
             secret,
             url="https://evil.example/catalog",
         )
+    with pytest.raises(ValueError, match="HTTPS"):
+        SpaceTrackRetriever(
+            transport,
+            archive,
+            Clock(),
+            secret,
+            url="https://user:password@www.space-track.org/catalog",
+        )
 
 
 def test_hugging_face_never_receives_space_track_credentials() -> None:

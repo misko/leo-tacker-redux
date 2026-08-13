@@ -33,6 +33,10 @@ class RetryableProviderError(ProviderResponseError):
         self.retry_after_s = retry_after_s
 
 
+class AuthenticationProviderError(ProviderResponseError):
+    """Credentials are absent/rejected; retries wait for operator intervention."""
+
+
 @dataclass(frozen=True)
 class ProviderCredentials:
     username: str = field(repr=False)
@@ -92,7 +96,12 @@ class _ProviderRetriever:
         max_response_bytes: int = 16 * 1024 * 1024,
     ) -> None:
         parsed = urlsplit(exact_url)
-        if parsed.scheme != "https" or not parsed.hostname:
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
             raise ValueError("provider URL must use HTTPS and an exact host")
         if max_response_bytes <= 0:
             raise ValueError("response bound must be positive")
@@ -104,6 +113,11 @@ class _ProviderRetriever:
         self._now = now_utc_ns
         self._credentials = credentials
         self._max_bytes = max_response_bytes
+
+    @property
+    def provenance_query(self) -> str:
+        """Exact credential-free endpoint/query archived with each retrieval."""
+        return self._url
 
     def fetch(self, request: EphemerisRetrievalRequest) -> RetrievalResult:
         if request.source is not self._source:
@@ -156,7 +170,9 @@ class _ProviderRetriever:
         if response.status >= 500:
             raise RetryableProviderError(self._source, f"HTTP {response.status}")
         if response.status in (401, 403):
-            raise ProviderResponseError(self._source, "authentication rejected")
+            raise AuthenticationProviderError(
+                self._source, "authentication rejected"
+            )
         if response.status != 200:
             raise ProviderResponseError(self._source, f"HTTP {response.status}")
         content_type = headers.get("content-type", "").lower()
