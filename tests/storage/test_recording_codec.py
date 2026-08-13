@@ -22,6 +22,7 @@ def write_local(tmp_path, iq: bytes):
     manifest = recording_manifest()
     writer = SigMFRecordingWriter()
     session = writer.begin(
+        manifest.recording_id,
         plan,
         manifest.hardware_metadata_snapshot_id,
         str(tmp_path / manifest.recording_id),
@@ -81,12 +82,34 @@ def test_metadata_embeds_exact_canonical_manifest_value(tmp_path) -> None:
     assert metadata["manifest_digest"] == str(canonical_digest(local.manifest))
 
 
+def test_destination_name_is_not_recording_identity(tmp_path) -> None:
+    plan = capture_plan()
+    manifest = recording_manifest()
+    destination = tmp_path / "opaque-spool-slot-42"
+    session = SigMFRecordingWriter().begin(
+        manifest.recording_id,
+        plan,
+        manifest.hardware_metadata_snapshot_id,
+        str(destination),
+    )
+    assert session.recording_id == manifest.recording_id
+    assert destination.name != str(session.recording_id)
+    session.append_iq(manifest.segments[0].segment_id, bytes(range(64)))
+    session.finish_segment(manifest.segments[0])
+    completed = session.finalize(manifest)
+    assert completed.recording_id == manifest.recording_id
+    assert destination.exists()
+
+
 def test_abort_never_creates_complete_pair(tmp_path) -> None:
     plan = capture_plan()
     manifest = recording_manifest()
     destination = tmp_path / manifest.recording_id
     session = SigMFRecordingWriter().begin(
-        plan, manifest.hardware_metadata_snapshot_id, str(destination)
+        manifest.recording_id,
+        plan,
+        manifest.hardware_metadata_snapshot_id,
+        str(destination),
     )
     session.append_iq(manifest.segments[0].segment_id, b"\0" * 8)
     session.abort("simulated crash")
@@ -98,6 +121,7 @@ def test_writer_rejects_truncated_segment(tmp_path) -> None:
     plan = capture_plan()
     manifest = recording_manifest()
     session = SigMFRecordingWriter().begin(
+        manifest.recording_id,
         plan,
         manifest.hardware_metadata_snapshot_id,
         str(tmp_path / manifest.recording_id),

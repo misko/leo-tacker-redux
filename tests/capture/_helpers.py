@@ -128,11 +128,20 @@ class FakeWriteSession:
 
 
 class FakeRecordingWriter:
-    def __init__(self, recording_id: RecordingId = RECORDING_ID) -> None:
-        self.recording_id = recording_id
+    def __init__(self, recording_id_override: RecordingId | None = None) -> None:
+        self.recording_id = recording_id_override or RECORDING_ID
+        self._recording_id_override = recording_id_override
         self.session: FakeWriteSession | None = None
 
-    def begin(self, plan: CapturePlan, hardware_metadata_snapshot_id, destination: str):
+    def begin(
+        self,
+        recording_id: RecordingId,
+        plan: CapturePlan,
+        hardware_metadata_snapshot_id: HardwareSnapshotId,
+        destination: str,
+    ) -> FakeWriteSession:
+        del plan, hardware_metadata_snapshot_id
+        self.recording_id = self._recording_id_override or recording_id
         self.session = FakeWriteSession(self.recording_id, destination)
         return self.session
 

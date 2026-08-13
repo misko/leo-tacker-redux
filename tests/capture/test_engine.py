@@ -81,7 +81,7 @@ def test_writer_and_spool_identity_mismatch_fails_closed(tmp_path) -> None:
     radio = FakePairedRadio(
         RADIO_ID, RECEIVERS, {request.segment_id: (Refill(ci16(4)),)}
     )
-    writer = FakeRecordingWriter(RecordingId("rec_different"))
+    writer = FakeRecordingWriter(recording_id_override=RecordingId("rec_different"))
     local_spool = spool(tmp_path)
     with pytest.raises(WriterIdentityError):
         engine(FakeClock()).execute(plan, radio, writer, local_spool)

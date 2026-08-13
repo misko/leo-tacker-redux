@@ -15,6 +15,7 @@ from leo_flow.contracts.capture import (
 from leo_flow.contracts.core import (
     HardwareSnapshotId,
     SchemaRef,
+    SegmentId,
     StationId,
     UtcNs,
     canonical_digest,
@@ -24,11 +25,6 @@ from leo_flow.storage.ports import RecordingWriter, RecordingWriteSession
 
 from .clock import CaptureClock, SystemCaptureClock
 from .errors import RadioConfigurationError, WriterIdentityError
-
-# Frozen-port amendment requested for the next contract revision:
-# RecordingWriter.begin(recording_id, plan, hardware_metadata_snapshot_id, destination)
-# should receive the ID allocated by LocalSpool explicitly. v0.1 requires the
-# composition root to coordinate writer/session identity, checked below.
 
 
 @dataclass(frozen=True)
@@ -71,7 +67,10 @@ class PlanCaptureEngine:
         session: RecordingWriteSession | None = None
         try:
             session = writer.begin(
-                plan, self._identity.hardware_metadata_snapshot_id, destination
+                recording_id,
+                plan,
+                self._identity.hardware_metadata_snapshot_id,
+                destination,
             )
             if session.recording_id != recording_id:
                 raise WriterIdentityError(
@@ -88,11 +87,16 @@ class PlanCaptureEngine:
                 segment_ids = []
                 for request in activity.segments:
                     self._wait_until(request.scheduled_utc_ns)
+
+                    def write_ci16(
+                        data: bytes, segment_id: SegmentId = request.segment_id
+                    ) -> None:
+                        assert session is not None
+                        session.append_iq(segment_id, data)
+
                     segment = hardware.acquire_segment(
                         request,
-                        lambda data, segment_id=request.segment_id: session.append_iq(
-                            segment_id, data
-                        ),
+                        write_ci16,
                     )
                     if segment.requested != request:
                         raise RadioConfigurationError(

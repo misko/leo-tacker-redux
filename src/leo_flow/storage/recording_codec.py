@@ -73,20 +73,25 @@ class SigMFRecordingWriter:
 
     def begin(
         self,
+        recording_id: RecordingId,
         plan: CapturePlan,
         hardware_metadata_snapshot_id: HardwareSnapshotId,
         destination: str,
     ) -> RecordingWriteSession:
-        return RecordingWriteSession(plan, hardware_metadata_snapshot_id, destination)
+        return RecordingWriteSession(
+            recording_id, plan, hardware_metadata_snapshot_id, destination
+        )
 
 
 class RecordingWriteSession:
     def __init__(
         self,
+        recording_id: RecordingId,
         plan: CapturePlan,
         hardware_metadata_snapshot_id: HardwareSnapshotId,
         destination: str,
     ) -> None:
+        self._recording_id = recording_id
         self._plan = plan
         self._hardware_snapshot = hardware_metadata_snapshot_id
         self._final_dir = Path(destination)
@@ -102,9 +107,7 @@ class RecordingWriteSession:
 
     @property
     def recording_id(self) -> RecordingId:
-        # The frozen begin port has no recording ID. Destination basename is
-        # therefore the capture-created ID, validated rather than inferred later.
-        return RecordingId(self._final_dir.name)
+        return self._recording_id
 
     def append_iq(self, segment_id: SegmentId, ci16_bytes: bytes) -> None:
         self._ensure_open()
@@ -134,7 +137,7 @@ class RecordingWriteSession:
     def finalize(self, manifest: RecordingManifest) -> CompletedLocalRecording:
         self._ensure_open()
         if manifest.recording_id != self.recording_id:
-            raise RecordingCodecError("destination and manifest recording IDs differ")
+            raise RecordingCodecError("writer and manifest recording IDs differ")
         if manifest.plan_id != self._plan.plan_id:
             raise RecordingCodecError("manifest does not belong to writer plan")
         if manifest.hardware_metadata_snapshot_id != self._hardware_snapshot:

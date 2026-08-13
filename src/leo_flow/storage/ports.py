@@ -61,6 +61,7 @@ class RecordingWriteSession(Protocol):
 class RecordingWriter(Protocol):
     def begin(
         self,
+        recording_id: RecordingId,
         plan: CapturePlan,
         hardware_metadata_snapshot_id: HardwareSnapshotId,
         destination: str,
