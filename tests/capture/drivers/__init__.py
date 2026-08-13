@@ -1,0 +1,1 @@
+"""Capture hardware-adapter tests."""
