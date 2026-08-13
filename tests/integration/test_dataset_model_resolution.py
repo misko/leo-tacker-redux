@@ -14,7 +14,7 @@ from leo_flow.analysis.dataset import (
     TruthLabel,
     dataset_snapshot_digest,
 )
-from leo_flow.application import DatasetResolutionError, resolve_model_dataset
+from leo_flow.analysis.model import DatasetResolutionError, resolve_model_dataset
 from leo_flow.contracts.core import (
     AnalysisRunId,
     DatasetSnapshotId,

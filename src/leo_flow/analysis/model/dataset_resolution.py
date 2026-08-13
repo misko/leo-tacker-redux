@@ -24,9 +24,9 @@ def resolve_model_dataset(
 ) -> FeatureDatasetSnapshot:
     """Verify rich identity before exposing only frozen feature membership.
 
-    This composition seam prevents a model worker from accepting a matching
+    This model-composition seam prevents a worker from accepting a matching
     feature list whose split, truth, role, or promotion provenance was replaced.
-    The model receives no dataset persistence capability and cannot inspect a
+    The fitter receives no dataset persistence capability and cannot inspect a
     locked-test label through this function.
     """
 
