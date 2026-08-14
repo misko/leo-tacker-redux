@@ -25,5 +25,6 @@ golden fixtures that change.
 - [0020: Authoritative effective-dated hardware metadata](0020-authoritative-hardware-metadata.md)
 - [0021: Pinned offline SGP4 propagation adapter](0021-pinned-offline-sgp4-adapter.md)
 - [0022: Authoritative recording-to-hardware links](0022-authoritative-recording-hardware-links.md)
-- [0025: Experimental offline residual tracking](0025-experimental-offline-residual-tracking.md)
 - [0023: Exact cross-recording model-input assembly](0023-exact-cross-recording-model-input-assembly.md)
+- [0024: Durable detector evaluation publication](0024-durable-detector-evaluation-publication.md)
+- [0025: Experimental offline residual tracking](0025-experimental-offline-residual-tracking.md)

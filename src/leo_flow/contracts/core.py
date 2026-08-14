@@ -106,6 +106,14 @@ class DatasetSnapshotId(ContractId):
     prefix = "dataset"
 
 
+class DetectorEvaluationId(ContractId):
+    prefix = "eval"
+
+
+class EvaluationRunId(ContractId):
+    prefix = "erun"
+
+
 class ModelRunId(ContractId):
     prefix = "mrun"
 

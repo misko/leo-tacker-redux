@@ -28,6 +28,17 @@ from .evaluation import (
     SplitMethodReport,
     evaluate_detectors,
 )
+from .evaluation_codec import (
+    MAX_DETECTOR_EVALUATION_BYTES,
+    MalformedDetectorEvaluationError,
+    decode_detector_evaluation,
+    encode_detector_evaluation,
+)
+from .evaluation_persistence import (
+    DetectorEvaluationIntegrityError,
+    DetectorEvaluationNotFound,
+    DurableDetectorEvaluationRepository,
+)
 from .persistence import (
     DATASET_SNAPSHOT_FORMAT_ID,
     DATASET_SNAPSHOT_MEDIA_TYPE,
@@ -53,6 +64,7 @@ __all__ = [
     "DETECTOR_EVALUATION_FORMAT_ID",
     "DETECTOR_EVALUATION_MEDIA_TYPE",
     "MAX_DATASET_SNAPSHOT_BYTES",
+    "MAX_DETECTOR_EVALUATION_BYTES",
     "BinaryClassificationCounts",
     "DatasetCandidate",
     "DatasetMember",
@@ -67,11 +79,15 @@ __all__ = [
     "DatasetSnapshotReader",
     "DatasetSnapshotRef",
     "DatasetSplit",
+    "DetectorEvaluationIntegrityError",
+    "DetectorEvaluationNotFound",
     "DetectorEvaluationReport",
     "DurableDatasetSnapshotRepository",
+    "DurableDetectorEvaluationRepository",
     "LabelEvidence",
     "LabelSource",
     "MalformedDatasetSnapshotError",
+    "MalformedDetectorEvaluationError",
     "MethodAssociationReport",
     "MethodEvaluation",
     "SplitAssociationReport",
@@ -81,7 +97,9 @@ __all__ = [
     "carve_dataset",
     "dataset_snapshot_digest",
     "decode_dataset_snapshot",
+    "decode_detector_evaluation",
     "encode_dataset_snapshot",
+    "encode_detector_evaluation",
     "evaluate_detectors",
     "freeze_dataset_snapshot",
     "method_firing_association",

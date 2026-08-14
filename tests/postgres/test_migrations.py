@@ -27,6 +27,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0009_recording_ephemeris_link.sql",),
         ("0010_hardware_metadata_catalog.sql",),
         ("0011_recording_hardware_link.sql",),
+        ("0012_detector_evaluation_catalog.sql",),
     ]
 
 
@@ -164,6 +165,22 @@ def test_recording_hardware_link_capabilities_are_narrow(postgres_dsn: str) -> N
             """
         ).fetchone()
     assert values == (True, True, False, True, False)
+
+
+@pytest.mark.integration
+def test_detector_evaluation_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        values = connection.execute(
+            """
+            SELECT has_table_privilege('leo_analysis', 'detector_evaluation_report', 'SELECT'),
+                   has_table_privilege('leo_analysis', 'detector_evaluation_method_summary', 'INSERT'),
+                   has_table_privilege('leo_analysis', 'detector_evaluation_report', 'UPDATE'),
+                   has_table_privilege('leo_dashboard', 'detector_evaluation_report', 'SELECT'),
+                   has_table_privilege('leo_dashboard', 'detector_evaluation_method_summary', 'INSERT'),
+                   has_table_privilege('leo_capture', 'detector_evaluation_report', 'SELECT')
+            """
+        ).fetchone()
+    assert values == (True, True, False, True, False, False)
 
 
 @pytest.mark.integration

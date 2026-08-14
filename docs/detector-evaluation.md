@@ -63,3 +63,17 @@ corpus performance run is claimed. An operator must resolve and verify the
 manifest's external IQ objects, publish authoritative FeatureSets, construct a
 frozen dataset, and then run this reporter. Until independent truth is added,
 such a run is exploratory coverage/association analysis, not accuracy evidence.
+
+## Durable publication
+
+One evaluation is stored as one canonical
+`detector-evaluation-report-v0.1` JSON object in content-addressed storage. Its
+`eval_` identity is derived from the full report SHA-256 digest; an `erun_`
+identity distinguishes the immutable execution. PostgreSQL publishes the exact
+artifact reference and compact method/split summaries atomically after verifying
+the frozen dataset identity.
+
+The covariance and phi matrices remain in that report object. They are not
+expanded into per-cell rows or per-window files. Dashboard readers receive the
+counts, coverage, warnings, and exact artifact reference in a read-only
+transaction; deeper analysis opens and verifies the canonical report from CAS.
