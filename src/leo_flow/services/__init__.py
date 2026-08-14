@@ -78,6 +78,12 @@ from .recording_analysis import (
     decode_recording_analysis_payload,
     recording_analysis_payload,
 )
+from .recording_submission import (
+    RecordingAnalysisSubmission,
+    RecordingAnalysisSubmissionService,
+    SubmittedRecordingAnalysis,
+    recording_analysis_job_id,
+)
 
 __all__ = [
     "MODEL_ANALYSIS_JOB_SCHEMA",
@@ -117,6 +123,8 @@ __all__ = [
     "ReadOnlyDashboardServer",
     "RecordingAnalysisJobError",
     "RecordingAnalysisJobPreparer",
+    "RecordingAnalysisSubmission",
+    "RecordingAnalysisSubmissionService",
     "RuntimeConfig",
     "SecretProvider",
     "SecretRef",
@@ -125,6 +133,7 @@ __all__ = [
     "ServiceLoop",
     "ServiceState",
     "SubmittedModelAnalysis",
+    "SubmittedRecordingAnalysis",
     "SubmittedTrackingModelAnalysis",
     "TrackingModelAnalysisJobPreparer",
     "TrackingModelAnalysisSubmission",
@@ -142,6 +151,7 @@ __all__ = [
     "model_analysis_job_id",
     "model_analysis_payload",
     "parse_service_config",
+    "recording_analysis_job_id",
     "recording_analysis_payload",
     "tracking_model_analysis_payload",
 ]

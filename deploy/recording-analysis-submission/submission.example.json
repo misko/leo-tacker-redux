@@ -1,0 +1,38 @@
+{
+  "schema": "org.leo-flow.recording-analysis-submission",
+  "version": "0.1",
+  "recording_id": "rec_replace_with_published_recording_id",
+  "analysis": {
+    "algorithm_ref": {
+      "artifact_id": "replace-with-approved-recording-algorithm",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "REPLACE_WITH_64_LOWERCASE_HEX_CHARACTERS"
+      },
+      "schema": {
+        "schema_id": "org.leo-flow.recording-algorithm",
+        "version": "0.1"
+      }
+    },
+    "config_ref": {
+      "artifact_id": "replace-with-exact-analysis-config",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "REPLACE_WITH_64_LOWERCASE_HEX_CHARACTERS"
+      },
+      "schema": {
+        "schema_id": "org.leo-flow.replace-with-config-schema",
+        "version": "0.1"
+      }
+    },
+    "dependency_refs": [],
+    "requested_output_schema": {
+      "schema_id": "org.leo-flow.feature-set-bundle",
+      "version": "0.1"
+    }
+  },
+  "database_dsn": {
+    "provider": "systemd-credential",
+    "name": "catalog-dsn"
+  }
+}

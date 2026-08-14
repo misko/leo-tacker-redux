@@ -14,6 +14,12 @@ from .fake_radio import (
     V5Refill,
 )
 from .publication import PublicationReconciler, ReconciliationResult
+from .scan_plan import (
+    StarlinkEdgeScanSpec,
+    build_starlink_edge_scan_plan,
+    edge_order_for_draw,
+    starlink_edge_pilot_if_hz,
+)
 from .spool import SpoolEntry, SpoolState, SQLiteLocalSpool
 
 __all__ = [
@@ -32,6 +38,10 @@ __all__ = [
     "ShortRead",
     "SpoolEntry",
     "SpoolState",
+    "StarlinkEdgeScanSpec",
     "TuningFailure",
     "V5Refill",
+    "build_starlink_edge_scan_plan",
+    "edge_order_for_draw",
+    "starlink_edge_pilot_if_hz",
 ]

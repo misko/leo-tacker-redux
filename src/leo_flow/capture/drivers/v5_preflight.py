@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 
 from leo_flow.contracts.continuity import CaptureProvenance
 
@@ -24,6 +25,13 @@ from .pluto import (
     PlutoRadioConfig,
     TimeoutSetter,
     set_libiio_timeout,
+)
+
+TX2_DDS_CHANNEL_IDS = (
+    "altvoltage4",
+    "altvoltage5",
+    "altvoltage6",
+    "altvoltage7",
 )
 
 
@@ -93,6 +101,8 @@ class ExpectedV5Radio:
     enabled_scan_mask: int = 0x0F
     channel_count: int = 2
     component_layout: tuple[str, ...] = ("I0", "Q0", "I1", "Q1")
+    maximum_tx2_hardware_gain_db: float = -80.0
+    tx2_dds_channel_ids: tuple[str, ...] = TX2_DDS_CHANNEL_IDS
 
     def __post_init__(self) -> None:
         if not all(
@@ -104,6 +114,12 @@ class ExpectedV5Radio:
             )
         ):
             raise ValueError("V5 radio expectations cannot be empty")
+        if not self.tx2_dds_channel_ids or len(set(self.tx2_dds_channel_ids)) != len(
+            self.tx2_dds_channel_ids
+        ):
+            raise ValueError("V5 TX2 DDS channel expectations must be unique")
+        if not isfinite(self.maximum_tx2_hardware_gain_db):
+            raise ValueError("V5 TX2 hardware gain ceiling must be finite")
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +130,8 @@ class ObservedV5Radio:
     enabled_scan_mask: int
     channel_count: int
     component_layout: tuple[str, ...]
+    tx2_hardware_gain_db: float
+    tx2_dds_scales: tuple[tuple[str, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,6 +315,33 @@ def _radio_mismatches(
         observed_radio.component_layout,
         expected_radio.component_layout,
     )
+    if not isfinite(observed_radio.tx2_hardware_gain_db) or (
+        observed_radio.tx2_hardware_gain_db
+        > expected_radio.maximum_tx2_hardware_gain_db
+    ):
+        mismatches.append(
+            "TX2 hardware gain exceeds passive-capture ceiling: "
+            f"expected <= {expected_radio.maximum_tx2_hardware_gain_db!r}, "
+            f"observed {observed_radio.tx2_hardware_gain_db!r}"
+        )
+    observed_scales = dict(observed_radio.tx2_dds_scales)
+    expected_ids = set(expected_radio.tx2_dds_channel_ids)
+    if (
+        len(observed_scales) != len(observed_radio.tx2_dds_scales)
+        or set(observed_scales) != expected_ids
+    ):
+        mismatches.append(
+            "TX2 DDS channel layout mismatch: "
+            f"expected {expected_radio.tx2_dds_channel_ids!r}, "
+            f"observed {tuple(observed_scales)!r}"
+        )
+    nonzero_scales = tuple(
+        (channel_id, scale)
+        for channel_id, scale in observed_radio.tx2_dds_scales
+        if scale != 0.0
+    )
+    if nonzero_scales:
+        mismatches.append(f"TX2 DDS scales are not muted: observed {nonzero_scales!r}")
     return mismatches
 
 

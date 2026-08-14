@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schema/recording-analysis-submission-v0.1.json",
+  "title": "LEO Flow exact recording analysis submission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "recording_id", "analysis", "database_dsn"],
+  "properties": {
+    "schema": {"const": "org.leo-flow.recording-analysis-submission"},
+    "version": {"const": "0.1"},
+    "recording_id": {"type": "string", "pattern": "^rec_[A-Za-z0-9._:-]+$"},
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm_ref", "config_ref", "dependency_refs", "requested_output_schema"],
+      "properties": {
+        "algorithm_ref": {"$ref": "#/$defs/artifact"},
+        "config_ref": {"$ref": "#/$defs/artifact"},
+        "dependency_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact"}
+        },
+        "requested_output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_id", "version"],
+          "properties": {
+            "schema_id": {"const": "org.leo-flow.feature-set-bundle"},
+            "version": {"const": "0.1"}
+          }
+        }
+      }
+    },
+    "database_dsn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "name"],
+      "properties": {
+        "provider": {"const": "systemd-credential"},
+        "name": {"type": "string", "minLength": 1, "pattern": "^[^/\\u0000]+$"}
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": {"const": "sha256"},
+        "value": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "schemaRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_id", "version"],
+      "properties": {
+        "schema_id": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "digest", "schema"],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "digest": {"$ref": "#/$defs/digest"},
+        "schema": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/schemaRef"}
+          ]
+        }
+      }
+    }
+  }
+}

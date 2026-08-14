@@ -13,7 +13,11 @@ from typing import Any
 
 from ..errors import RadioConfigurationError
 from .pluto import PlutoDevice
-from .v5_preflight import ObservedV5Radio, ObservedV5Runtime
+from .v5_preflight import (
+    TX2_DDS_CHANNEL_IDS,
+    ObservedV5Radio,
+    ObservedV5Runtime,
+)
 
 ModuleLoader = Callable[[str], Any]
 VersionReader = Callable[[str], str]
@@ -131,6 +135,7 @@ def observe_v5_radio(device: PlutoDevice) -> ObservedV5Radio:
         ):
             raise ValueError("paired RX scan layout is absent or ambiguous")
         scanned.sort()
+        tx2_hardware_gain_db, tx2_dds_scales = _observe_tx2_mute_state(device)
         return ObservedV5Radio(
             serial=serial,
             firmware_release=firmware,
@@ -138,11 +143,62 @@ def observe_v5_radio(device: PlutoDevice) -> ObservedV5Radio:
             enabled_scan_mask=sum(1 << index for index, _, _ in scanned),
             channel_count=len({receiver for _, receiver, _ in scanned}),
             component_layout=tuple(component for _, _, component in scanned),
+            tx2_hardware_gain_db=tx2_hardware_gain_db,
+            tx2_dds_scales=tx2_dds_scales,
         )
     except Exception as error:
         raise RadioConfigurationError(
             f"V5 radio observation failed: {type(error).__name__}"
         ) from error
+
+
+def _observe_tx2_mute_state(
+    device: PlutoDevice,
+) -> tuple[float, tuple[tuple[str, float], ...]]:
+    context = getattr(device, "_ctx", getattr(device, "ctx", None))
+    find_device = getattr(context, "find_device", None)
+    if not callable(find_device):
+        raise TypeError("selected context cannot inspect TX2 state")
+    phy = find_device("ad9361-phy")
+    dds = find_device("cf-ad9361-dds-core-lpc")
+    if phy is None or dds is None:
+        raise ValueError("selected context lacks TX2 PHY or DDS")
+
+    gain: float | None = None
+    for channel in getattr(phy, "channels", ()):
+        if (
+            bool(getattr(channel, "output", False))
+            and getattr(channel, "id", None) == "voltage1"
+        ):
+            gain = _numeric_channel_attribute(channel, "hardwaregain")
+            break
+    if gain is None:
+        raise ValueError("selected context lacks TX2 hardware gain")
+
+    scales: dict[str, float] = {}
+    for channel in getattr(dds, "channels", ()):
+        channel_id = str(getattr(channel, "id", ""))
+        if bool(getattr(channel, "output", False)) and (
+            channel_id in TX2_DDS_CHANNEL_IDS
+        ):
+            scales[channel_id] = _numeric_channel_attribute(channel, "scale")
+    if set(scales) != set(TX2_DDS_CHANNEL_IDS):
+        raise ValueError("selected context lacks the complete TX2 DDS layout")
+    return gain, tuple(
+        (channel_id, scales[channel_id]) for channel_id in TX2_DDS_CHANNEL_IDS
+    )
+
+
+def _numeric_channel_attribute(channel: object, name: str) -> float:
+    attrs = getattr(channel, "attrs", None)
+    if attrs is None:
+        raise ValueError(f"TX2 channel lacks {name}")
+    try:
+        attribute = attrs[name]
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"TX2 channel lacks {name}") from error
+    value = getattr(attribute, "value", attribute)
+    return float(str(value).split()[0])
 
 
 def _rx_component(identifier: str) -> tuple[int, str] | None:

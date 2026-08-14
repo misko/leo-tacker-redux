@@ -128,6 +128,38 @@ class _Attribute:
         self.value = value
 
 
+def _tx_context(attrs):  # type: ignore[no-untyped-def]
+    phy = SimpleNamespace(
+        channels=(
+            SimpleNamespace(
+                id="voltage1",
+                output=True,
+                attrs={"hardwaregain": _Attribute("-80 dB")},
+            ),
+        )
+    )
+    dds = SimpleNamespace(
+        channels=tuple(
+            SimpleNamespace(
+                id=channel_id,
+                output=True,
+                attrs={"scale": _Attribute("0")},
+            )
+            for channel_id in (
+                "altvoltage4",
+                "altvoltage5",
+                "altvoltage6",
+                "altvoltage7",
+            )
+        )
+    )
+    devices = {
+        "ad9361-phy": phy,
+        "cf-ad9361-dds-core-lpc": dds,
+    }
+    return SimpleNamespace(attrs=attrs, find_device=devices.get)
+
+
 def test_radio_observer_reads_selected_context_and_scan_layout() -> None:
     attrs = {
         "hw_serial": _Attribute("serial-v5"),
@@ -141,7 +173,7 @@ def test_radio_observer_reads_selected_context_and_scan_layout() -> None:
         )
     )
     device = SimpleNamespace(
-        _ctx=SimpleNamespace(attrs=attrs),
+        _ctx=_tx_context(attrs),
         _rxadc=SimpleNamespace(channels=channels),
     )
     observed = observe_v5_radio(device)
@@ -151,6 +183,13 @@ def test_radio_observer_reads_selected_context_and_scan_layout() -> None:
     assert observed.enabled_scan_mask == 0x0F
     assert observed.channel_count == 2
     assert observed.component_layout == ("I0", "Q0", "I1", "Q1")
+    assert observed.tx2_hardware_gain_db == -80.0
+    assert observed.tx2_dds_scales == (
+        ("altvoltage4", 0.0),
+        ("altvoltage5", 0.0),
+        ("altvoltage6", 0.0),
+        ("altvoltage7", 0.0),
+    )
 
 
 def test_radio_observer_normalizes_live_libiio_component_ids() -> None:
@@ -170,7 +209,7 @@ def test_radio_observer_normalizes_live_libiio_component_ids() -> None:
     )
     observed = observe_v5_radio(
         SimpleNamespace(
-            _ctx=SimpleNamespace(attrs=attrs),
+            _ctx=_tx_context(attrs),
             _rxadc=SimpleNamespace(channels=channels),
         )
     )
@@ -183,7 +222,7 @@ def test_radio_observer_rejects_duplicate_component_claims() -> None:
     device = SimpleNamespace(
         serial="serial-v5",
         fw_version="firmware-v5",
-        _ctx=SimpleNamespace(attrs={"iio,buffer-metadata": _Attribute("1")}),
+        _ctx=_tx_context({"iio,buffer-metadata": _Attribute("1")}),
         _rxadc=SimpleNamespace(
             channels=(
                 SimpleNamespace(id="voltage0", index=0, output=False),
@@ -199,10 +238,29 @@ def test_radio_observer_rejects_unindexed_scan_claim() -> None:
     device = SimpleNamespace(
         serial="serial-v5",
         fw_version="firmware-v5",
-        _ctx=SimpleNamespace(attrs={"iio,buffer-metadata": _Attribute("1")}),
+        _ctx=_tx_context({"iio,buffer-metadata": _Attribute("1")}),
         _rxadc=SimpleNamespace(
             channels=(SimpleNamespace(id="voltage0_i", output=False),)
         ),
     )
     with pytest.raises(RadioConfigurationError, match="radio observation failed"):
         observe_v5_radio(device)
+
+
+def test_radio_observer_rejects_incomplete_tx2_state() -> None:
+    attrs = {
+        "hw_serial": _Attribute("serial-v5"),
+        "fw_version": _Attribute("firmware-v5"),
+        "iio,buffer-metadata": _Attribute("1"),
+    }
+    channels = tuple(
+        SimpleNamespace(id=f"voltage{index}", index=index, output=False)
+        for index in range(4)
+    )
+    context = _tx_context(attrs)
+    dds = context.find_device("cf-ad9361-dds-core-lpc")
+    dds.channels = dds.channels[:-1]
+    with pytest.raises(RadioConfigurationError, match="radio observation failed"):
+        observe_v5_radio(
+            SimpleNamespace(_ctx=context, _rxadc=SimpleNamespace(channels=channels))
+        )

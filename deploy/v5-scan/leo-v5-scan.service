@@ -1,0 +1,42 @@
+[Unit]
+Description=LEO Flow V5 scan-only capture
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+RequiresMountsFor=/var/lib/leo-flow/objects
+ConditionPathIsMountPoint=/var/lib/leo-flow/objects
+Conflicts=leo-v5-canary.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+DynamicUser=yes
+SupplementaryGroups=leo-flow-cas
+StateDirectory=leo-flow-v5-scan
+RuntimeDirectory=leo-flow-v5-scan
+StateDirectoryMode=0700
+RuntimeDirectoryMode=0700
+LoadCredential=catalog-dsn:/etc/leo-flow/secrets/capture-catalog-dsn
+ExecStart=/opt/leo-v5/bin/runtime-entrypoint /usr/bin/python3 -m leo_flow.services --config /etc/leo-flow/v5-scan-capture.json --plugin leo_flow.deployments.v5_scan:PLUGIN --once
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=12s
+KillSignal=SIGINT
+UMask=0007
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/leo-flow/objects
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

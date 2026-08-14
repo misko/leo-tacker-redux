@@ -266,6 +266,23 @@ def test_capacity_and_single_instance_gates_fail_before_adapter_io(tmp_path) -> 
     second.close()
 
 
+def test_required_object_store_mount_fails_closed_before_path_creation(
+    tmp_path,
+) -> None:
+    mount = tmp_path / "objects"
+    mount.mkdir()
+    guard = v5_canary.CaptureHostGuard(
+        tmp_path / "run-mount" / "lock",
+        (mount,),
+        1,
+        disk_usage=lambda _path: _Usage(10),
+        required_mounts=(mount,),
+        is_mount=lambda _path: False,
+    )
+    with pytest.raises(v5_canary.CanaryDeploymentError, match="mount is unavailable"):
+        guard.acquire()
+
+
 def test_spool_rejects_database_or_sqlite_sidecar_symlink(tmp_path) -> None:
     state = tmp_path / "state"
     recordings = state / "recordings"

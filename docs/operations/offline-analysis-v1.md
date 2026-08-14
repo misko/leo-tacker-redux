@@ -76,6 +76,13 @@ must retain systemd credential loading. Promotion installs the recorded station
 artifact only after the held-out scientific gate; configuration never selects
 an algorithm by a mutable database row.
 
+Exact recording jobs are created by the separate
+[analysis-side submission command](recording-analysis-submission.md). That
+command reads the durable published recording catalog and writes the durable
+PostgreSQL queue; capture has no analysis-submission capability. PostgreSQL does
+not transport IQ bytes, so the shared or replicated CAS binding described there
+must exist before an off-host worker can consume a submitted recording.
+
 ## Assembly and rehearsal
 
 Low-level tests may construct the service with

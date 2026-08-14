@@ -78,6 +78,13 @@ def observed_radio() -> ObservedV5Radio:
         0x0F,
         2,
         ("I0", "Q0", "I1", "Q1"),
+        -80.0,
+        (
+            ("altvoltage4", 0.0),
+            ("altvoltage5", 0.0),
+            ("altvoltage6", 0.0),
+            ("altvoltage7", 0.0),
+        ),
     )
 
 
@@ -150,6 +157,29 @@ def test_host_runtime_mismatches_fail_closed(
         ({"enabled_scan_mask": 0x03}, "enabled scan mask"),
         ({"channel_count": 1}, "paired channel count"),
         ({"component_layout": ("I0", "Q0")}, "component layout"),
+        ({"tx2_hardware_gain_db": -79.0}, "TX2 hardware gain"),
+        ({"tx2_hardware_gain_db": float("nan")}, "TX2 hardware gain"),
+        (
+            {
+                "tx2_dds_scales": (
+                    ("altvoltage4", 0.0),
+                    ("altvoltage5", 0.0),
+                    ("altvoltage6", 0.25),
+                    ("altvoltage7", 0.0),
+                )
+            },
+            "TX2 DDS scales",
+        ),
+        (
+            {
+                "tx2_dds_scales": (
+                    ("altvoltage4", 0.0),
+                    ("altvoltage5", 0.0),
+                    ("altvoltage6", 0.0),
+                )
+            },
+            "TX2 DDS channel layout",
+        ),
     ],
 )
 def test_radio_mismatches_fail_closed(changes: dict[str, object], message: str) -> None:

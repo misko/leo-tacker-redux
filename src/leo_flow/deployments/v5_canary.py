@@ -166,6 +166,7 @@ EXPECTED_RADIO = ExpectedV5Radio(
     serial="104000b29905000e17000800065934759d",
     firmware_release="v0.38-plutoplus-spf-libiio-metadata-v5",
     firmware_commit="d7c87a9a28094ee6f0b23cb47df9ff737b5a69d8",
+    maximum_tx2_hardware_gain_db=-80.0,
 )
 RADIO_CONFIG = PlutoRadioConfig(
     uri="ip:192.168.1.15",
@@ -209,6 +210,10 @@ class _DiskUsage(Protocol):
 
 def _disk_usage(path: Path) -> _DiskUsage:
     return shutil.disk_usage(path)
+
+
+def _is_mount(path: Path) -> bool:
+    return path.is_mount()
 
 
 class ExactCanaryPlanSource:
@@ -364,6 +369,13 @@ class _V5RadioProvider:
         )
 
 
+# Public station-composition seams.  The canary and the scan deployment share
+# only these capture/storage adapters; neither imports analysis.
+V5SpoolSpec = _SpoolSpec
+V5PostgresPublicationProvider = _PostgresPublicationProvider
+V5RadioProvider = _V5RadioProvider
+
+
 class CaptureHostGuard:
     """Own the process lock and verify local capacity before radio contact."""
 
@@ -374,13 +386,19 @@ class CaptureHostGuard:
         minimum_free_bytes: int,
         *,
         disk_usage: Callable[[Path], _DiskUsage] = _disk_usage,
+        required_mounts: tuple[Path, ...] = (),
+        is_mount: Callable[[Path], bool] = _is_mount,
     ) -> None:
         if minimum_free_bytes <= 0 or not writable_roots:
             raise ValueError("capture host guard requires roots and positive capacity")
+        if any(path not in writable_roots for path in required_mounts):
+            raise ValueError("required capture mounts must also be writable roots")
         self._lock_path = lock_path
         self._writable_roots = writable_roots
         self._minimum_free_bytes = minimum_free_bytes
         self._disk_usage = disk_usage
+        self._required_mounts = required_mounts
+        self._is_mount = is_mount
         self._lock_fd: int | None = None
 
     def acquire(self) -> None:
@@ -390,6 +408,15 @@ class CaptureHostGuard:
             self._lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             if self._lock_path.parent.is_symlink():
                 raise CanaryDeploymentError("capture runtime root cannot be a symlink")
+            for required_mount in self._required_mounts:
+                if (
+                    required_mount.is_symlink()
+                    or not required_mount.is_dir()
+                    or not self._is_mount(required_mount)
+                ):
+                    raise CanaryDeploymentError(
+                        "required capture object-store mount is unavailable"
+                    )
             for root in self._writable_roots:
                 root.mkdir(parents=True, exist_ok=True, mode=0o700)
                 if root.is_symlink() or not root.is_dir():
@@ -449,8 +476,8 @@ class CaptureHostGuard:
                 os.close(descriptor)
 
 
-class OneShotV5CanaryCycle:
-    """Recover, publish, or capture the one exact plan—never recapture on retry."""
+class OneShotV5PlanCycle:
+    """Recover, publish, or capture one exact plan—never recapture on retry."""
 
     def __init__(
         self,
@@ -461,15 +488,29 @@ class OneShotV5CanaryCycle:
         spool_spec: _SpoolSpec,
         publication_provider: _PublicationProvider,
         *,
-        engine: PlanCaptureEngine | None = None,
+        plan_id: PlanId,
+        exact_plan: CapturePlan,
+        exact_plan_digest: Digest,
+        deployment_name: str,
+        engine: PlanCaptureEngine,
     ) -> None:
+        if exact_plan.plan_id != plan_id:
+            raise ValueError("exact plan and plan ID differ")
+        if canonical_digest(exact_plan) != exact_plan_digest:
+            raise ValueError("exact plan differs from its configured digest")
+        if not deployment_name:
+            raise ValueError("deployment name cannot be empty")
         self._plan_source = plan_source
         self._radio_provider = radio_provider
         self._host_guard = host_guard
         self._writer = writer
         self._spool_spec = spool_spec
         self._publication_provider = publication_provider
-        self._engine = engine or PlanCaptureEngine(CAPTURE_IDENTITY)
+        self._engine = engine
+        self._plan_id = plan_id
+        self._exact_plan = exact_plan
+        self._exact_plan_digest = exact_plan_digest
+        self._deployment_name = deployment_name
         self._spool: SQLiteLocalSpool | None = None
         self._local: RootedSigMFRecordingStore | None = None
         self._reconciler: PublicationReconciler | None = None
@@ -478,7 +519,9 @@ class OneShotV5CanaryCycle:
 
     def preflight(self) -> None:
         if self._closed:
-            raise CanaryDeploymentError("closed canary cycle cannot restart")
+            raise CanaryDeploymentError(
+                f"closed {self._deployment_name} cycle cannot restart"
+            )
         if self._spool is not None:
             return
         self._host_guard.acquire()
@@ -493,20 +536,27 @@ class OneShotV5CanaryCycle:
         self._spool = spool
         self._local = local
         self._reconciler = PublicationReconciler(spool, publisher, local)
-        if not spool.has_durable_recording(PLAN_ID):
+        if not spool.has_durable_recording(self._plan_id):
             self._radio = self._radio_provider.open()
 
     def capture_and_publish_once(self) -> bool:
         spool, reconciler = self._ready()
-        if spool.has_durable_recording(PLAN_ID):
+        if spool.has_durable_recording(self._plan_id):
             result = reconciler.reconcile()
             self._require_reconciled(result.deferred, result.errors)
             return bool(result.published or result.cleaned)
         if self._radio is None:
-            raise CanaryDeploymentError("attested V5 radio is absent")
-        plan = self._plan_source.get(PLAN_ID)
-        if plan is not CANARY_PLAN or canonical_digest(plan) != CANARY_PLAN_DIGEST:
-            raise CanaryDeploymentError("plan source changed the immutable canary plan")
+            raise CanaryDeploymentError(
+                f"attested V5 radio is absent for {self._deployment_name}"
+            )
+        plan = self._plan_source.get(self._plan_id)
+        if (
+            plan is not self._exact_plan
+            or canonical_digest(plan) != self._exact_plan_digest
+        ):
+            raise CanaryDeploymentError(
+                f"plan source changed the immutable {self._deployment_name} plan"
+            )
         self._engine.execute(plan, self._radio, self._writer, spool)
         result = reconciler.reconcile()
         self._require_reconciled(result.deferred, result.errors)
@@ -530,12 +580,14 @@ class OneShotV5CanaryCycle:
             self._host_guard.close()
         if failure is not None:
             raise CanaryDeploymentError(
-                f"V5 canary shutdown failed: {type(failure).__name__}"
+                f"{self._deployment_name} shutdown failed: {type(failure).__name__}"
             ) from failure
 
     def _ready(self) -> tuple[SQLiteLocalSpool, PublicationReconciler]:
         if self._spool is None or self._reconciler is None:
-            raise CanaryDeploymentError("V5 canary preflight has not completed")
+            raise CanaryDeploymentError(
+                f"{self._deployment_name} preflight has not completed"
+            )
         return self._spool, self._reconciler
 
     @staticmethod
@@ -560,6 +612,35 @@ class OneShotV5CanaryCycle:
             raise CanaryDeploymentError(
                 f"recording publication remains deferred ({kinds or 'unknown'})"
             )
+
+
+class OneShotV5CanaryCycle(OneShotV5PlanCycle):
+    """Compatibility composition for the exact qualified V5 canary plan."""
+
+    def __init__(
+        self,
+        plan_source: CapturePlanSource,
+        radio_provider: _RadioProvider,
+        host_guard: CaptureHostGuard,
+        writer: SigMFRecordingWriter,
+        spool_spec: _SpoolSpec,
+        publication_provider: _PublicationProvider,
+        *,
+        engine: PlanCaptureEngine | None = None,
+    ) -> None:
+        super().__init__(
+            plan_source,
+            radio_provider,
+            host_guard,
+            writer,
+            spool_spec,
+            publication_provider,
+            plan_id=PLAN_ID,
+            exact_plan=CANARY_PLAN,
+            exact_plan_digest=CANARY_PLAN_DIGEST,
+            deployment_name="V5 canary",
+            engine=engine or PlanCaptureEngine(CAPTURE_IDENTITY),
+        )
 
 
 def _open_pyadi_ad9361(uri: str) -> PlutoDevice:
