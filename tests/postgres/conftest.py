@@ -94,6 +94,7 @@ def postgres_dsn() -> str:
             "0006_dashboard_projection_identity.sql",
             "0007_feature_set_catalog.sql",
             "0008_model_snapshot_catalog.sql",
+            "0009_recording_ephemeris_link.sql",
         )
         yield dsn
     finally:
@@ -111,7 +112,8 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE dashboard_storage_health_projection,
+            TRUNCATE recording_ephemeris_link,
+                     dashboard_storage_health_projection,
                      dashboard_analysis_projection_identity,
                      dashboard_capture_projection_identity,
                      dashboard_track_projection, dashboard_model_projection,

@@ -24,6 +24,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0006_dashboard_projection_identity.sql",),
         ("0007_feature_set_catalog.sql",),
         ("0008_model_snapshot_catalog.sql",),
+        ("0009_recording_ephemeris_link.sql",),
     ]
 
 
@@ -77,6 +78,35 @@ def test_ephemeris_capabilities_are_narrow(postgres_dsn: str) -> None:
             ).fetchone()
         )
     assert analysis_insert
+    assert not analysis_update
+    assert dashboard_read
+    assert not capture_read
+
+
+@pytest.mark.integration
+def test_ephemeris_link_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        (
+            analysis_read,
+            analysis_insert,
+            analysis_update,
+            dashboard_read,
+            capture_read,
+        ) = connection.execute(
+            """
+                SELECT has_table_privilege(
+                           'leo_analysis', 'recording_ephemeris_link', 'SELECT'),
+                       has_table_privilege(
+                           'leo_analysis', 'recording_ephemeris_link', 'INSERT'),
+                       has_table_privilege(
+                           'leo_analysis', 'recording_ephemeris_link', 'UPDATE'),
+                       has_table_privilege(
+                           'leo_dashboard', 'recording_ephemeris_link', 'SELECT'),
+                       has_table_privilege(
+                           'leo_capture', 'recording_ephemeris_link', 'SELECT')
+                """
+        ).fetchone()
+    assert analysis_read and analysis_insert
     assert not analysis_update
     assert dashboard_read
     assert not capture_read
