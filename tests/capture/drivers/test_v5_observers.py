@@ -153,6 +153,48 @@ def test_radio_observer_reads_selected_context_and_scan_layout() -> None:
     assert observed.component_layout == ("I0", "Q0", "I1", "Q1")
 
 
+def test_radio_observer_normalizes_live_libiio_component_ids() -> None:
+    attrs = {
+        "hw_serial": _Attribute("serial-v5"),
+        "fw_version": _Attribute("firmware-v5"),
+        "iio,buffer-metadata": _Attribute("1"),
+    }
+    channels = tuple(
+        SimpleNamespace(
+            id=f"voltage{index}",
+            index=index,
+            output=False,
+            scan_element=True,
+        )
+        for index in range(4)
+    )
+    observed = observe_v5_radio(
+        SimpleNamespace(
+            _ctx=SimpleNamespace(attrs=attrs),
+            _rxadc=SimpleNamespace(channels=channels),
+        )
+    )
+    assert observed.enabled_scan_mask == 0x0F
+    assert observed.channel_count == 2
+    assert observed.component_layout == ("I0", "Q0", "I1", "Q1")
+
+
+def test_radio_observer_rejects_duplicate_component_claims() -> None:
+    device = SimpleNamespace(
+        serial="serial-v5",
+        fw_version="firmware-v5",
+        _ctx=SimpleNamespace(attrs={"iio,buffer-metadata": _Attribute("1")}),
+        _rxadc=SimpleNamespace(
+            channels=(
+                SimpleNamespace(id="voltage0", index=0, output=False),
+                SimpleNamespace(id="voltage0_i", index=1, output=False),
+            )
+        ),
+    )
+    with pytest.raises(RadioConfigurationError, match="radio observation failed"):
+        observe_v5_radio(device)
+
+
 def test_radio_observer_rejects_unindexed_scan_claim() -> None:
     device = SimpleNamespace(
         serial="serial-v5",

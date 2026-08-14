@@ -116,16 +116,19 @@ def observe_v5_radio(device: PlutoDevice) -> ObservedV5Radio:
             ):
                 continue
             identifier = str(getattr(channel, "id", getattr(channel, "name", "")))
-            match = re.fullmatch(r"voltage([01])_([iqIQ])", identifier)
-            if match is None:
+            component = _rx_component(identifier)
+            if component is None:
                 continue
             index = getattr(channel, "index", None)
             if isinstance(index, bool) or not isinstance(index, int) or index < 0:
                 raise ValueError("RX scan channel lacks a valid index")
-            receiver = int(match.group(1))
-            component = match.group(2).upper()
-            scanned.append((index, receiver, f"{component}{receiver}"))
-        if not scanned or len({index for index, _, _ in scanned}) != len(scanned):
+            receiver, label = component
+            scanned.append((index, receiver, label))
+        if (
+            not scanned
+            or len({index for index, _, _ in scanned}) != len(scanned)
+            or len({label for _, _, label in scanned}) != len(scanned)
+        ):
             raise ValueError("paired RX scan layout is absent or ambiguous")
         scanned.sort()
         return ObservedV5Radio(
@@ -140,6 +143,20 @@ def observe_v5_radio(device: PlutoDevice) -> ObservedV5Radio:
         raise RadioConfigurationError(
             f"V5 radio observation failed: {type(error).__name__}"
         ) from error
+
+
+def _rx_component(identifier: str) -> tuple[int, str] | None:
+    named = re.fullmatch(r"voltage([01])_([iqIQ])", identifier)
+    if named is not None:
+        receiver = int(named.group(1))
+        return receiver, f"{named.group(2).upper()}{receiver}"
+    indexed = re.fullmatch(r"voltage([0-3])", identifier)
+    if indexed is None:
+        return None
+    component_index = int(indexed.group(1))
+    receiver = component_index // 2
+    component = "I" if component_index % 2 == 0 else "Q"
+    return receiver, f"{component}{receiver}"
 
 
 def _load_manifest(path: Path) -> Mapping[str, Any]:
