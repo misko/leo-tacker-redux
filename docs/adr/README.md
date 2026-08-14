@@ -28,3 +28,4 @@ golden fixtures that change.
 - [0023: Exact cross-recording model-input assembly](0023-exact-cross-recording-model-input-assembly.md)
 - [0024: Durable detector evaluation publication](0024-durable-detector-evaluation-publication.md)
 - [0025: Experimental offline residual tracking](0025-experimental-offline-residual-tracking.md)
+- [0026: Exact model-job submission](0026-exact-model-job-submission.md)
