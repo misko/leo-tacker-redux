@@ -76,7 +76,6 @@ from leo_flow.dashboard import DashboardJsonApplication, JsonRequest
 from leo_flow.jobs import JobType
 from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
 from leo_flow.services import (
-    EphemerisLinkBackfillUnavailable,
     FencedRecordingAnalysisWorker,
     ModelAnalysisJobPreparer,
     ModelAnalysisJobProcessor,
@@ -307,11 +306,6 @@ class _DeterministicFitter:
         )
 
 
-class _UnusedExecutor:
-    def execute(self, lease):
-        raise AssertionError(f"unexpected routed job: {lease.job_type}")
-
-
 @pytest.mark.integration
 def test_durable_recording_feature_dataset_model_dashboard_vertical(
     postgres_dsn: str, tmp_path
@@ -338,14 +332,9 @@ def test_durable_recording_feature_dataset_model_dashboard_vertical(
         worker_id="vertical-recording",
         lease_ttl_s=30,
     )
-    unused = _UnusedExecutor()
-    backfill = EphemerisLinkBackfillUnavailable(jobs)
     router = TypedAnalysisRouterCycle(
         jobs,
-        recording_analysis=recording_executor,
-        model_analysis=unused,
-        ephemeris_retrieval=unused,
-        ephemeris_link_backfill=backfill,
+        executors={JobType.RECORDING_ANALYSIS: recording_executor},
         worker_id="vertical-router",
         lease_ttl_s=30,
     )
@@ -427,10 +416,10 @@ def test_durable_recording_feature_dataset_model_dashboard_vertical(
     )
     restarted_router = TypedAnalysisRouterCycle(
         jobs,
-        recording_analysis=recording_executor,
-        model_analysis=model_executor,
-        ephemeris_retrieval=unused,
-        ephemeris_link_backfill=backfill,
+        executors={
+            JobType.RECORDING_ANALYSIS: recording_executor,
+            JobType.MODEL_ANALYSIS: model_executor,
+        },
         worker_id="vertical-router-restart",
         lease_ttl_s=30,
     )

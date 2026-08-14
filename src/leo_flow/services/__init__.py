@@ -8,9 +8,7 @@ from .analysis import (
 )
 from .analysis_router import (
     AnalysisLeaseExecutor,
-    EphemerisLinkBackfillUnavailable,
     TypedAnalysisRouterCycle,
-    UnsupportedAnalysisJobError,
 )
 from .bootstrap import (
     AdapterBuildContext,
@@ -90,7 +88,6 @@ __all__ = [
     "DeploymentPlugin",
     "DiagnosticEvent",
     "DiagnosticSink",
-    "EphemerisLinkBackfillUnavailable",
     "FencedAnalysisCycle",
     "FencedRecordingAnalysisWorker",
     "HealthSnapshot",
@@ -116,7 +113,6 @@ __all__ = [
     "ServiceState",
     "SubmittedModelAnalysis",
     "TypedAnalysisRouterCycle",
-    "UnsupportedAnalysisJobError",
     "assemble_service",
     "build_analysis_service",
     "build_capture_service",

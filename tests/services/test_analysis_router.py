@@ -8,11 +8,7 @@ from leo_flow.contracts.core import ArtifactRef, JobId, SchemaRef, UtcNs
 from leo_flow.jobs import InMemoryJobLeaseRepository, JobPayload, JobType
 from leo_flow.jobs.contracts import JobLease
 from leo_flow.jobs.memory import JobState
-from leo_flow.services import (
-    EphemerisLinkBackfillUnavailable,
-    TypedAnalysisRouterCycle,
-    UnsupportedAnalysisJobError,
-)
+from leo_flow.services import TypedAnalysisRouterCycle
 from testkit import digest
 
 
@@ -64,48 +60,41 @@ def test_router_claims_and_dispatches_each_implemented_type_exactly_once() -> No
         _enqueue(jobs, job_type, suffix)
     router = TypedAnalysisRouterCycle(
         jobs,
-        recording_analysis=recording,
-        model_analysis=model,
-        ephemeris_retrieval=ephemeris,
-        ephemeris_link_backfill=backfill,
+        executors={
+            JobType.RECORDING_ANALYSIS: recording,
+            JobType.MODEL_ANALYSIS: model,
+            JobType.EPHEMERIS_RETRIEVAL: ephemeris,
+            JobType.EPHEMERIS_LINK_BACKFILL: backfill,
+        },
         worker_id="router",
         lease_ttl_s=10,
     )
 
     assert [router.process_one_job() for _ in range(4)] == [True] * 4
     assert not router.process_one_job()
-    assert [
-        lease.job_type
+    assert router.claimed_types == tuple(sorted(JobType, key=lambda kind: kind.value))
+    assert all(
+        len(executor.calls) == 1
         for executor in (recording, model, ephemeris, backfill)
-        for lease in executor.calls
-    ] == list(TypedAnalysisRouterCycle.CLAIMED_TYPES)
+    )
 
 
-def test_unimplemented_backfill_fails_closed_with_bounded_reason() -> None:
+def test_router_never_claims_a_job_without_an_installed_executor() -> None:
     jobs = _jobs()
     _enqueue(jobs, JobType.EPHEMERIS_LINK_BACKFILL, "backfill")
-    unused_recording = _Executor(jobs, JobType.RECORDING_ANALYSIS)
-    unused_model = _Executor(jobs, JobType.MODEL_ANALYSIS)
-    unused_ephemeris = _Executor(jobs, JobType.EPHEMERIS_RETRIEVAL)
+    _enqueue(jobs, JobType.RECORDING_ANALYSIS, "recording")
+    recording = _Executor(jobs, JobType.RECORDING_ANALYSIS)
     router = TypedAnalysisRouterCycle(
         jobs,
-        recording_analysis=unused_recording,
-        model_analysis=unused_model,
-        ephemeris_retrieval=unused_ephemeris,
-        ephemeris_link_backfill=EphemerisLinkBackfillUnavailable(jobs),
+        executors={JobType.RECORDING_ANALYSIS: recording},
         worker_id="router",
         lease_ttl_s=10,
     )
 
-    with pytest.raises(UnsupportedAnalysisJobError, match="not-implemented"):
-        router.process_one_job()
-    snapshot = jobs.snapshot(JobId("job_backfill"))
-    assert snapshot.state is JobState.FAILED
-    assert snapshot.last_error == EphemerisLinkBackfillUnavailable.REASON
+    assert router.process_one_job()
     assert not router.process_one_job()
-    assert not unused_recording.calls
-    assert not unused_model.calls
-    assert not unused_ephemeris.calls
+    assert len(recording.calls) == 1
+    assert jobs.snapshot(JobId("job_backfill")).state is JobState.READY
 
 
 class _FailingExecutor:
@@ -128,10 +117,7 @@ def test_router_does_not_complete_or_refail_after_executor_fault() -> None:
     _enqueue(jobs, JobType.MODEL_ANALYSIS, "model")
     router = TypedAnalysisRouterCycle(
         jobs,
-        recording_analysis=_Executor(jobs, JobType.RECORDING_ANALYSIS),
-        model_analysis=_FailingExecutor(jobs),
-        ephemeris_retrieval=_Executor(jobs, JobType.EPHEMERIS_RETRIEVAL),
-        ephemeris_link_backfill=EphemerisLinkBackfillUnavailable(jobs),
+        executors={JobType.MODEL_ANALYSIS: _FailingExecutor(jobs)},
         worker_id="router",
         lease_ttl_s=10,
     )
@@ -149,10 +135,7 @@ def test_router_lifecycle_hooks_are_bounded_and_explicit() -> None:
     executor = _Executor(jobs, JobType.RECORDING_ANALYSIS)
     router = TypedAnalysisRouterCycle(
         jobs,
-        recording_analysis=executor,
-        model_analysis=executor,
-        ephemeris_retrieval=executor,
-        ephemeris_link_backfill=executor,
+        executors={JobType.RECORDING_ANALYSIS: executor},
         worker_id="router",
         lease_ttl_s=10,
         preflight=lambda: events.append("preflight"),
