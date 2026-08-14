@@ -24,6 +24,7 @@ DEFINER_FUNCTIONS = {
     "orphan_claim_is_current",
     "park_job",
     "publish_tracking_input_snapshot",
+    "publish_tracking_model_snapshot",
     "record_unregistered_object_delete_failure",
     "register_live_object_blob",
 }
@@ -37,6 +38,7 @@ ANALYSIS_FUNCTIONS = {
     "lock_active_job_lease",
     "park_job",
     "publish_tracking_input_snapshot",
+    "publish_tracking_model_snapshot",
     "register_live_object_blob",
 }
 CAPTURE_FUNCTIONS = {"register_live_object_blob"}

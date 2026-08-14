@@ -33,6 +33,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0015_job_parking.sql",),
         ("0016_tracking_input_catalog.sql",),
         ("0017_security_definer_hardening.sql",),
+        ("0018_tracking_model_snapshot_catalog.sql",),
     ]
 
 

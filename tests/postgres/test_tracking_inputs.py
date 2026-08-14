@@ -408,7 +408,10 @@ def test_identity_idempotency_object_and_authority_conflicts_fail_closed(
         ),
     )
     with psycopg.connect(postgres_dsn) as connection:
-        connection.execute("TRUNCATE tracking_input_entry, tracking_input_snapshot")
+        connection.execute(
+            "TRUNCATE tracking_model_snapshot, "
+            "tracking_input_entry, tracking_input_snapshot"
+        )
     with pytest.raises(psycopg.errors.InvalidParameterValue):
         _catalog(postgres_dsn).publish(absent, idempotency_key="tracking:substituted")
     with psycopg.connect(postgres_dsn) as connection:
@@ -448,7 +451,10 @@ def test_receiver_chain_authority_is_exact_and_half_open(
     )
     changed = replace(projection, entries=(changed_entry,))
     with psycopg.connect(postgres_dsn) as connection:
-        connection.execute("TRUNCATE tracking_input_entry, tracking_input_snapshot")
+        connection.execute(
+            "TRUNCATE tracking_model_snapshot, "
+            "tracking_input_entry, tracking_input_snapshot"
+        )
 
     if accepted:
         assert (

@@ -103,6 +103,7 @@ def postgres_dsn() -> str:
             "0015_job_parking.sql",
             "0016_tracking_input_catalog.sql",
             "0017_security_definer_hardening.sql",
+            "0018_tracking_model_snapshot_catalog.sql",
         )
         yield dsn
     finally:
@@ -120,7 +121,8 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE tracking_input_entry, tracking_input_snapshot,
+            TRUNCATE tracking_model_snapshot,
+                     tracking_input_entry, tracking_input_snapshot,
                      object_orphan_event, object_orphan_observation,
                      object_gc_attempt, object_retention_assignment,
                      object_retention_policy,
