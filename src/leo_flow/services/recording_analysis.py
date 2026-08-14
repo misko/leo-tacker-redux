@@ -139,9 +139,10 @@ def recording_analysis_payload(request: RecordingAnalysisRequest) -> JobPayload:
             },
             "algorithm_ref": _artifact_document(request.algorithm_ref),
             "config_ref": _artifact_document(request.config_ref),
-            "dependency_refs": [
-                _artifact_document(value) for value in request.dependency_refs
-            ],
+            "dependency_refs": {
+                str(index): _artifact_document(value)
+                for index, value in enumerate(request.dependency_refs)
+            },
             "requested_output_schema": _schema_document(
                 request.requested_output_schema
             ),
@@ -169,8 +170,11 @@ def decode_recording_analysis_payload(payload: JobPayload) -> RecordingAnalysisR
     try:
         recording = _recording_ref(document["recording_object_ref"])
         dependencies = document["dependency_refs"]
-        if not isinstance(dependencies, list):
-            raise RecordingAnalysisJobError("dependency_refs must be an array")
+        if not isinstance(dependencies, dict):
+            raise RecordingAnalysisJobError("dependency_refs must be an indexed object")
+        expected_indices = {str(index) for index in range(len(dependencies))}
+        if set(dependencies) != expected_indices:
+            raise RecordingAnalysisJobError("dependency_refs indices are invalid")
         return RecordingAnalysisRequest(
             schema=_schema(document["request_schema"], "request_schema"),
             recording_id=type(recording.recording_id)(
@@ -180,8 +184,8 @@ def decode_recording_analysis_payload(payload: JobPayload) -> RecordingAnalysisR
             algorithm_ref=_artifact(document["algorithm_ref"], "algorithm_ref"),
             config_ref=_artifact(document["config_ref"], "config_ref"),
             dependency_refs=tuple(
-                _artifact(value, f"dependency_refs[{index}]")
-                for index, value in enumerate(dependencies)
+                _artifact(dependencies[str(index)], f"dependency_refs[{index}]")
+                for index in range(len(dependencies))
             ),
             requested_output_schema=_schema(
                 document["requested_output_schema"], "requested_output_schema"
