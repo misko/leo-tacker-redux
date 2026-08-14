@@ -15,7 +15,6 @@ from leo_flow.analysis.model import (
 from leo_flow.application import (
     DashboardProjectionStore,
     InMemoryModelPublication,
-    ModelObjectNotStaged,
     ModelPublicationError,
 )
 from leo_flow.contracts.capture import ActivityKind
@@ -24,9 +23,7 @@ from leo_flow.contracts.model import (
     FeatureDatasetSnapshot,
     FeatureDatasetSnapshotRef,
     ModelApproval,
-    ModelSnapshotProjection,
 )
-from leo_flow.contracts.storage import ObjectRef
 from leo_flow.dashboard import DashboardJsonApplication, JsonRequest, JsonResponse
 
 from ._model_fixtures import (
@@ -93,18 +90,11 @@ def test_frozen_feature_membership_to_explicit_release_and_json_dashboard() -> N
     assert bundle_after_later_arrival == bundle_before_later_arrival
     assert reader.calls[call_count:] == [first[0], second[0]]
 
-    # The frozen publisher port supplies only ObjectRef plus a projection. The
-    # adapter-owned stage models the immutable blob lookup needed to recover
-    # model_run_id and validate the complete bundle before publication.
+    # Publication receives the authoritative bundle and derives object metadata.
     publication = InMemoryModelPublication()
-    bundle_ref = publication.stage(bundle_before_later_arrival)
     model_ref = publication.publish(
         request,
-        bundle_ref,
-        ModelSnapshotProjection(
-            bundle_before_later_arrival.model_snapshot_id,
-            len(bundle_before_later_arrival.parameters),
-        ),
+        bundle_before_later_arrival,
         idempotency_key="publish-vertical-model",
     )
 
@@ -230,7 +220,7 @@ def test_bad_dataset_membership_is_rejected_at_contract_and_fitter_boundaries() 
     assert not reader.calls
 
 
-def test_model_publisher_rejects_unavailable_or_wrong_object_digest() -> None:
+def test_model_publisher_rejects_wrong_bundle_provenance() -> None:
     dwell = recording_manifest(0, kind=ActivityKind.DWELL, started_utc_ns=1_000)
     scan = recording_manifest(1, kind=ActivityKind.SCAN, started_utc_ns=3_000)
     first = feature_set(dwell, 10.0)
@@ -245,25 +235,24 @@ def test_model_publisher_rejects_unavailable_or_wrong_object_digest() -> None:
         NoEphemerides(),
         HardwareReader(hw_ref, hw_snapshot),
     )
-    projection = ModelSnapshotProjection(bundle.model_snapshot_id, 1)
     publication = InMemoryModelPublication()
-    unavailable = ObjectRef(
-        digest=Digest.sha256(b"unavailable"),
-        byte_count=12,
-        media_type="application/json",
-        format_id="model-snapshot-bundle-v0.1",
-        locator="memory://models/unavailable",
-    )
-    with pytest.raises(ModelObjectNotStaged, match="not staged"):
+    with pytest.raises(ModelPublicationError, match="membership"):
         publication.publish(
-            request, unavailable, projection, idempotency_key="unavailable"
+            request,
+            replace(bundle, dataset_membership_digest=Digest.sha256(b"wrong")),
+            idempotency_key="wrong-membership",
         )
-
-    staged = publication.stage(bundle)
-    wrong_metadata = replace(staged, byte_count=staged.byte_count + 1)
-    with pytest.raises(ModelPublicationError, match="metadata"):
+    with pytest.raises(ModelPublicationError, match="configuration"):
         publication.publish(
-            request, wrong_metadata, projection, idempotency_key="wrong-metadata"
+            request,
+            replace(
+                bundle,
+                provenance=replace(
+                    bundle.provenance,
+                    normalized_config_digest=Digest.sha256(b"wrong-config"),
+                ),
+            ),
+            idempotency_key="wrong-config",
         )
 
 

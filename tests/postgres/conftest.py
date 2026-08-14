@@ -93,6 +93,7 @@ def postgres_dsn() -> str:
             "0005_dataset_snapshots.sql",
             "0006_dashboard_projection_identity.sql",
             "0007_feature_set_catalog.sql",
+            "0008_model_snapshot_catalog.sql",
         )
         yield dsn
     finally:
@@ -115,8 +116,9 @@ def clean_database(postgres_dsn: str) -> None:
                      dashboard_capture_projection_identity,
                      dashboard_track_projection, dashboard_model_projection,
                      dashboard_feature_projection, dashboard_activity_projection,
-                     dashboard_recording_projection, dataset_member,
-                     dataset_snapshot, feature_set, ephemeris_snapshot,
+                     dashboard_recording_projection, model_release,
+                     model_snapshot, dataset_member, dataset_snapshot,
+                     feature_set, ephemeris_snapshot,
                      recording, object_blob, job
             """
         )

@@ -434,6 +434,11 @@ def test_model_has_no_raw_recording_or_external_capabilities() -> None:
     )
     for path in source.rglob("*.py"):
         modules = imported_modules(path)
+        if path.name == "persistence.py":
+            # The model publication boundary may consume only the generic blob
+            # capability. Fitters still cannot acquire a raw recording reader,
+            # storage implementation, path, or catalog capability.
+            modules.discard("leo_flow.storage.ports")
         assert not any(
             module == prefix or module.startswith(prefix + ".")
             for module in modules

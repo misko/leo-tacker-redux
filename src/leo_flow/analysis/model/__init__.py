@@ -9,12 +9,22 @@ from .api import (
     receiver_quality_aggregate_algorithm_ref,
     receiver_quality_aggregate_config_ref,
 )
+from .codec import (
+    MalformedModelSnapshotError,
+    decode_model_snapshot,
+    encode_model_snapshot,
+)
 from .dataset_resolution import DatasetResolutionError, resolve_model_dataset
 from .nuisance import (
     NuisanceBatchConfig,
     RelativeRadioLnbNuisanceModel,
     nuisance_batch_algorithm_ref,
     nuisance_batch_config_ref,
+)
+from .persistence import (
+    DurableModelSnapshotRepository,
+    ModelSnapshotIntegrityError,
+    ModelSnapshotNotFoundError,
 )
 from .simulator import (
     NuisanceSimulationSpec,
@@ -25,9 +35,13 @@ from .simulator import (
 
 __all__ = [
     "DatasetResolutionError",
+    "DurableModelSnapshotRepository",
+    "MalformedModelSnapshotError",
     "ModelConfigurationError",
     "ModelExecutionContext",
     "ModelInputError",
+    "ModelSnapshotIntegrityError",
+    "ModelSnapshotNotFoundError",
     "NuisanceBatchConfig",
     "NuisanceSimulationSpec",
     "NuisanceTerm",
@@ -35,6 +49,8 @@ __all__ = [
     "ReceiverQualityAggregateConfig",
     "ReceiverQualityAggregateModel",
     "RelativeRadioLnbNuisanceModel",
+    "decode_model_snapshot",
+    "encode_model_snapshot",
     "nuisance_batch_algorithm_ref",
     "nuisance_batch_config_ref",
     "receiver_quality_aggregate_algorithm_ref",

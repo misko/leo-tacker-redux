@@ -23,6 +23,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0005_dataset_snapshots.sql",),
         ("0006_dashboard_projection_identity.sql",),
         ("0007_feature_set_catalog.sql",),
+        ("0008_model_snapshot_catalog.sql",),
     ]
 
 
@@ -144,6 +145,44 @@ def test_feature_set_capabilities_are_narrow(postgres_dsn: str) -> None:
     assert analysis_append
     assert not analysis_update
     assert dashboard_read
+    assert not capture_read
+
+
+@pytest.mark.integration
+def test_model_snapshot_and_release_capabilities_are_narrow(
+    postgres_dsn: str,
+) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        (
+            analysis_read,
+            analysis_append,
+            analysis_update,
+            analysis_sequence_usage,
+            dashboard_read,
+            dashboard_append,
+            dashboard_sequence_usage,
+            capture_read,
+        ) = connection.execute(
+            """
+            SELECT has_table_privilege('leo_analysis', 'model_snapshot', 'SELECT'),
+                   has_table_privilege('leo_analysis', 'model_release', 'INSERT'),
+                   has_table_privilege('leo_analysis', 'model_snapshot', 'UPDATE'),
+                   has_sequence_privilege(
+                       'leo_analysis', 'model_release_release_sequence_seq', 'USAGE'),
+                   has_table_privilege('leo_dashboard', 'model_release', 'SELECT'),
+                   has_table_privilege('leo_dashboard', 'model_snapshot', 'INSERT'),
+                   has_sequence_privilege(
+                       'leo_dashboard', 'model_release_release_sequence_seq', 'USAGE'),
+                   has_table_privilege('leo_capture', 'model_snapshot', 'SELECT')
+            """
+        ).fetchone()
+    assert analysis_read
+    assert analysis_append
+    assert not analysis_update
+    assert analysis_sequence_usage
+    assert dashboard_read
+    assert not dashboard_append
+    assert not dashboard_sequence_usage
     assert not capture_read
 
 

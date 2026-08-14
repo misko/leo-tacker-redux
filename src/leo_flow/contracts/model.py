@@ -137,16 +137,6 @@ class ModelSnapshotRef:
 
 
 @dataclass(frozen=True)
-class ModelSnapshotProjection:
-    model_snapshot_id: ModelSnapshotId
-    parameter_count: int
-
-    def __post_init__(self) -> None:
-        if self.parameter_count < 0:
-            raise ValueError("parameter_count must be non-negative")
-
-
-@dataclass(frozen=True)
 class ModelApproval:
     approved_by: str
     approved_utc_ns: UtcNs

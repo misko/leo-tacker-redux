@@ -50,7 +50,6 @@ from .model import (
     ModelApproval,
     ModelRelease,
     ModelSnapshotBundle,
-    ModelSnapshotProjection,
     ModelSnapshotRef,
 )
 from .storage import ByteRange, ObjectRef, PublishedRecordingRef
@@ -174,11 +173,23 @@ class ModelPublisher(Protocol):
     def publish(
         self,
         request: ModelAnalysisRequest,
-        bundle_ref: ObjectRef,
-        projection: ModelSnapshotProjection,
+        bundle: ModelSnapshotBundle,
         *,
         idempotency_key: str,
     ) -> ModelSnapshotRef: ...
+
+
+class ModelSnapshotView(Protocol):
+    @property
+    def ref(self) -> ModelSnapshotRef: ...
+
+    def bundle(self) -> ModelSnapshotBundle: ...
+
+
+class ModelSnapshotReader(Protocol):
+    def open(
+        self, ref: ModelSnapshotRef
+    ) -> AbstractContextManager[ModelSnapshotView]: ...
 
 
 class ModelReleasePublisher(Protocol):

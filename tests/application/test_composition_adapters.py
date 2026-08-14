@@ -10,6 +10,7 @@ from integration._model_fixtures import (
     HardwareReader,
     NoEphemerides,
     dataset,
+    digest,
     execution_context,
     feature_set,
     hardware,
@@ -29,13 +30,19 @@ from leo_flow.application import (
     ProjectionInputError,
 )
 from leo_flow.contracts.capture import ActivityKind
-from leo_flow.contracts.core import ModelRunId, ModelSnapshotId, UtcNs
+from leo_flow.contracts.core import (
+    Digest,
+    ModelRunId,
+    ModelSnapshotId,
+    UtcNs,
+    canonical_json_bytes,
+)
 from leo_flow.contracts.model import (
     ModelApproval,
-    ModelSnapshotProjection,
     ModelSnapshotRef,
 )
 from leo_flow.contracts.ports import ModelPublisher, ModelReleasePublisher
+from leo_flow.contracts.storage import ObjectRef
 
 APPLICATION = Path(__file__).resolve().parents[2] / "src" / "leo_flow" / "application"
 
@@ -65,20 +72,13 @@ def test_model_adapter_structurally_satisfies_both_frozen_publication_ports() ->
     assert publisher is releaser
 
 
-def test_model_stage_publish_and_release_are_idempotent_but_immutable() -> None:
+def test_model_publish_and_release_are_idempotent_and_alias_is_explicit() -> None:
     request, bundle, _, _ = fitted_model()
     adapter = InMemoryModelPublication()
-    first_object = adapter.stage(bundle)
-    assert adapter.stage(bundle) == first_object
-    projection = ModelSnapshotProjection(bundle.model_snapshot_id, 1)
-    first_publish = adapter.publish(
-        request, first_object, projection, idempotency_key="publish-model"
-    )
+    first_publish = adapter.publish(request, bundle, idempotency_key="publish-model")
     assert adapter.bundle(first_publish) == bundle
     assert (
-        adapter.publish(
-            request, first_object, projection, idempotency_key="publish-model"
-        )
+        adapter.publish(request, bundle, idempotency_key="publish-model")
         == first_publish
     )
     approval = ModelApproval(
@@ -95,13 +95,13 @@ def test_model_stage_publish_and_release_are_idempotent_but_immutable() -> None:
         )
         == first_release
     )
-    with pytest.raises(ModelPublicationConflict, match="alias"):
-        adapter.release(
-            first_publish,
-            "current",
-            replace(approval, rationale="a different approval record"),
-            idempotency_key="another-release",
-        )
+    replacement = adapter.release(
+        first_publish,
+        "current",
+        replace(approval, rationale="a different approval record"),
+        idempotency_key="another-release",
+    )
+    assert adapter.get_release("current") == replacement
     with pytest.raises(ModelPublicationConflict, match="idempotency key"):
         adapter.release(
             first_publish,
@@ -111,17 +111,24 @@ def test_model_stage_publish_and_release_are_idempotent_but_immutable() -> None:
         )
 
 
-def test_publication_validates_projection_and_exact_published_release_ref() -> None:
+def test_publication_validates_bundle_and_exact_published_release_ref() -> None:
     request, bundle, _, _ = fitted_model()
     adapter = InMemoryModelPublication()
-    object_ref = adapter.stage(bundle)
-    with pytest.raises(ModelPublicationError, match="parameter count"):
+    invalid = replace(bundle, dataset_membership_digest=digest("wrong-membership"))
+    with pytest.raises(ModelPublicationError, match="membership"):
         adapter.publish(
             request,
-            object_ref,
-            ModelSnapshotProjection(bundle.model_snapshot_id, 999),
+            invalid,
             idempotency_key="bad-projection",
         )
+    payload = canonical_json_bytes(bundle)
+    object_ref = ObjectRef(
+        Digest.sha256(payload),
+        len(payload),
+        "application/json",
+        "model-snapshot-bundle-v0.1",
+        f"memory://models/{Digest.sha256(payload).value}",
+    )
     unpublished = ModelSnapshotRef(
         bundle.model_snapshot_id, bundle.model_run_id, object_ref
     )
@@ -135,8 +142,7 @@ def test_publication_validates_projection_and_exact_published_release_ref() -> N
     with pytest.raises(ModelPublicationError, match="idempotency_key"):
         adapter.publish(
             request,
-            object_ref,
-            ModelSnapshotProjection(bundle.model_snapshot_id, 1),
+            bundle,
             idempotency_key="",
         )
 
@@ -144,31 +150,23 @@ def test_publication_validates_projection_and_exact_published_release_ref() -> N
 def test_publication_rejects_reused_keys_and_model_ids_with_different_objects() -> None:
     request, bundle, _, _ = fitted_model()
     adapter = InMemoryModelPublication()
-    original_object = adapter.stage(bundle)
-    original_projection = ModelSnapshotProjection(bundle.model_snapshot_id, 1)
-    original = adapter.publish(
-        request, original_object, original_projection, idempotency_key="original"
-    )
+    original = adapter.publish(request, bundle, idempotency_key="original")
 
     another_identity = replace(
         bundle, model_snapshot_id=ModelSnapshotId("model_another")
     )
-    another_object = adapter.stage(another_identity)
     with pytest.raises(ModelPublicationConflict, match="idempotency key"):
         adapter.publish(
             request,
-            another_object,
-            ModelSnapshotProjection(another_identity.model_snapshot_id, 1),
+            another_identity,
             idempotency_key="original",
         )
 
     another_run = replace(bundle, model_run_id=ModelRunId("mrun_another"))
-    another_run_object = adapter.stage(another_run)
     with pytest.raises(ModelPublicationConflict, match="snapshot ID"):
         adapter.publish(
             request,
-            another_run_object,
-            original_projection,
+            another_run,
             idempotency_key="another-run",
         )
     with pytest.raises(ModelPublicationError, match="exactly published"):
@@ -186,11 +184,9 @@ def test_projection_rejects_orphans_and_release_before_draft_publication() -> No
         )
 
     publication = InMemoryModelPublication()
-    object_ref = publication.stage(bundle)
     model_ref = publication.publish(
         request,
-        object_ref,
-        ModelSnapshotProjection(bundle.model_snapshot_id, 1),
+        bundle,
         idempotency_key="published",
     )
     release = publication.release(

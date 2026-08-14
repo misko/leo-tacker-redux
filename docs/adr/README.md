@@ -16,3 +16,6 @@ golden fixtures that change.
 - [0011: PostgreSQL dashboard projections](0011-dashboard-postgresql-projections.md)
 - [0012: Atomic dataset snapshot persistence](0012-atomic-dataset-snapshot-persistence.md)
 - [0013: Authoritative identity for dashboard projection retries](0013-authoritative-projection-identity.md)
+- [0014: Authoritative FeatureSet publication](0014-authoritative-feature-set-publication.md)
+- [0015: Atomic fenced recording-analysis publication](0015-atomic-fenced-recording-analysis.md)
+- [0016: Authoritative ModelSnapshot publication and release history](0016-authoritative-model-snapshot-publication.md)

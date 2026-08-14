@@ -2,7 +2,6 @@
 
 from .model_publication import (
     InMemoryModelPublication,
-    ModelObjectNotStaged,
     ModelPublicationConflict,
     ModelPublicationError,
 )
@@ -11,7 +10,6 @@ from .projections import DashboardProjectionStore, ProjectionInputError
 __all__ = [
     "DashboardProjectionStore",
     "InMemoryModelPublication",
-    "ModelObjectNotStaged",
     "ModelPublicationConflict",
     "ModelPublicationError",
     "ProjectionInputError",
