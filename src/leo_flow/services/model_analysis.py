@@ -9,6 +9,9 @@ from typing import Protocol, cast
 from leo_flow.analysis.dataset import DatasetSnapshotReader, DatasetSnapshotRef
 from leo_flow.analysis.model import resolve_model_dataset
 from leo_flow.analysis.model.persistence import model_snapshot_projection
+from leo_flow.analysis.model.tracking_input_persistence import (
+    DurableTrackingInputView,
+)
 from leo_flow.contracts._validation import thaw_value
 from leo_flow.contracts.core import (
     ArtifactRef,
@@ -35,7 +38,11 @@ from leo_flow.contracts.ports import (
     HardwareMetadataReader,
     ModelFitter,
 )
-from leo_flow.contracts.tracking_input import TrackingInputSnapshotIdentity
+from leo_flow.contracts.tracking_input import (
+    TrackingInputSnapshot,
+    TrackingInputSnapshotIdentity,
+    TrackingInputSnapshotRef,
+)
 from leo_flow.contracts.tracking_model import TrackingModelAnalysisRequest
 from leo_flow.jobs.contracts import JobLease, JobPayload, JobType
 
@@ -55,6 +62,27 @@ class PreparedModelAnalysis:
     request: ModelAnalysisRequest
     durable_dataset_ref: DatasetSnapshotRef
     bundle: ModelSnapshotBundle
+
+
+@dataclass(frozen=True)
+class PreparedTrackingModelAnalysis:
+    """One locator-free command joined to its verified authoritative input."""
+
+    request: TrackingModelAnalysisRequest
+    tracking_input_ref: TrackingInputSnapshotRef
+    tracking_input: TrackingInputSnapshot
+
+
+class TrackingInputIdentityReader(Protocol):
+    """Resolve and verify one immutable tracking-input identity exactly once."""
+
+    def get_by_identity(
+        self, identity: TrackingInputSnapshotIdentity
+    ) -> DurableTrackingInputView: ...
+
+
+class ModelAnalysisLeaseExecutor(Protocol):
+    def execute(self, lease: JobLease) -> object: ...
 
 
 class ModelAnalysisPreparer(Protocol):
@@ -99,6 +127,61 @@ class ModelAnalysisJobPreparer:
         )
         model_snapshot_projection(request, bundle)
         return PreparedModelAnalysis(request, durable_ref, bundle)
+
+
+class TrackingModelAnalysisJobPreparer:
+    """Resolve a tracking command through the verified persistence boundary."""
+
+    def __init__(self, tracking_inputs: TrackingInputIdentityReader) -> None:
+        self._tracking_inputs = tracking_inputs
+
+    def prepare(self, lease: JobLease) -> PreparedTrackingModelAnalysis:
+        if lease.job_type is not JobType.MODEL_ANALYSIS:
+            raise ModelAnalysisJobError("worker accepts model-analysis jobs only")
+        request = decode_tracking_model_analysis_payload(lease.payload)
+        resolved = self._tracking_inputs.get_by_identity(
+            request.tracking_input_identity
+        )
+        identity = request.tracking_input_identity
+        if not resolved.ref.matches_identity(identity):
+            raise ModelAnalysisJobError(
+                "resolved tracking input reference differs from the request"
+            )
+        snapshot = resolved.snapshot
+        if (
+            snapshot.snapshot_id != identity.snapshot_id
+            or snapshot.snapshot_digest != identity.snapshot_digest
+            or snapshot.membership_digest != identity.membership_digest
+        ):
+            raise ModelAnalysisJobError(
+                "resolved tracking input content differs from the request"
+            )
+        return PreparedTrackingModelAnalysis(request, resolved.ref, snapshot)
+
+
+class ModelAnalysisJobDispatcher:
+    """Route the shared job type by its exact, closed payload schema."""
+
+    def __init__(
+        self,
+        descriptive: ModelAnalysisLeaseExecutor,
+        tracking: ModelAnalysisLeaseExecutor,
+    ) -> None:
+        if not callable(getattr(descriptive, "execute", None)) or not callable(
+            getattr(tracking, "execute", None)
+        ):
+            raise TypeError("model-analysis executors must provide execute")
+        self._descriptive = descriptive
+        self._tracking = tracking
+
+    def execute(self, lease: JobLease) -> object:
+        if lease.job_type is not JobType.MODEL_ANALYSIS:
+            raise ModelAnalysisJobError("worker accepts model-analysis jobs only")
+        if lease.payload.schema == MODEL_ANALYSIS_JOB_SCHEMA:
+            return self._descriptive.execute(lease)
+        if lease.payload.schema == TRACKING_MODEL_ANALYSIS_JOB_SCHEMA:
+            return self._tracking.execute(lease)
+        raise ModelAnalysisJobError("unsupported model-analysis job schema")
 
 
 class ModelAnalysisJobProcessor:
