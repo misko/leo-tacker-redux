@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import grp
+import io
 import json
 import os
 import stat
@@ -41,6 +42,7 @@ from leo_flow.qualification.offhost import (
     QualificationConfig,
     _load_host_report,
     _PipelineRows,
+    build_preflight_report,
     compare_host_reports,
     evaluate_pipeline,
     expected_migration_receipts,
@@ -217,6 +219,78 @@ def test_config_input_has_a_hard_size_limit(tmp_path) -> None:
 
     with pytest.raises(OffHostQualificationError, match="hard limit"):
         load_config(path)
+
+
+def test_preflight_is_pure_and_lists_role_specific_external_inputs(tmp_path) -> None:
+    root = tmp_path / "objects"
+    config = _config(root)
+
+    report = build_preflight_report(config, "analysis")
+    document = report.document()
+
+    assert report.passed
+    assert report.required_database_roles == ("leo_analysis", "leo_dashboard")
+    assert report.required_credential_names == (
+        "analysis-catalog-dsn",
+        "dashboard-catalog-dsn",
+    )
+    assert document["external_access"] == {
+        "radio": False,
+        "cas": False,
+        "postgresql": False,
+        "credentials_resolved": False,
+    }
+    assert document["required_inputs"]["database_connections"] == [
+        {
+            "role": "leo_analysis",
+            "systemd_credential": "analysis-catalog-dsn",
+            "dsn": "not-resolved",
+        },
+        {
+            "role": "leo_dashboard",
+            "systemd_credential": "dashboard-catalog-dsn",
+            "dsn": "not-resolved",
+        },
+    ]
+    assert not root.exists()
+
+
+def test_preflight_fails_closed_and_names_unresolved_template_fields(tmp_path) -> None:
+    config = replace(
+        _config(tmp_path / "objects"),
+        station_id="station_REPLACE_WITH_STATION_ID",
+        cas=CasExpectation(
+            tmp_path / "objects",
+            "REPLACE_WITH_EXACT_MOUNTINFO_SOURCE",
+            "nfs4",
+            grp.getgrgid(os.getegid()).gr_name,
+        ),
+    )
+
+    report = build_preflight_report(config, "capture")
+
+    assert not report.passed
+    gate = next(
+        gate for gate in report.gates if gate.name == "preflight.inputs.resolved"
+    )
+    assert gate.detail == "cas.mount_source,station_id"
+
+
+def test_deployment_template_matches_loader_and_remains_deliberately_unresolved() -> (
+    None
+):
+    repository = Path(__file__).resolve().parents[2]
+    template = (
+        repository / "deploy" / "offhost-qualification" / "qualification.example.json"
+    )
+
+    report = build_preflight_report(load_config(template), "capture")
+
+    assert not report.passed
+    unresolved = next(
+        gate for gate in report.gates if gate.name == "preflight.inputs.resolved"
+    )
+    assert unresolved.detail == "cas.filesystem_type,cas.mount_source,station_id"
 
 
 def test_expected_migration_receipts_bind_names_to_exact_bytes(tmp_path) -> None:
@@ -534,3 +608,48 @@ def test_cli_unarmed_probe_fails_without_touching_cas(tmp_path) -> None:
     )
     assert code == 3
     assert not (root / ".tmp").exists()
+
+
+def test_cli_preflight_never_inspects_mount_database_or_credentials(
+    tmp_path, monkeypatch
+) -> None:
+    root = tmp_path / "objects"
+    config = {
+        "schema_id": SCHEMA_ID,
+        "schema_version": SCHEMA_VERSION,
+        "station_id": "station_offhost",
+        "cas": {
+            "root": str(root),
+            "mount_source": "server:/leo-cas",
+            "filesystem_type": "nfs4",
+            "group_name": grp.getgrgid(os.getegid()).gr_name,
+        },
+        "migration_directory": str(tmp_path / "migrations"),
+        "credential_names": {
+            "leo_capture": "capture-catalog-dsn",
+            "leo_analysis": "analysis-catalog-dsn",
+            "leo_dashboard": "dashboard-catalog-dsn",
+        },
+        "pipeline": None,
+    }
+    path = tmp_path / "qualification.json"
+    path.write_text(json.dumps(config))
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("preflight performed external inspection")
+
+    monkeypatch.setattr(offhost, "inspect_host", forbidden)
+    monkeypatch.setattr(offhost, "inspect_database_role", forbidden)
+    monkeypatch.setattr(offhost, "_connection_factory", forbidden)
+    stdout = io.StringIO()
+
+    code = main(
+        ["--config", str(path), "preflight", "--host-role", "capture"],
+        stdout=stdout,
+    )
+
+    assert code == 0
+    document = json.loads(stdout.getvalue())
+    assert document["mode"] == "dry-run"
+    assert document["required_inputs"]["systemd_credentials"] == ["capture-catalog-dsn"]
+    assert not root.exists()

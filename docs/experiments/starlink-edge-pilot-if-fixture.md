@@ -176,8 +176,11 @@ noise.
 
 ## Conducted TX2 gate
 
-No current command transmits this waveform. The next hardware slice should be
-small and separately reviewed:
+The supervised command in
+`leo_flow.fixtures.conducted_tx2_runner` can transmit only its built-in,
+4,096-sample unmodulated inner-pilot-bin pair after a separate dry-run receipt
+and every physical/runtime gate passes. It cannot yet transmit the coded
+waveform generated above. Hardware expansion should remain incremental:
 
 1. Verify the radio serial and tee/attenuator topology; fail if TX2 is not
    explicitly armed for that serial.

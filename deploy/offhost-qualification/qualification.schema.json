@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schema/offhost-qualification-v0.1.json",
+  "title": "LEO Flow off-host CAS and PostgreSQL qualification configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "station_id",
+    "cas",
+    "migration_directory",
+    "credential_names",
+    "pipeline"
+  ],
+  "properties": {
+    "schema_id": {"const": "org.leo-flow.offhost-qualification"},
+    "schema_version": {"const": "0.1"},
+    "station_id": {"type": "string", "minLength": 1},
+    "cas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "mount_source", "filesystem_type", "group_name"],
+      "properties": {
+        "root": {"type": "string", "pattern": "^/[^\\u0000]*$"},
+        "mount_source": {"type": "string", "minLength": 1},
+        "filesystem_type": {"type": "string", "minLength": 1},
+        "group_name": {"type": "string", "minLength": 1}
+      }
+    },
+    "migration_directory": {"type": "string", "pattern": "^/[^\\u0000]*$"},
+    "credential_names": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leo_capture", "leo_analysis", "leo_dashboard"],
+      "properties": {
+        "leo_capture": {"type": "string", "minLength": 1},
+        "leo_analysis": {"type": "string", "minLength": 1},
+        "leo_dashboard": {"type": "string", "minLength": 1}
+      }
+    },
+    "pipeline": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["recording_id", "job_id"],
+          "properties": {
+            "recording_id": {"type": "string", "pattern": "^rec_.+"},
+            "job_id": {"type": "string", "pattern": "^job_.+"}
+          }
+        }
+      ]
+    }
+  }
+}

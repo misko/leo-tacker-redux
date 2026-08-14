@@ -59,8 +59,58 @@ SQL files used to migrate the catalog; every corresponding `schema_migration`
 name and SHA-256 receipt must match. Additional future receipts are reported as
 compatible, but every migration known to this runtime is required.
 
+Copy
+`deploy/offhost-qualification/qualification.example.json` to the managed
+configuration location on both hosts. The capture and analysis copies must be
+byte-for-byte identical: do not create a capture variant and an analysis
+variant, because their configuration digests are compared later. The adjacent
+JSON Schema documents the closed input shape. Replace every `REPLACE_WITH_`
+value before inspection; the dry-run preflight names any placeholder left in
+place.
+
+The site-specific inputs intentionally absent from the repository are:
+
+| Input | Source of truth | Stored in qualification JSON |
+|---|---|---|
+| Station ID | Operator inventory | Yes |
+| Exact CAS backing source and filesystem type | The provisioned mount and `/proc/self/mountinfo` | Yes |
+| PostgreSQL endpoint and login secret for each role | Secret-management owner | No; store each DSN in its named systemd credential |
+| Exact published recording/job IDs | Catalog output from the conducted run | Yes, only after the pipeline exists |
+
+The radio URI is not an input to this harness. No qualification command in this
+module contacts a radio.
+
 Set `pipeline` to `null` for mount/role qualification before a recording exists.
 Set exact IDs after publication and analysis. There is no `latest` lookup.
+
+## Gate 0: no-contact host preflight
+
+Before loading credentials or relying on a mounted CAS, run the host-specific
+dry-run on each host:
+
+```console
+/opt/leo-flow/bin/python -m leo_flow.qualification.offhost \
+  --config /etc/leo-flow/offhost-qualification.json \
+  preflight --host-role capture
+
+/opt/leo-flow/bin/python -m leo_flow.qualification.offhost \
+  --config /etc/leo-flow/offhost-qualification.json \
+  preflight --host-role analysis
+```
+
+`preflight` reads only the named JSON file. It does not resolve systemd
+credentials, inspect the CAS path or mount table, import a PostgreSQL endpoint,
+open a socket, or contact the radio. Its JSON report lists the exact CAS,
+migration-directory, database-role, and systemd-credential inputs that the
+selected host will require. Capture requires `leo_capture`; analysis requires
+both `leo_analysis` and the independent `leo_dashboard` read credential. Exit
+`0` means the configuration is syntactically ready for read-only inspection;
+exit `2` means the report contains an unresolved or unsafe local input; exit `3`
+means the configuration itself could not be loaded safely.
+
+A passing dry-run is a plan, not infrastructure evidence. It does not assert
+that a mount, credential, PostgreSQL endpoint, migration receipt, or catalog row
+exists. Those are checked by the read-only `inspect` command below.
 
 ## Gate 1: read-only host inspection
 

@@ -76,6 +76,7 @@ _HOST_GATE_NAMES = (
     "cas.process.readable",
     "cas.process.writable",
 )
+_PLACEHOLDER_MARKERS: Final = ("REPLACE_WITH_", "<REPLACE_")
 
 
 class OffHostQualificationError(RuntimeError):
@@ -176,6 +177,77 @@ class HostReport:
         value = asdict(self)
         value["status"] = "pass" if self.passed else "fail"
         return value
+
+
+@dataclass(frozen=True)
+class PreflightReport:
+    """Pure plan for one host; constructing it performs no external access."""
+
+    schema_id: str
+    schema_version: str
+    station_id: str
+    config_digest: str
+    host_role: str
+    required_database_roles: tuple[str, ...]
+    required_credential_names: tuple[str, ...]
+    cas: CasExpectation
+    migration_directory: str
+    pipeline: PipelineSelection | None
+    gates: tuple[Gate, ...]
+
+    @property
+    def passed(self) -> bool:
+        return all(gate.passed for gate in self.gates)
+
+    def document(self) -> dict[str, object]:
+        return {
+            "schema_id": self.schema_id,
+            "schema_version": self.schema_version,
+            "event": "offhost_preflight",
+            "mode": "dry-run",
+            "status": "pass" if self.passed else "fail",
+            "station_id": self.station_id,
+            "config_digest": self.config_digest,
+            "host_role": self.host_role,
+            "required_inputs": {
+                "cas": {
+                    "root": str(self.cas.root),
+                    "mount_source": self.cas.mount_source,
+                    "filesystem_type": self.cas.filesystem_type,
+                    "group_name": self.cas.group_name,
+                },
+                "migration_directory": self.migration_directory,
+                "database_roles": list(self.required_database_roles),
+                "systemd_credentials": list(self.required_credential_names),
+                "database_connections": [
+                    {
+                        "role": role,
+                        "systemd_credential": credential,
+                        "dsn": "not-resolved",
+                    }
+                    for role, credential in zip(
+                        self.required_database_roles,
+                        self.required_credential_names,
+                        strict=True,
+                    )
+                ],
+                "pipeline": (
+                    None
+                    if self.pipeline is None
+                    else {
+                        "recording_id": self.pipeline.recording_id,
+                        "job_id": self.pipeline.job_id,
+                    }
+                ),
+            },
+            "external_access": {
+                "radio": False,
+                "cas": False,
+                "postgresql": False,
+                "credentials_resolved": False,
+            },
+            "gates": [asdict(gate) for gate in self.gates],
+        }
 
 
 @dataclass(frozen=True)
@@ -384,6 +456,86 @@ def load_config(path: Path) -> QualificationConfig:
         credential_names=credential_names,
         pipeline=pipeline,
         config_digest=f"sha256:{digest}",
+    )
+
+
+def build_preflight_report(
+    config: QualificationConfig, host_role: str
+) -> PreflightReport:
+    """Describe exact host inputs without inspecting or resolving any of them."""
+
+    roles = _database_roles_for_host(host_role)
+    credential_names = tuple(config.credential_names[role] for role in roles)
+    values = {
+        "station_id": config.station_id,
+        "cas.root": str(config.cas.root),
+        "cas.mount_source": config.cas.mount_source,
+        "cas.filesystem_type": config.cas.filesystem_type,
+        "cas.group_name": config.cas.group_name,
+        "migration_directory": str(config.migration_directory),
+        **{
+            f"credential_names.{role}": config.credential_names[role] for role in _ROLES
+        },
+    }
+    if config.pipeline is not None:
+        values.update(
+            {
+                "pipeline.recording_id": config.pipeline.recording_id,
+                "pipeline.job_id": config.pipeline.job_id,
+            }
+        )
+    unresolved = tuple(
+        sorted(
+            name
+            for name, value in values.items()
+            if any(marker in value.upper() for marker in _PLACEHOLDER_MARKERS)
+        )
+    )
+    migration_directory = config.migration_directory
+    migration_is_exact = (
+        migration_directory.is_absolute()
+        and migration_directory != Path("/")
+        and migration_directory == Path(os.path.abspath(migration_directory))
+    )
+    unsafe_credentials = tuple(
+        f"{role}:{name}"
+        for role, name in config.credential_names.items()
+        if not name or name in {".", ".."} or "/" in name or "\x00" in name
+    )
+    gates = (
+        Gate(
+            "preflight.inputs.resolved",
+            not unresolved,
+            ",".join(unresolved) or "complete",
+        ),
+        Gate(
+            "preflight.migration_directory.exact",
+            migration_is_exact,
+            str(migration_directory),
+        ),
+        Gate(
+            "preflight.credential_names.safe",
+            not unsafe_credentials,
+            ",".join(unsafe_credentials) or "complete",
+        ),
+        Gate(
+            "preflight.external_access.disabled",
+            True,
+            "radio=false;cas=false;postgresql=false;credentials_resolved=false",
+        ),
+    )
+    return PreflightReport(
+        SCHEMA_ID,
+        SCHEMA_VERSION,
+        config.station_id,
+        config.config_digest,
+        host_role,
+        roles,
+        credential_names,
+        config.cas,
+        str(config.migration_directory),
+        config.pipeline,
+        gates,
     )
 
 
@@ -910,6 +1062,11 @@ def main(
         "--host-role", choices=("capture", "analysis", "dashboard"), required=True
     )
 
+    preflight = subparsers.add_parser("preflight")
+    preflight.add_argument(
+        "--host-role", choices=("capture", "analysis", "dashboard"), required=True
+    )
+
     compare = subparsers.add_parser("compare-hosts")
     compare.add_argument("--capture-report", required=True, type=Path)
     compare.add_argument("--analysis-report", required=True, type=Path)
@@ -929,12 +1086,12 @@ def main(
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
-        if args.command == "inspect":
-            roles = {
-                "capture": ("leo_capture",),
-                "analysis": ("leo_analysis", "leo_dashboard"),
-                "dashboard": ("leo_dashboard",),
-            }[args.host_role]
+        if args.command == "preflight":
+            preflight_report = build_preflight_report(config, args.host_role)
+            document = preflight_report.document()
+            code = 0 if preflight_report.passed else 2
+        elif args.command == "inspect":
+            roles = _database_roles_for_host(args.host_role)
             database_gates = tuple(
                 gate for role in roles for gate in inspect_database_role(config, role)
             )
@@ -1344,13 +1501,7 @@ def _parse_gate(value: object) -> Gate:
 
 
 def _expected_host_report_gates(host_role: str) -> set[str]:
-    roles = {
-        "capture": ("leo_capture",),
-        "analysis": ("leo_analysis", "leo_dashboard"),
-        "dashboard": ("leo_dashboard",),
-    }.get(host_role)
-    if roles is None:
-        raise OffHostQualificationError("host report role is unsupported")
+    roles = _database_roles_for_host(host_role)
     names = set(_HOST_GATE_NAMES)
     for role in roles:
         names.update(
@@ -1366,6 +1517,17 @@ def _expected_host_report_gates(host_role: str) -> set[str]:
             }
         )
     return names
+
+
+def _database_roles_for_host(host_role: str) -> tuple[str, ...]:
+    roles = {
+        "capture": ("leo_capture",),
+        "analysis": ("leo_analysis", "leo_dashboard"),
+        "dashboard": ("leo_dashboard",),
+    }.get(host_role)
+    if roles is None:
+        raise OffHostQualificationError("host role is unsupported")
+    return roles
 
 
 def _load_probe_receipt(path: Path) -> ProbeReceipt:

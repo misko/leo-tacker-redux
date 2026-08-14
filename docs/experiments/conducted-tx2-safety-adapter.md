@@ -1,7 +1,8 @@
 # Conducted TX2 safety adapter
 
-Status: hardware-free implementation and failure tests complete; no radio was
-contacted and no transmission was performed during implementation.
+Status: adapter and supervised one-shot runner implemented. On 2026-08-14 the
+radio at `192.168.1.15` was contacted only through read-only libiio inspection;
+no transmission or attribute write was performed.
 
 The adapter is `leo_flow.fixtures.conducted_tx2`. It is a bench-only boundary
 for sending a generated CI16 fixture through V5 TX2. It is not a capture
@@ -117,13 +118,97 @@ input limits. Begin with a one-step plan only. Inspect RX1 and RX2 RMS,
 clipping, continuity, and pilot contrast before authoring the next adjacent
 rung. Stop at the first unexpected readback or receive measurement.
 
-There is deliberately no CLI or installed service in this slice. The first
-hardware operation should be a separately reviewed, supervised harness that
-constructs the immutable plan explicitly and retains the returned evidence
-beside the capture result.
+## Supervised one-shot runner
+
+`python -m leo_flow.fixtures.conducted_tx2_runner` is an operator-facing
+one-shot harness, not a service. Its strict JSON config contains exactly one
+physical `ConductedFixtureAttestation`, TX LO, and sample rate. Unknown or
+missing fields fail closed. The `.15` URI, host-runtime expectations, and radio
+identity are immutable code constants, not operator-configurable fields, so a
+config cannot redefine an arbitrary current runtime as qualified. The runner
+constructs one fixed 4,096-sample,
+16-RMS-count waveform at 80 dB TX attenuation. It contains two unmodulated
+tones at ±117,187.5 Hz, corresponding to the inner pair of lower-edge pilot
+bins. It is a spectral smoke-test stimulus, not a claim that the published
+pilot coding, frame occupancy, or complete Starlink waveform is present.
+
+Dry-run is the default. It validates every plan and waveform gate without
+loading pyadi, opening a context, or contacting a radio, then creates one new
+immutable receipt containing the exact plan and waveform digests:
+
+```text
+python -m leo_flow.fixtures.conducted_tx2_runner \
+  --config /absolute/path/conducted-tx2.json \
+  --receipt /absolute/path/conducted-tx2-dry-run.json
+```
+
+An optional live preflight opens only the exact configured URI, runs the full
+pinned-host/V5 radio attestation, reads the exact serial, and closes the context.
+It calls no mutable TX port:
+
+```text
+python -m leo_flow.fixtures.conducted_tx2_runner \
+  --config /absolute/path/conducted-tx2.json \
+  --receipt /absolute/path/conducted-tx2-preflight.json \
+  --preflight
+```
+
+Transmission requires all of the following in one invocation: `--arm`, a
+previous passing dry-run receipt for the byte-identical plan, a new result
+receipt path, the exact serial repeated by the operator, and the exact current
+antenna-free topology confirmation. The output receipt path must not already
+exist. This preserves both the dry-run and final cleanup evidence.
+
+```text
+python -m leo_flow.fixtures.conducted_tx2_runner \
+  --config /absolute/path/conducted-tx2.json \
+  --receipt /absolute/path/conducted-tx2-result.json \
+  --arm \
+  --arm-from-dry-run /absolute/path/conducted-tx2-dry-run.json \
+  --confirm-radio-serial 104000b29905000e17000800065934759d \
+  --confirm-conducted-topology TX2_CONDUCTED_RX1_RX2_NO_ANTENNA
+```
+
+A successful armed receipt includes the exact control readbacks and a cleanup
+result verifying that the buffer was destroyed, DDS was disabled, TX2 was
+returned to `-80 dB`, and the context closed. A failed operation also creates a
+bounded failure receipt. If mandatory cleanup itself fails, the receipt says
+`cleanup.status=failed`; the operator must treat the radio as unsafe until a
+separate read-only inspection proves mute.
+
+## 2026-08-14 read-only observation
+
+The local system `iio_info`/`iio_attr` tools contacted only
+`ip:192.168.1.15`, with a 5-second timeout. They observed:
+
+| Gate | Observation |
+|---|---|
+| Reachability | 2/2 ICMP replies; 0% loss; 0.285 ms average RTT |
+| Radio serial | `104000b29905000e17000800065934759d` |
+| Firmware | `v0.38-plutoplus-spf-libiio-metadata-v5` |
+| Metadata capability | `iio,buffer-metadata=1` |
+| RX scan layout | `voltage0..3`, indexes 0..3, signed 12-in-16 little-endian |
+| TX2 gain | `-80.000000 dB` |
+| TX2 DDS scales | `altvoltage4..7` all `0.000000` |
+| Host CLI / radio iiOD | libiio 0.25 / 0.25 |
+| Full V5 attestation | Pass in qualified runtime image `sha256:9f2424b29f89fd73fd33a64828056f911f68355eb67950647e4c6d788ca7d766` |
+
+The native shell has no `/opt/leo-v5/runtime-manifest.json` and cannot import
+the pinned `iio`, `adi`, or `spf` Python packages. The same read-only radio
+observation was therefore repeated inside the previously qualified immutable
+V5 runtime image, mounting the current source read-only. Process-local runtime
+and radio attestation passed for the exact standard-libiio IP transport; the
+context was then closed without tune, gain, DDS, buffer, or transmit calls.
+
+The previously described bench topology said one branch may have only 20 dB
+attenuation. The safety adapter requires independently identified and verified
+attenuation of at least 30 dB on each path. Exclusive radio use does not satisfy
+that missing physical gate, so the 2026-08-14 dry-run using the last stated
+30/20 dB topology failed validation before opening a radio context and created
+no passing arm receipt. Live mutation was therefore unavailable.
 
 Run the hardware-free safety suite with:
 
 ```text
-.venv/bin/python -m pytest tests/fixtures/test_conducted_tx2.py -q
+.venv/bin/python -m pytest tests/fixtures -q
 ```

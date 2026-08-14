@@ -3,16 +3,24 @@ from __future__ import annotations
 import ast
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import benchmark.starlink_detector_matrix as detector_matrix
 from benchmark.starlink_detector_matrix import (
+    DEFAULT_REPRESENTATIVE_PROFILE,
     METHOD_IDS,
     PER_SNR_INTERPRETATION,
     _condition_arms,
+    _firing_agreement,
+    _representative_seed,
+    _resource_plan,
     expand_cases,
     load_matrix_spec,
 )
 from leo_flow.analysis.dataset import DatasetSplit
+from leo_flow.contracts.core import SegmentId
+from leo_flow.contracts.features import MethodScore
 
 
 def test_benchmark_runtime_has_no_test_only_imports() -> None:
@@ -129,3 +137,81 @@ def test_spec_and_case_expansion_are_deterministic() -> None:
     assert first.detector_config.window_samples == first.sample_count == 4096
     assert first.detector_config.stride_samples == first.sample_count
     assert first.detector_config.clip_threshold_abs == first.converter_max + 1
+
+
+def test_representative_profile_is_production_length_and_prebounded() -> None:
+    spec = load_matrix_spec(profile_path=DEFAULT_REPRESENTATIVE_PROFILE)
+    cases = expand_cases(spec)
+    plan = _resource_plan(spec, cases)
+
+    assert spec.logical_segment_sample_count == 3_200_000
+    assert spec.representative_window_starts == (
+        0,
+        1_064_960,
+        2_134_016,
+        3_195_904,
+    )
+    assert spec.representative_window_starts[-1] + spec.sample_count == 3_200_000
+    assert plan == {
+        "recording_count": 144,
+        "detector_window_count": 4_608,
+        "analyzed_iq_bytes": 150_994_944,
+        "maximum_materialized_iq_bytes": 1_048_576,
+        "logical_iq_bytes": 29_491_200_000,
+    }
+    assert spec.resource_bounds is not None
+    assert plan["detector_window_count"] <= spec.resource_bounds.max_detector_windows
+    assert plan["analyzed_iq_bytes"] <= spec.resource_bounds.max_analyzed_iq_bytes
+
+
+def test_representative_seeds_are_deterministic_and_window_distinct() -> None:
+    first = tuple(
+        _representative_seed(1001, index, preserve_single_window=False)
+        for index in range(4)
+    )
+
+    assert first == tuple(
+        _representative_seed(1001, index, preserve_single_window=False)
+        for index in range(4)
+    )
+    assert len(set(first)) == 4
+    assert all(0 < seed < 2**64 for seed in first)
+    assert _representative_seed(1001, 0, preserve_single_window=True) == 1001
+
+
+def test_firing_agreement_is_pairwise_and_split_scoped() -> None:
+    scores = tuple(
+        MethodScore(
+            method.split("@")[0],
+            method.split("@")[1],
+            SegmentId("seg_agreement"),
+            "rxpair_agreement",
+            start,
+            start + 4096,
+            score,
+            "synthetic-test-score",
+        )
+        for start, values in (
+            (0, (0.8, 0.7, 0.2)),
+            (4096, (0.1, 0.2, 0.1)),
+        )
+        for method, score in zip(METHOD_IDS, values, strict=True)
+    )
+    analyzed = SimpleNamespace(
+        bundle=SimpleNamespace(feature_set_id="fset_agreement", method_scores=scores),
+        case=SimpleNamespace(group=SimpleNamespace(split=DatasetSplit.VALIDATION)),
+    )
+    thresholds = tuple((method, 0.5) for method in METHOD_IDS)
+
+    report = _firing_agreement(
+        cast(Any, (analyzed,)), thresholds, split=DatasetSplit.VALIDATION
+    )
+
+    assert report["method_ids"] == METHOD_IDS
+    assert report["shared_window_count"] == [[2, 2, 2], [2, 2, 2], [2, 2, 2]]
+    assert report["agreement_count"] == [[2, 2, 1], [2, 2, 1], [1, 1, 2]]
+    assert report["agreement_fraction"] == [
+        [1.0, 1.0, 0.5],
+        [1.0, 1.0, 0.5],
+        [0.5, 0.5, 1.0],
+    ]

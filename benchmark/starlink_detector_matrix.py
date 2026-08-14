@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import platform
+import resource
 import sys
 import time
 from collections import Counter, defaultdict
@@ -88,6 +89,13 @@ from leo_flow.storage.ports import RecordingView
 SCHEMA = "leo-flow.starlink-detector-matrix-report/v1"
 SPEC_SCHEMA = "leo-flow.starlink-detector-matrix-spec/v1"
 DEFAULT_SPEC = Path(__file__).with_name("specs") / "starlink-detector-matrix-v1.json"
+DEFAULT_REPRESENTATIVE_PROFILE = (
+    Path(__file__).with_name("specs")
+    / "starlink-detector-representative-windows-v1.json"
+)
+REPRESENTATIVE_PROFILE_SCHEMA = (
+    "leo-flow.starlink-detector-representative-window-profile/v1"
+)
 METHOD_IDS = (
     "coarse-energy@0.1.0",
     "paired-common-mode@0.1.0",
@@ -136,6 +144,18 @@ class BackgroundGroup:
 
 
 @dataclass(frozen=True)
+class ResourceBounds:
+    max_recordings: int
+    max_detector_windows: int
+    max_analyzed_iq_bytes: int
+    max_materialized_iq_bytes: int
+    max_logical_iq_bytes: int
+    max_output_json_bytes: int
+    max_runtime_seconds: float
+    max_peak_process_rss_bytes: int
+
+
+@dataclass(frozen=True)
 class MatrixSpec:
     raw: Mapping[str, Any]
     sample_rate_hz: int
@@ -147,6 +167,9 @@ class MatrixSpec:
     detector_config: DetectorSuiteConfig
     conditions: tuple[MatrixCondition, ...]
     groups: tuple[BackgroundGroup, ...]
+    logical_segment_sample_count: int
+    representative_window_starts: tuple[int, ...]
+    resource_bounds: ResourceBounds | None
 
     @property
     def digest(self) -> Digest:
@@ -169,22 +192,24 @@ class AnalyzedCase:
     bundle: FeatureSetBundle
     feature_ref: FeatureSetRef
     recording_ref: RecordingObjectRef
-    truth: Mapping[str, Any]
+    window_truths: tuple[tuple[int, Mapping[str, Any]], ...]
     truth_digest: Digest
     captured_utc_ns: int
     paired_iq_bytes: int
 
 
 class _MemoryRecordingView:
-    """Minimal immutable RecordingView adapter for generated paired CI16."""
+    """Immutable sparse view over selected windows of one logical recording."""
 
     def __init__(
         self,
         manifest: RecordingManifest,
-        payloads: Mapping[SegmentId, bytes],
+        payloads: Mapping[tuple[SegmentId, int], bytes],
+        window_samples: int,
     ) -> None:
         self._manifest = manifest
         self._payloads = dict(payloads)
+        self._window_samples = window_samples
 
     @property
     def manifest(self) -> RecordingManifest:
@@ -193,35 +218,38 @@ class _MemoryRecordingView:
     def read_iq_bytes(
         self, segment_id: SegmentId, start_sample: int, stop_sample: int
     ) -> bytes:
-        payload = self._payloads[segment_id]
-        if not 0 <= start_sample < stop_sample <= len(payload) // 8:
-            raise ValueError("matrix reader received an out-of-bounds request")
-        return payload[start_sample * 8 : stop_sample * 8]
+        if stop_sample - start_sample != self._window_samples:
+            raise ValueError("matrix reader accepts exact representative windows only")
+        try:
+            return self._payloads[(segment_id, start_sample)]
+        except KeyError as error:
+            raise ValueError("matrix reader received an unselected window") from error
 
     def continuity(self, segment_id: SegmentId) -> None:
-        if segment_id not in self._payloads:
+        if not any(key[0] == segment_id for key in self._payloads):
             raise KeyError(segment_id)
 
     def contiguous_rf_spans(
         self, segment_id: SegmentId
     ) -> tuple[ContiguousRfSpan, ...]:
-        count = len(self._payloads[segment_id]) // 8
+        segment = next(
+            item for item in self._manifest.segments if item.segment_id == segment_id
+        )
+        count = segment.sample_count
         return (ContiguousRfSpan(0, count, 0, count),)
 
     def iter_safe_windows(
         self, segment_id: SegmentId, window_samples: int, stride_samples: int
     ) -> Iterator[SafeSampleWindow]:
-        count = len(self._payloads[segment_id]) // 8
-        if count < window_samples:
-            return
-        starts = list(range(0, count - window_samples + 1, stride_samples))
-        last = count - window_samples
-        if starts[-1] != last:
-            starts.append(last)
+        if window_samples != self._window_samples:
+            raise ValueError("matrix detector window differs from sparse view")
+        starts = sorted(start for key, start in self._payloads if key == segment_id)
         yield from (SafeSampleWindow(start, start + window_samples) for start in starts)
 
 
-def load_matrix_spec(path: Path = DEFAULT_SPEC) -> MatrixSpec:
+def load_matrix_spec(
+    path: Path = DEFAULT_SPEC, *, profile_path: Path | None = None
+) -> MatrixSpec:
     """Load and validate the canonical matrix without generating IQ."""
 
     try:
@@ -257,8 +285,24 @@ def load_matrix_spec(path: Path = DEFAULT_SPEC) -> MatrixSpec:
     conditions = _load_conditions(raw.get("conditions"))
     groups = _load_groups(raw.get("background_groups"), config)
     _validate_coverage(conditions, groups)
+    logical_sample_count = sample_count
+    window_starts: tuple[int, ...] = (0,)
+    resource_bounds = None
+    identity: Mapping[str, Any] = raw
+    if profile_path is not None:
+        profile = _load_representative_profile(
+            profile_path,
+            base_path=path,
+            base_raw=raw,
+            window_samples=config.window_samples,
+        )
+        logical_sample_count, window_starts, resource_bounds = profile
+        identity = {
+            "base_matrix_spec": raw,
+            "representative_window_profile": json.loads(profile_path.read_bytes()),
+        }
     return MatrixSpec(
-        raw=raw,
+        raw=identity,
         sample_rate_hz=sample_rate_hz,
         bandwidth_hz=bandwidth_hz,
         sample_count=sample_count,
@@ -268,7 +312,69 @@ def load_matrix_spec(path: Path = DEFAULT_SPEC) -> MatrixSpec:
         detector_config=config,
         conditions=conditions,
         groups=groups,
+        logical_segment_sample_count=logical_sample_count,
+        representative_window_starts=window_starts,
+        resource_bounds=resource_bounds,
     )
+
+
+def _load_representative_profile(
+    profile_path: Path,
+    *,
+    base_path: Path,
+    base_raw: Mapping[str, Any],
+    window_samples: int,
+) -> tuple[int, tuple[int, ...], ResourceBounds]:
+    try:
+        profile = json.loads(profile_path.read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise MatrixSpecificationError(
+            f"cannot load representative-window profile: {error}"
+        ) from error
+    if (
+        not isinstance(profile, dict)
+        or profile.get("schema") != REPRESENTATIVE_PROFILE_SCHEMA
+    ):
+        raise MatrixSpecificationError("unsupported representative-window profile")
+    if profile.get("base_matrix_spec") != base_path.name:
+        raise MatrixSpecificationError(
+            "representative profile does not name the selected base matrix"
+        )
+    expected_base = str(Digest.sha256(_canonical_json(base_raw)))
+    if profile.get("base_matrix_spec_digest") != expected_base:
+        raise MatrixSpecificationError(
+            "representative profile base matrix digest does not match"
+        )
+    logical_sample_count = _positive_int(profile, "logical_segment_sample_count")
+    raw_starts = profile.get("representative_window_starts")
+    if not isinstance(raw_starts, list) or not raw_starts:
+        raise MatrixSpecificationError(
+            "representative_window_starts must be a non-empty array"
+        )
+    starts = tuple(
+        _nonnegative_scalar_int(value, "representative window start")
+        for value in raw_starts
+    )
+    if tuple(sorted(set(starts))) != starts:
+        raise MatrixSpecificationError(
+            "representative window starts must be sorted and unique"
+        )
+    if any(start + window_samples > logical_sample_count for start in starts):
+        raise MatrixSpecificationError(
+            "representative window extends beyond the logical segment"
+        )
+    bounds = _mapping(profile, "resource_bounds")
+    resource_bounds = ResourceBounds(
+        max_recordings=_positive_int(bounds, "max_recordings"),
+        max_detector_windows=_positive_int(bounds, "max_detector_windows"),
+        max_analyzed_iq_bytes=_positive_int(bounds, "max_analyzed_iq_bytes"),
+        max_materialized_iq_bytes=_positive_int(bounds, "max_materialized_iq_bytes"),
+        max_logical_iq_bytes=_positive_int(bounds, "max_logical_iq_bytes"),
+        max_output_json_bytes=_positive_int(bounds, "max_output_json_bytes"),
+        max_runtime_seconds=_finite_positive(bounds, "max_runtime_seconds"),
+        max_peak_process_rss_bytes=_positive_int(bounds, "max_peak_process_rss_bytes"),
+    )
+    return logical_sample_count, starts, resource_bounds
 
 
 def expand_cases(spec: MatrixSpec) -> tuple[ExpandedCase, ...]:
@@ -302,10 +408,13 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
     """Execute the offline matrix and return its one aggregate report."""
 
     total_started = time.perf_counter()
+    starting_peak_rss_bytes = _peak_process_rss_bytes()
     generation_seconds = 0.0
     analysis_seconds = 0.0
     analyzed: list[AnalyzedCase] = []
     cases = expand_cases(spec)
+    resource_plan = _resource_plan(spec, cases)
+    _enforce_resource_plan(spec, resource_plan)
     analyzer = IndependentDetectorSuite(
         spec.detector_config,
         AnalysisExecutionContext(
@@ -326,10 +435,22 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
     for case_index, case in enumerate(cases):
         plan = _plan(spec, case, case_index)
         before = time.perf_counter()
-        fixture = _fixture(spec, case, plan)
+        fixtures = tuple(
+            _fixture(
+                spec,
+                case,
+                plan,
+                seed_u64=_representative_seed(
+                    case.group.seed_u64,
+                    window_index,
+                    preserve_single_window=len(spec.representative_window_starts) == 1,
+                ),
+            )
+            for window_index, _ in enumerate(spec.representative_window_starts)
+        )
         generation_seconds += time.perf_counter() - before
         view, recording_ref, captured = _recording_view(
-            spec, case, plan, fixture, case_index
+            spec, case, plan, fixtures, case_index
         )
         request = RecordingAnalysisRequest(
             schema=SchemaRef(RecordingAnalysisRequest.SCHEMA_ID),
@@ -351,7 +472,11 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
             raise RuntimeError(
                 f"case {case.case_id} method membership differs: {sorted(observed_methods)}"
             )
-        expected_scores = len(fixture.segments) * len(METHOD_IDS)
+        expected_scores = (
+            len(fixtures[0].segments)
+            * len(spec.representative_window_starts)
+            * len(METHOD_IDS)
+        )
         if len(bundle.method_scores) != expected_scores:
             raise RuntimeError(
                 f"case {case.case_id} emitted {len(bundle.method_scores)} scores; "
@@ -373,11 +498,37 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
                     bundle.feature_set_id, bundle.analysis_run_id, bundle_object
                 ),
                 recording_ref=recording_ref,
-                truth=fixture.truth,
-                truth_digest=Digest.sha256(fixture.truth_json),
+                window_truths=tuple(
+                    (start, fixture.truth)
+                    for start, fixture in zip(
+                        spec.representative_window_starts, fixtures, strict=True
+                    )
+                ),
+                truth_digest=canonical_digest(
+                    {
+                        "logical_segment_sample_count": (
+                            spec.logical_segment_sample_count
+                        ),
+                        "representative_windows": tuple(
+                            {
+                                "start_sample": start,
+                                "fixture_truth_digest": str(
+                                    Digest.sha256(fixture.truth_json)
+                                ),
+                            }
+                            for start, fixture in zip(
+                                spec.representative_window_starts,
+                                fixtures,
+                                strict=True,
+                            )
+                        ),
+                    }
+                ),
                 captured_utc_ns=captured,
                 paired_iq_bytes=sum(
-                    len(item.paired_ci16_le) for item in fixture.segments
+                    len(segment.paired_ci16_le)
+                    for fixture in fixtures
+                    for segment in fixture.segments
                 ),
             )
         )
@@ -442,6 +593,7 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
         "thresholds": {method: value for method, value in rule.thresholds},
         "recording_level_confusion": _recording_confusion(evaluation),
         "segment_level_confusion": summaries["segment_level_confusion"],
+        "window_level_confusion": summaries["window_level_confusion"],
         "per_snr_detection": {
             "interpretation": PER_SNR_INTERPRETATION,
             "condition_arms_by_nominal_source_snr_db": _condition_arms(spec),
@@ -456,6 +608,17 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
                 for item in evaluation.association_by_split
             },
         },
+        "firing_agreement": {
+            "interpretation": (
+                "Pairwise exact agreement of thresholded method firings over "
+                "shared FeatureSet/segment/receiver/window coordinates."
+            ),
+            "overall": _firing_agreement(frozen, rule.thresholds),
+            "by_split": {
+                split.value: _firing_agreement(frozen, rule.thresholds, split=split)
+                for split in DatasetSplit
+            },
+        },
         "standard_detector_evaluation": json.loads(evaluation.canonical_bytes()),
         "runtime": {
             "fixture_generation_seconds": round(generation_seconds, 6),
@@ -464,15 +627,25 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
             "total_seconds": round(total_seconds, 6),
             "python": platform.python_version(),
             "implementation": platform.python_implementation(),
+            "peak_process_rss_bytes": _peak_process_rss_bytes(),
+            "starting_peak_process_rss_bytes": starting_peak_rss_bytes,
         },
         "size": {
             "recording_count": len(frozen),
             "segment_count": len(frozen) * 8,
-            "detector_window_count": len(frozen) * 8,
+            "representative_windows_per_segment": len(
+                spec.representative_window_starts
+            ),
+            "detector_window_count": resource_plan["detector_window_count"],
             "generated_paired_iq_bytes": sum(item.paired_iq_bytes for item in frozen),
+            "maximum_materialized_paired_iq_bytes": resource_plan[
+                "maximum_materialized_iq_bytes"
+            ],
+            "logical_paired_iq_bytes": resource_plan["logical_iq_bytes"],
             "encoded_feature_set_bytes": feature_bytes,
             "output_json_bytes": 0,
         },
+        "resource_bounds": _resource_report(spec, resource_plan, total_seconds),
         "scientific_limitations": (
             "The background is deterministic independent uniform synthetic noise, not recorded receiver noise, colored interference, or an RF environment.",
             "The injected signal contains published coded edge pilots only; it is not a complete Starlink downlink waveform.",
@@ -485,7 +658,30 @@ def run_benchmark(spec: MatrixSpec) -> dict[str, Any]:
             "This offline benchmark does not qualify radio safety, capture continuity, shared storage, PostgreSQL, or cross-host operation.",
         ),
     }
+    if len(spec.representative_window_starts) > 1:
+        limitations = list(report["scientific_limitations"])
+        limitations[4] = (
+            f"Each logical segment is represented by only "
+            f"{len(spec.representative_window_starts)} deterministic 4096-sample "
+            "windows; unselected time is not analyzed and window observations "
+            "within a recording are correlated."
+        )
+        limitations.insert(
+            5,
+            "Production length is represented by logical sample coordinates and "
+            "observed capture shapes; the benchmark does not materialize or scan "
+            "every sample of a production recording.",
+        )
+        limitations.insert(
+            6,
+            "The 3,200,000-sample shape is a bounded engineering choice from "
+            "three read-only metadata examples, not a statistical sample of the "
+            "capture corpus; its synthetic sample rate also differs from the "
+            "5 MS/s metadata arm that supplied that shape.",
+        )
+        report["scientific_limitations"] = tuple(limitations)
     _stabilize_output_size(report)
+    _enforce_completed_bounds(spec, report)
     return report
 
 
@@ -633,7 +829,11 @@ def _plan(spec: MatrixSpec, case: ExpandedCase, index: int) -> CapturePlan:
 
 
 def _fixture(
-    spec: MatrixSpec, case: ExpandedCase, plan: CapturePlan
+    spec: MatrixSpec,
+    case: ExpandedCase,
+    plan: CapturePlan,
+    *,
+    seed_u64: int | None = None,
 ) -> PairedStarlinkScanFixture:
     signal_rms = (
         spec.ambient_noise_rms_counts * 1e-6
@@ -648,7 +848,7 @@ def _fixture(
             target_channels=(case.target_channel,),
             edge=case.edge,
             pilot_indices=case.pilot_indices,
-            seed_u64=case.group.seed_u64,
+            seed_u64=case.group.seed_u64 if seed_u64 is None else seed_u64,
             receiver_paths=(
                 ReceiverPath(ambient_noise_rms_counts=spec.ambient_noise_rms_counts),
                 ReceiverPath(
@@ -670,14 +870,27 @@ def _recording_view(
     spec: MatrixSpec,
     case: ExpandedCase,
     plan: CapturePlan,
-    fixture: PairedStarlinkScanFixture,
+    fixtures: tuple[PairedStarlinkScanFixture, ...],
     case_index: int,
 ) -> tuple[_MemoryRecordingView, RecordingObjectRef, int]:
     requests = tuple(
         segment for activity in plan.activities for segment in activity.segments
     )
-    payloads = {item.segment_id: item.paired_ci16_le for item in fixture.segments}
+    if len(fixtures) != len(spec.representative_window_starts):
+        raise RuntimeError("fixture/window cardinality differs")
+    payloads = {
+        (item.segment_id, start): item.paired_ci16_le
+        for start, fixture in zip(
+            spec.representative_window_starts, fixtures, strict=True
+        )
+        for item in fixture.segments
+    }
     capture_start = 1_800_000_000_000_000_000 + case_index * 1_000_000_000
+    segment_spacing_ns = max(
+        10_000_000,
+        round(spec.logical_segment_sample_count * 1e9 / spec.sample_rate_hz)
+        + 1_000_000,
+    )
     manifests = tuple(
         SegmentManifest(
             segment_id=request.segment_id,
@@ -686,15 +899,15 @@ def _recording_view(
             actual_sample_rate_hz=request.sample_rate_hz,
             actual_bandwidth_hz=request.bandwidth_hz,
             actual_gain=request.gain,
-            start_utc_ns=UtcNs(capture_start + index * 10_000_000),
-            monotonic_start_ns=index * 10_000_000,
-            sample_count=spec.sample_count,
-            shape=(spec.sample_count, 2, 2),
+            start_utc_ns=UtcNs(capture_start + index * segment_spacing_ns),
+            monotonic_start_ns=index * segment_spacing_ns,
+            sample_count=spec.logical_segment_sample_count,
+            shape=(spec.logical_segment_sample_count, 2, 2),
         )
         for index, request in enumerate(requests)
     )
     finish = int(manifests[-1].start_utc_ns) + max(
-        1, round(spec.sample_count * 1e9 / spec.sample_rate_hz)
+        1, round(spec.logical_segment_sample_count * 1e9 / spec.sample_rate_hz)
     )
     activity_request = plan.activities[0]
     manifest = RecordingManifest(
@@ -722,13 +935,17 @@ def _recording_view(
         plan_id=plan.plan_id,
         producer="offline-detector-matrix",
     )
-    data = b"".join(payloads[request.segment_id] for request in requests)
+    data = b"".join(
+        payloads[(request.segment_id, start)]
+        for request in requests
+        for start in spec.representative_window_starts
+    )
     metadata = canonical_json_bytes(manifest)
     data_ref = ObjectRef(
         Digest.sha256(data),
         len(data),
-        "application/vnd.sigmf.data",
-        "sigmf-ci16-le-v1",
+        "application/vnd.leo-flow.representative-window-set",
+        "representative-paired-ci16-le-v1",
         f"memory:data:{case.case_id}",
     )
     metadata_ref = ObjectRef(
@@ -741,7 +958,11 @@ def _recording_view(
     ref = RecordingObjectRef(
         manifest.recording_id, data_ref, metadata_ref, Digest.sha256(metadata)
     )
-    return _MemoryRecordingView(manifest, payloads), ref, capture_start
+    return (
+        _MemoryRecordingView(manifest, payloads, spec.detector_config.window_samples),
+        ref,
+        capture_start,
+    )
 
 
 def _verify_background_lineage(analyzed: tuple[AnalyzedCase, ...]) -> None:
@@ -754,27 +975,33 @@ def _verify_background_lineage(analyzed: tuple[AnalyzedCase, ...]) -> None:
         raise RuntimeError("each background group must have exactly one null recording")
     for item in analyzed:
         null = null_by_group[item.case.group.group_id]
-        null_segments = {
-            (segment["channel"], segment["edge"]): segment
-            for segment in null.truth["segments"]
-        }
-        for segment in item.truth["segments"]:
-            base = null_segments[(segment["channel"], segment["edge"])]
-            for injected_rx, base_rx in zip(
-                segment["receivers"], base["receivers"], strict=True
-            ):
-                if (
-                    injected_rx["noise_seed_u64"] != base_rx["noise_seed_u64"]
-                    or injected_rx["base_noise_ci16_sha256"]
-                    != base_rx["base_noise_ci16_sha256"]
+        null_by_window = dict(null.window_truths)
+        if set(null_by_window) != {start for start, _ in item.window_truths}:
+            raise RuntimeError("representative windows differ within a group")
+        for start, truth in item.window_truths:
+            null_segments = {
+                (segment["channel"], segment["edge"]): segment
+                for segment in null_by_window[start]["segments"]
+            }
+            for segment in truth["segments"]:
+                base = null_segments[(segment["channel"], segment["edge"])]
+                for injected_rx, base_rx in zip(
+                    segment["receivers"], base["receivers"], strict=True
+                ):
+                    if (
+                        injected_rx["noise_seed_u64"] != base_rx["noise_seed_u64"]
+                        or injected_rx["base_noise_ci16_sha256"]
+                        != base_rx["base_noise_ci16_sha256"]
+                    ):
+                        raise RuntimeError(
+                            "frozen background lineage differs within a group"
+                        )
+                if not segment["expected_signal_present"] and (
+                    segment["paired_ci16_sha256"] != base["paired_ci16_sha256"]
                 ):
                     raise RuntimeError(
-                        "frozen background lineage differs within a group"
+                        "non-target segments changed from frozen background"
                     )
-            if not segment["expected_signal_present"] and (
-                segment["paired_ci16_sha256"] != base["paired_ci16_sha256"]
-            ):
-                raise RuntimeError("non-target segments changed from frozen background")
 
 
 def _candidates(
@@ -811,7 +1038,12 @@ def _candidates(
                 captured_utc_ns=item.captured_utc_ns,
                 radio_id=str(RADIO),
                 lnb_ids=("synthetic-if-no-lnb",),
-                observation_mode="synthetic-starlink-detector-matrix-4096",
+                observation_mode=(
+                    "synthetic-starlink-detector-matrix-"
+                    f"logical-{spec.logical_segment_sample_count}-"
+                    f"windows-{len(spec.representative_window_starts)}x"
+                    f"{spec.detector_config.window_samples}"
+                ),
                 sample_rate_hz=spec.sample_rate_hz,
                 gain_mode="synthetic-explicit-path",
                 gain_db=None,
@@ -840,6 +1072,10 @@ def _aggregate_summaries(
     converter_max: int,
 ) -> dict[str, Any]:
     thresholds = dict(thresholds_tuple)
+    window_counts: dict[str, dict[str, Counter[str]]] = {
+        method: {split.value: Counter() for split in DatasetSplit}
+        for method in METHOD_IDS
+    }
     segment_counts: dict[str, dict[str, Counter[str]]] = {
         method: {split.value: Counter() for split in DatasetSplit}
         for method in METHOD_IDS
@@ -856,30 +1092,38 @@ def _aggregate_summaries(
             (
                 f"{score.method_id}@{score.method_version}",
                 str(score.segment_id),
+                score.window_start_sample,
             ): score.score
             for score in item.bundle.method_scores
         }
+        first_truth = item.window_truths[0][1]
         target_segments = tuple(
             segment
-            for segment in item.truth["segments"]
+            for segment in first_truth["segments"]
             if segment["expected_signal_present"]
         )
         for method in METHOD_IDS:
             target_fired = False
-            for segment in item.truth["segments"]:
-                truth = bool(segment["expected_signal_present"])
-                fired = score_by[(method, segment["segment_id"])] >= thresholds[method]
-                key = (
-                    "tp"
-                    if truth and fired
-                    else "fn"
-                    if truth
-                    else "fp"
-                    if fired
-                    else "tn"
-                )
-                segment_counts[method][split][key] += 1
-                target_fired = target_fired or (truth and fired)
+            segment_firings: dict[str, list[bool]] = defaultdict(list)
+            for start, truth_document in item.window_truths:
+                for segment in truth_document["segments"]:
+                    truth = bool(segment["expected_signal_present"])
+                    fired = (
+                        score_by[(method, segment["segment_id"], start)]
+                        >= thresholds[method]
+                    )
+                    key = _confusion_key(truth, fired)
+                    window_counts[method][split][key] += 1
+                    segment_firings[segment["segment_id"]].append(fired)
+                    target_fired = target_fired or (truth and fired)
+            truth_by_segment = {
+                segment["segment_id"]: bool(segment["expected_signal_present"])
+                for segment in first_truth["segments"]
+            }
+            for segment_id, firings in segment_firings.items():
+                segment_counts[method][split][
+                    _confusion_key(truth_by_segment[segment_id], any(firings))
+                ] += 1
             if item.case.condition.signal_present:
                 if len(target_segments) != 1:
                     raise RuntimeError(
@@ -888,38 +1132,59 @@ def _aggregate_summaries(
                 detections[method][split][_snr_key(item.case.condition.snr_db)].append(
                     target_fired
                 )
-        for segment in item.truth["segments"]:
-            for receiver in segment["receivers"]:
-                peak_rows.append(
-                    (
-                        int(receiver["peak_component_counts"]),
-                        item.case.condition.near_clipping,
-                        item.case.condition.condition_id,
+        for _, truth_document in item.window_truths:
+            for segment in truth_document["segments"]:
+                for receiver in segment["receivers"]:
+                    peak_rows.append(
+                        (
+                            int(receiver["peak_component_counts"]),
+                            item.case.condition.near_clipping,
+                            item.case.condition.condition_id,
+                        )
                     )
-                )
-                if int(receiver["clipped_component_count"]) != 0:
-                    raise RuntimeError("matrix fixture clipped unexpectedly")
+                    if int(receiver["clipped_component_count"]) != 0:
+                        raise RuntimeError("matrix fixture clipped unexpectedly")
         if item.case.condition.signal_present:
-            target = target_segments[0]
             snr_key = _snr_key(item.case.condition.snr_db)
-            for receiver in target["receivers"]:
-                value = receiver["achieved_prequantization_snr_db"]
-                if value is None:
-                    raise RuntimeError("positive target lacks achieved SNR")
-                achieved[snr_key][receiver["receiver_chain_id"]].append(float(value))
+            for _, truth_document in item.window_truths:
+                current_targets = tuple(
+                    segment
+                    for segment in truth_document["segments"]
+                    if segment["expected_signal_present"]
+                )
+                if len(current_targets) != 1:
+                    raise RuntimeError(
+                        "positive representative window needs one target segment"
+                    )
+                for receiver in current_targets[0]["receivers"]:
+                    value = receiver["achieved_prequantization_snr_db"]
+                    if value is None:
+                        raise RuntimeError("positive target lacks achieved SNR")
+                    achieved[snr_key][receiver["receiver_chain_id"]].append(
+                        float(value)
+                    )
 
-    segment_report: dict[str, Any] = {}
-    for method in METHOD_IDS:
-        by_split: dict[str, Any] = {}
-        overall: Counter[str] = Counter()
-        for split in DatasetSplit:
-            counts = segment_counts[method][split.value]
-            overall.update(counts)
-            by_split[split.value] = _counts_json(counts)
-        segment_report[method] = {
-            "overall": _counts_json(overall),
-            "by_split": by_split,
-        }
+    def confusion_report(
+        source: Mapping[str, Mapping[str, Counter[str]]],
+        *,
+        unit: Literal["segment", "window"],
+    ) -> dict[str, Any]:
+        report: dict[str, Any] = {}
+        for method in METHOD_IDS:
+            by_split: dict[str, Any] = {}
+            overall: Counter[str] = Counter()
+            for partition in DatasetSplit:
+                counts = source[method][partition.value]
+                overall.update(counts)
+                by_split[partition.value] = _counts_json(counts, unit=unit)
+            report[method] = {
+                "overall": _counts_json(overall, unit=unit),
+                "by_split": by_split,
+            }
+        return report
+
+    segment_report = confusion_report(segment_counts, unit="segment")
+    window_report = confusion_report(window_counts, unit="window")
     detection_report: dict[str, Any] = {}
     for method in METHOD_IDS:
         by_split = {
@@ -946,6 +1211,7 @@ def _aggregate_summaries(
     near_maximum = max(near_peaks)
     return {
         "segment_level_confusion": segment_report,
+        "window_level_confusion": window_report,
         "per_snr_detection": detection_report,
         "achieved_rx_snr_db": {
             "basis": "pre-quantization signal/noise power over delayed active coded-pilot samples",
@@ -1001,6 +1267,56 @@ def _association_json(value: Any) -> dict[str, Any]:
     }
 
 
+def _firing_agreement(
+    analyzed: Sequence[AnalyzedCase],
+    thresholds_tuple: tuple[tuple[str, float], ...],
+    *,
+    split: DatasetSplit | None = None,
+) -> dict[str, Any]:
+    methods = tuple(sorted(METHOD_IDS))
+    thresholds = dict(thresholds_tuple)
+    rows: dict[tuple[str, str, str, int, int], dict[str, bool]] = defaultdict(dict)
+    for item in analyzed:
+        if split is not None and item.case.group.split is not split:
+            continue
+        for score in item.bundle.method_scores:
+            method = f"{score.method_id}@{score.method_version}"
+            coordinate = (
+                str(item.bundle.feature_set_id),
+                str(score.segment_id),
+                score.receiver_key,
+                score.window_start_sample,
+                score.window_stop_sample,
+            )
+            rows[coordinate][method] = score.score >= thresholds[method]
+    counts: list[list[int]] = []
+    fractions: list[list[float | None]] = []
+    shared: list[list[int]] = []
+    for left in methods:
+        count_row: list[int] = []
+        fraction_row: list[float | None] = []
+        shared_row: list[int] = []
+        for right in methods:
+            pairs = tuple(
+                (values[left], values[right])
+                for values in rows.values()
+                if left in values and right in values
+            )
+            agreement_count = sum(a == b for a, b in pairs)
+            count_row.append(agreement_count)
+            shared_row.append(len(pairs))
+            fraction_row.append(agreement_count / len(pairs) if pairs else None)
+        counts.append(count_row)
+        fractions.append(fraction_row)
+        shared.append(shared_row)
+    return {
+        "method_ids": methods,
+        "agreement_count": counts,
+        "agreement_fraction": fractions,
+        "shared_window_count": shared,
+    }
+
+
 def _coverage_report(
     spec: MatrixSpec, cases: tuple[ExpandedCase, ...]
 ) -> dict[str, Any]:
@@ -1036,6 +1352,18 @@ def _coverage_report(
                 if case.condition.near_clipping
             }
         ),
+        "logical_segment_sample_count": spec.logical_segment_sample_count,
+        "logical_segment_duration_seconds": (
+            spec.logical_segment_sample_count / spec.sample_rate_hz
+        ),
+        "representative_window_samples": spec.detector_config.window_samples,
+        "representative_window_starts": spec.representative_window_starts,
+        "representative_windows_per_segment": len(spec.representative_window_starts),
+        "logical_sample_coverage_fraction": (
+            len(spec.representative_window_starts)
+            * spec.detector_config.window_samples
+            / spec.logical_segment_sample_count
+        ),
     }
 
 
@@ -1057,15 +1385,160 @@ def _condition_arms(spec: MatrixSpec) -> dict[str, list[dict[str, Any]]]:
     return {snr: arms[snr] for snr in sorted(arms, key=float)}
 
 
-def _counts_json(counts: Counter[str]) -> dict[str, int]:
+def _counts_json(
+    counts: Counter[str], *, unit: Literal["segment", "window"] = "segment"
+) -> dict[str, int]:
     return {
         "true_positive": counts["tp"],
         "false_positive": counts["fp"],
         "true_negative": counts["tn"],
         "false_negative": counts["fn"],
-        "target_segment_count": counts["tp"] + counts["fn"],
-        "non_target_segment_count": counts["fp"] + counts["tn"],
+        f"target_{unit}_count": counts["tp"] + counts["fn"],
+        f"non_target_{unit}_count": counts["fp"] + counts["tn"],
     }
+
+
+def _confusion_key(truth: bool, fired: bool) -> str:
+    if truth:
+        return "tp" if fired else "fn"
+    return "fp" if fired else "tn"
+
+
+def _representative_seed(
+    base_seed_u64: int, window_index: int, *, preserve_single_window: bool
+) -> int:
+    if preserve_single_window:
+        return base_seed_u64
+    digest = hashlib.sha256(
+        canonical_json_bytes(
+            {
+                "base_seed_u64": base_seed_u64,
+                "representative_window_index": window_index,
+            }
+        )
+    ).digest()
+    return int.from_bytes(digest[:8], "big") or 1
+
+
+def _resource_plan(spec: MatrixSpec, cases: Sequence[ExpandedCase]) -> dict[str, int]:
+    segment_count = len(cases) * 8
+    detector_window_count = segment_count * len(spec.representative_window_starts)
+    bytes_per_window = spec.detector_config.window_samples * 2 * 2 * 2
+    return {
+        "recording_count": len(cases),
+        "detector_window_count": detector_window_count,
+        "analyzed_iq_bytes": detector_window_count * bytes_per_window,
+        "maximum_materialized_iq_bytes": (
+            8 * len(spec.representative_window_starts) * bytes_per_window
+        ),
+        "logical_iq_bytes": segment_count
+        * spec.logical_segment_sample_count
+        * 2
+        * 2
+        * 2,
+    }
+
+
+def _enforce_resource_plan(spec: MatrixSpec, plan: Mapping[str, int]) -> None:
+    bounds = spec.resource_bounds
+    if bounds is None:
+        return
+    comparisons = {
+        "recordings": (plan["recording_count"], bounds.max_recordings),
+        "detector windows": (
+            plan["detector_window_count"],
+            bounds.max_detector_windows,
+        ),
+        "analyzed IQ bytes": (
+            plan["analyzed_iq_bytes"],
+            bounds.max_analyzed_iq_bytes,
+        ),
+        "materialized IQ bytes": (
+            plan["maximum_materialized_iq_bytes"],
+            bounds.max_materialized_iq_bytes,
+        ),
+        "logical IQ bytes": (plan["logical_iq_bytes"], bounds.max_logical_iq_bytes),
+    }
+    exceeded = [
+        f"{name} {actual}>{limit}"
+        for name, (actual, limit) in comparisons.items()
+        if actual > limit
+    ]
+    if exceeded:
+        raise MatrixSpecificationError(
+            "representative benchmark exceeds declared bounds: " + ", ".join(exceeded)
+        )
+
+
+def _resource_report(
+    spec: MatrixSpec, plan: Mapping[str, int], total_seconds: float
+) -> dict[str, Any]:
+    bounds = spec.resource_bounds
+    if bounds is None:
+        return {
+            "enforced": False,
+            "reason": "base one-window matrix has no representative profile",
+        }
+    peak_rss = _peak_process_rss_bytes()
+    return {
+        "enforced": True,
+        "declared": {
+            "max_recordings": bounds.max_recordings,
+            "max_detector_windows": bounds.max_detector_windows,
+            "max_analyzed_iq_bytes": bounds.max_analyzed_iq_bytes,
+            "max_materialized_iq_bytes": bounds.max_materialized_iq_bytes,
+            "max_logical_iq_bytes": bounds.max_logical_iq_bytes,
+            "max_output_json_bytes": bounds.max_output_json_bytes,
+            "max_runtime_seconds": bounds.max_runtime_seconds,
+            "max_peak_process_rss_bytes": bounds.max_peak_process_rss_bytes,
+        },
+        "observed_or_derived": {
+            **plan,
+            "runtime_seconds": round(total_seconds, 6),
+            "peak_process_rss_bytes": peak_rss,
+        },
+        "peak_rss_measurement": (
+            "Linux /proc/self/status VmHWM when available, otherwise "
+            "resource.getrusage process high-water mark; includes the interpreter"
+        ),
+    }
+
+
+def _enforce_completed_bounds(spec: MatrixSpec, report: Mapping[str, Any]) -> None:
+    bounds = spec.resource_bounds
+    if bounds is None:
+        return
+    failures: list[str] = []
+    output_bytes = int(cast(Mapping[str, Any], report["size"])["output_json_bytes"])
+    runtime = float(cast(Mapping[str, Any], report["runtime"])["total_seconds"])
+    peak_rss = int(cast(Mapping[str, Any], report["runtime"])["peak_process_rss_bytes"])
+    if output_bytes > bounds.max_output_json_bytes:
+        failures.append(
+            f"output JSON bytes {output_bytes}>{bounds.max_output_json_bytes}"
+        )
+    if runtime > bounds.max_runtime_seconds:
+        failures.append(f"runtime seconds {runtime}>{bounds.max_runtime_seconds}")
+    if peak_rss > bounds.max_peak_process_rss_bytes:
+        failures.append(
+            f"peak process RSS bytes {peak_rss}>{bounds.max_peak_process_rss_bytes}"
+        )
+    if failures:
+        raise RuntimeError(
+            "representative benchmark exceeded completed-run bounds: "
+            + ", ".join(failures)
+        )
+
+
+def _peak_process_rss_bytes() -> int:
+    status = Path("/proc/self/status")
+    if status.is_file():
+        for line in status.read_text().splitlines():
+            if line.startswith("VmHWM:"):
+                fields = line.split()
+                if len(fields) == 3 and fields[2] == "kB":
+                    return int(fields[1]) * 1024
+    value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    return value if sys.platform == "darwin" else value * 1024
 
 
 def _distribution(values: Sequence[float]) -> dict[str, float | int]:
@@ -1150,6 +1623,12 @@ def _nonnegative_int(value: Mapping[str, Any], name: str) -> int:
     return result
 
 
+def _nonnegative_scalar_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise MatrixSpecificationError(f"{name} must be a nonnegative integer")
+    return value
+
+
 def _finite(value: Mapping[str, Any], name: str) -> float:
     result = value.get(name)
     if (
@@ -1171,9 +1650,17 @@ def _finite_positive(value: Mapping[str, Any], name: str) -> float:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC)
+    parser.add_argument(
+        "--representative-profile",
+        type=Path,
+        help=(
+            "optional frozen production-length representative-window profile; "
+            f"the repository profile is {DEFAULT_REPRESENTATIVE_PROFILE}"
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
-    spec = load_matrix_spec(args.spec)
+    spec = load_matrix_spec(args.spec, profile_path=args.representative_profile)
     report = run_benchmark(spec)
     payload = _canonical_json(report)
     if len(payload) != report["size"]["output_json_bytes"]:

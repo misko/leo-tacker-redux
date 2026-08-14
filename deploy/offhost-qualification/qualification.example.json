@@ -1,0 +1,18 @@
+{
+  "schema_id": "org.leo-flow.offhost-qualification",
+  "schema_version": "0.1",
+  "station_id": "station_REPLACE_WITH_STATION_ID",
+  "cas": {
+    "root": "/var/lib/leo-flow/objects",
+    "mount_source": "REPLACE_WITH_EXACT_MOUNTINFO_SOURCE",
+    "filesystem_type": "REPLACE_WITH_EXACT_FILESYSTEM_TYPE",
+    "group_name": "leo-flow-cas"
+  },
+  "migration_directory": "/opt/leo-flow/migrations",
+  "credential_names": {
+    "leo_capture": "capture-catalog-dsn",
+    "leo_analysis": "analysis-catalog-dsn",
+    "leo_dashboard": "dashboard-catalog-dsn"
+  },
+  "pipeline": null
+}

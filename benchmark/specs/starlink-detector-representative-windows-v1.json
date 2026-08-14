@@ -1,0 +1,42 @@
+{
+  "schema": "leo-flow.starlink-detector-representative-window-profile/v1",
+  "purpose": "bounded representative-window detector evaluation over a production-length logical segment without materializing unselected IQ",
+  "base_matrix_spec": "starlink-detector-matrix-v1.json",
+  "base_matrix_spec_digest": "sha256:14c64b81b5ce0f2e9872af4a9d28b4c1e321738a8f70873d8c1dec45034979c5",
+  "logical_segment_sample_count": 3200000,
+  "representative_window_starts": [0, 1064960, 2134016, 3195904],
+  "selection_policy": "predeclared start, approximately one-third, approximately two-thirds, and exact tail windows; no detector score participates in selection",
+  "production_shape_basis": {
+    "status": "read-only metadata observation; no real IQ is selected, labeled, or analyzed",
+    "observed_schema": "leo-tracker.interim-synchronised-scan/v1",
+    "observed_arm": "640ms-5.00MSps",
+    "observed_shape": [8, 3200000, 2, 2],
+    "metadata_sources": [
+      {
+        "relative_hint": "sync-20260814T000421Z/sweep.json",
+        "sha256": "32365f9035e344fc246632446c606dcf02213f44dbb848646b65faf386d60c28",
+        "observed_shape": [8, 1600000, 2, 2]
+      },
+      {
+        "relative_hint": "sync-20260814T013637Z/sweep.json",
+        "sha256": "43d12007364c2f5aaeaaf9667b116c992e4a2665a94ec801ef312903034e507c",
+        "observed_shape": [8, 3200000, 2, 2]
+      },
+      {
+        "relative_hint": "sync-20260814T020254Z/sweep.json",
+        "sha256": "471d87d82cf56a8d11389b1e7aba58e5c68deaf3517394a2190fdf501f00db1c",
+        "observed_shape": [8, 100000, 2, 2]
+      }
+    ]
+  },
+  "resource_bounds": {
+    "max_recordings": 144,
+    "max_detector_windows": 4608,
+    "max_analyzed_iq_bytes": 150994944,
+    "max_materialized_iq_bytes": 1048576,
+    "max_logical_iq_bytes": 29491200000,
+    "max_output_json_bytes": 2000000,
+    "max_runtime_seconds": 900,
+    "max_peak_process_rss_bytes": 2147483648
+  }
+}

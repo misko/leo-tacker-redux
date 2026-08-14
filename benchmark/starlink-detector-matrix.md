@@ -44,9 +44,53 @@ near-clipping setting. It is not an isolated SNR response curve. The report
 includes that arm mapping beside the rates so this constraint survives without
 the separate specification document.
 
+## Production-length representative-window profile
+
+The optional frozen profile
+`benchmark/specs/starlink-detector-representative-windows-v1.json` keeps the
+same matrix membership and TRAIN/validation/locked-test assignments, while
+representing each segment as a 3,200,000-sample logical recording. That length
+is the largest shape in three read-only `sweep.json` metadata observations from
+the existing QNAP corpus (100,000, 1,600,000, and 3,200,000 samples per
+segment). The profile records the metadata hashes and shapes; the benchmark
+does not read, copy, label, or analyze the associated real IQ.
+
+Run the representative profile with:
+
+```text
+.venv/bin/python -m benchmark.starlink_detector_matrix \
+  --representative-profile \
+    benchmark/specs/starlink-detector-representative-windows-v1.json \
+  --output /tmp/starlink-detector-representative-report.json
+```
+
+Four detector-independent positions are declared before execution: the start,
+approximately one-third, approximately two-thirds, and the exact tail. Each
+position receives independently seeded synthetic noise while preserving the
+same null/injection background lineage inside a group. Across 144 recordings,
+eight segments, and three methods this produces 4,608 aligned detector windows.
+Only the selected windows are materialized: 150,994,944 IQ bytes are analyzed
+in total, at most 1,048,576 IQ bytes per recording, while the logical corpus
+represents 29,491,200,000 IQ bytes.
+
+The profile fails closed before generation if recording, window, analyzed-byte,
+materialized-byte, or logical-byte totals exceed its frozen limits. After a run
+it also rejects output JSON, elapsed runtime, or process peak RSS above their
+declared bounds. Peak RSS is the process high-water mark and includes the
+interpreter and any earlier allocations in that process. The aggregate report
+contains recording-, segment-, and window-level confusion, overall/per-split
+firing covariance, phi, and exact agreement matrices, composite condition arms,
+observed runtime/RSS, and the declared storage bounds.
+
 This remains a plumbing and detector-behavior benchmark, not a promotion claim.
 Its noise is deterministic uniform synthetic noise, its signal is only the
 published coded edge-pilot subset, its impairments are simple and stationary,
 and the locked-test labels are held out from fitting but are not sealed or
 blinded. Hardware safety, RF behavior, real receiver noise, capture continuity,
 shared CAS/PostgreSQL, and cross-host operation require separate qualification.
+The representative profile adds temporal positions but does not scan
+unselected time, and its windows within one recording are correlated rather
+than independent long-duration observations. Its maximum-length sample count
+comes from three metadata examples and is an engineering bound, not a
+statistically representative corpus estimate; the synthetic matrix sample rate
+also differs from the observed 5 MS/s arm with that shape.

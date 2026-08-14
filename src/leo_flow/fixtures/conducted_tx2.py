@@ -169,6 +169,64 @@ class ConductedTx2Evidence:
     final_state_verified_muted: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ConductedTx2PreflightEvidence:
+    """Read-only identity and V5 attestation evidence for one exact context."""
+
+    radio_serial: str
+    uri: str
+    context_closed: bool
+
+
+def validate_conducted_tx2_plan(plan: ConductedTx2Plan) -> None:
+    """Validate every immutable safety gate without opening a radio context."""
+
+    _validate_plan(plan)
+
+
+def preflight_conducted_tx2(
+    plan: ConductedTx2Plan,
+    device_factory: Tx2DeviceFactory,
+) -> ConductedTx2PreflightEvidence:
+    """Attest an exact V5 context without changing any radio attribute."""
+
+    _validate_plan(plan)
+    device: Tx2Device | None = None
+    primary_error: Exception | None = None
+    observed_serial: str | None = None
+    try:
+        device = device_factory(plan.uri)
+        device.attest_qualified_v5(
+            plan.uri,
+            plan.expected_runtime,
+            plan.expected_radio,
+        )
+        observed_serial = device.read_serial()
+        if observed_serial != plan.expected_radio_serial:
+            raise Tx2SafetyError(
+                "selected radio serial does not match the exact armed V5 serial"
+            )
+    except Exception as error:  # noqa: BLE001 - exact context must always close
+        primary_error = error
+    finally:
+        if device is not None:
+            try:
+                device.close()
+            except Exception:  # noqa: BLE001 - surface close failure
+                raise Tx2CleanupError(
+                    "mandatory read-only preflight context close failed"
+                ) from primary_error
+    if primary_error is not None:
+        raise primary_error
+    if observed_serial is None:  # pragma: no cover - defensive invariant
+        raise Tx2SafetyError("read-only preflight produced no radio identity")
+    return ConductedTx2PreflightEvidence(
+        radio_serial=observed_serial,
+        uri=plan.uri,
+        context_closed=True,
+    )
+
+
 def run_conducted_tx2_ladder(
     plan: ConductedTx2Plan,
     device_factory: Tx2DeviceFactory,
