@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import io
 import json
 import os
 import subprocess
@@ -26,6 +27,7 @@ from leo_flow.contracts.storage import (
     RecordingObjectRef,
 )
 from leo_flow.deployments import v5_canary
+from leo_flow.deployments.v5_canary_dry_run import main as dry_run_main
 from leo_flow.services import Capability, Process, assemble_service, load_service_config
 from leo_flow.storage.local_recording import (
     LocalRecordingNotFinalizedError,
@@ -255,6 +257,24 @@ def test_capacity_and_single_instance_gates_fail_before_adapter_io(tmp_path) -> 
     second.close()
 
 
+def test_spool_rejects_database_or_sqlite_sidecar_symlink(tmp_path) -> None:
+    state = tmp_path / "state"
+    recordings = state / "recordings"
+    recordings.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.write_text("owned", encoding="utf-8")
+    database = state / "spool.sqlite3"
+    database.symlink_to(outside)
+    spec = v5_canary._SpoolSpec(database, recordings)
+    with pytest.raises(v5_canary.CanaryDeploymentError, match="regular file"):
+        spec.validate_local_paths()
+    database.unlink()
+    Path(f"{database}-wal").symlink_to(outside)
+    with pytest.raises(v5_canary.CanaryDeploymentError, match="regular file"):
+        spec.validate_local_paths()
+    assert outside.read_text(encoding="utf-8") == "owned"
+
+
 def test_recovery_promotes_finalized_pair_and_fails_only_missing_allocation() -> None:
     recovered = object()
     complete_entry = SimpleNamespace(
@@ -325,6 +345,8 @@ def test_plugin_config_and_systemd_unit_are_exact_and_one_shot() -> None:
     assert "/opt/leo-v5/bin/runtime-entrypoint /usr/bin/python3" in unit
     assert "LoadCredential=catalog-dsn:" in unit
     assert "DynamicUser=yes" in unit
+    assert "After=network-online.target time-sync.target" in unit
+    assert "Wants=network-online.target time-sync.target" in unit
     assert "StateDirectory=leo-flow-v5-canary" in unit
     assert "Restart=on-failure" in unit
     assert not any(token in unit for token in ("NFS", ".done", ".running"))
@@ -387,3 +409,35 @@ print(json.dumps(sorted(name for name in loaded if name in {'adi', 'psycopg'})))
         and call.func.value.id == "socket"
         for call in calls
     )
+
+
+def test_hardware_free_dry_run_rehearses_capture_and_restart(tmp_path) -> None:
+    output = io.StringIO()
+    errors = io.StringIO()
+    assert (
+        dry_run_main(["--root", str(tmp_path / "dry")], stdout=output, stderr=errors)
+        == 0
+    )
+    result = json.loads(output.getvalue())
+    assert errors.getvalue() == ""
+    assert result == {
+        "activity_kind": "test",
+        "capture_admissions": 1,
+        "continuity_policy": "allow_verified_gapped",
+        "event": "v5_canary_dry_run",
+        "plan_digest": str(v5_canary.CANARY_PLAN_DIGEST),
+        "publications": 1,
+        "restart_capture_admissions": 0,
+        "status": "pass",
+    }
+    assert "adi" not in sys.modules
+
+
+def test_dry_run_refuses_a_nonempty_scratch_root(tmp_path) -> None:
+    root = tmp_path / "not-empty"
+    root.mkdir()
+    (root / "keep").write_text("owned", encoding="utf-8")
+    errors = io.StringIO()
+    assert dry_run_main(["--root", str(root)], stdout=io.StringIO(), stderr=errors) == 1
+    assert json.loads(errors.getvalue())["detail"] == "ValueError"
+    assert (root / "keep").read_text(encoding="utf-8") == "owned"

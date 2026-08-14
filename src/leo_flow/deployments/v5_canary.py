@@ -187,11 +187,15 @@ class CanaryDeploymentError(RuntimeError):
 
 
 class _RadioProvider(Protocol):
-    def open(self) -> PlutoPairedRadio: ...
+    def open(self) -> RadioDevice: ...
+
+
+class _CanaryPublisher(RecordingPublisher, Protocol):
+    def preflight(self) -> None: ...
 
 
 class _PublicationProvider(Protocol):
-    def build(self, local: RootedSigMFRecordingStore) -> _ReadinessCheckedPublisher: ...
+    def build(self, local: RootedSigMFRecordingStore) -> _CanaryPublisher: ...
 
 
 class _DiskUsage(Protocol):
@@ -214,6 +218,31 @@ class ExactCanaryPlanSource:
 class _SpoolSpec:
     database_path: Path
     recording_root: Path
+
+    def validate_local_paths(self) -> None:
+        if (
+            not self.database_path.is_absolute()
+            or not self.recording_root.is_absolute()
+        ):
+            raise CanaryDeploymentError("capture spool paths must be absolute")
+        if self.database_path.parent.resolve() != self.recording_root.parent.resolve():
+            raise CanaryDeploymentError("capture spool and recording roots diverge")
+        for candidate in (
+            self.database_path,
+            Path(f"{self.database_path}-wal"),
+            Path(f"{self.database_path}-shm"),
+            Path(f"{self.database_path}-journal"),
+        ):
+            try:
+                details = candidate.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise CanaryDeploymentError(
+                    "capture spool path cannot be inspected"
+                ) from error
+            if not stat.S_ISREG(details.st_mode):
+                raise CanaryDeploymentError("capture spool path is not a regular file")
 
 
 @dataclass(frozen=True)
@@ -439,7 +468,6 @@ class OneShotV5CanaryCycle:
         self._engine = engine or PlanCaptureEngine(CAPTURE_IDENTITY)
         self._spool: SQLiteLocalSpool | None = None
         self._local: RootedSigMFRecordingStore | None = None
-        self._publisher: _ReadinessCheckedPublisher | None = None
         self._reconciler: PublicationReconciler | None = None
         self._radio: RadioDevice | None = None
         self._closed = False
@@ -450,6 +478,7 @@ class OneShotV5CanaryCycle:
         if self._spool is not None:
             return
         self._host_guard.acquire()
+        self._spool_spec.validate_local_paths()
         spool = SQLiteLocalSpool(
             self._spool_spec.database_path, self._spool_spec.recording_root
         )
@@ -459,7 +488,6 @@ class OneShotV5CanaryCycle:
         publisher.preflight()
         self._spool = spool
         self._local = local
-        self._publisher = publisher
         self._reconciler = PublicationReconciler(spool, publisher, local)
         if not spool.has_durable_recording(PLAN_ID):
             self._radio = self._radio_provider.open()

@@ -92,4 +92,7 @@ def test_image_installs_generated_binding_after_pyadi_without_dependencies() -> 
     assert "FROM runtime AS dependency-refresh-test" in dockerfile
     assert "--force-reinstall pylibiio==0.25" in dockerfile
     assert "ordinary PyPI pylibiio escaped runtime verification" in dockerfile
+    assert (
+        "COPY deploy/v5-canary/capture.json /opt/leo-v5/deploy/v5-canary-capture.json"
+    ) in dockerfile
     assert 'ENTRYPOINT ["/opt/leo-v5/bin/runtime-entrypoint"]' in dockerfile

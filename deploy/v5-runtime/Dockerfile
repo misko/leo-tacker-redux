@@ -59,6 +59,7 @@ COPY --from=spf-source /minimal /opt/leo-v5/python
 COPY deploy/v5-runtime/manifest.json /opt/leo-v5/runtime-manifest.json
 COPY deploy/v5-runtime/verify_runtime.py /opt/leo-v5/bin/verify-runtime
 COPY deploy/v5-runtime/entrypoint.py /opt/leo-v5/bin/runtime-entrypoint
+COPY deploy/v5-canary/capture.json /opt/leo-v5/deploy/v5-canary-capture.json
 COPY . /src/leo-tracker-redux
 RUN printf '%s\n' /opt/leo-v5/lib /opt/leo-v5/lib64 \
       > /etc/ld.so.conf.d/leo-v5.conf && ldconfig && \
