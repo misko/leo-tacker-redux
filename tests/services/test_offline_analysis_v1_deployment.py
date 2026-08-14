@@ -339,17 +339,10 @@ def _scientific_factories() -> StationScientificFactories:
     )
 
 
-def test_station_plugin_is_exact_analysis_only_and_assembly_has_no_io(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    credential_dir = tmp_path / "credentials"
-    credential_dir.mkdir()
-    (credential_dir / "catalog-dsn").write_text(
-        "postgresql://must-not-connect.invalid/catalog", encoding="utf-8"
+def test_station_plugin_is_exact_analysis_only(tmp_path: Path) -> None:
+    plugin = build_station_plugin(
+        _scientific_factories(), cas_root=tmp_path / "unopened-cas"
     )
-    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credential_dir))
-    cas_root = tmp_path / "cas"
-    plugin = build_station_plugin(_scientific_factories(), cas_root=cas_root)
 
     assert set(plugin.builders) == {Process.ANALYSIS}
     assert set(plugin.secret_providers) == {"systemd-credential"}
@@ -362,6 +355,20 @@ def test_station_plugin_is_exact_analysis_only_and_assembly_has_no_io(
         assert callable(
             plugin.manifest.factory(Process.ANALYSIS, capability, reference)
         )
+
+
+def test_station_plugin_assembly_has_no_io(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("psycopg", reason="station assembly requires the server extra")
+    credential_dir = tmp_path / "credentials"
+    credential_dir.mkdir()
+    (credential_dir / "catalog-dsn").write_text(
+        "postgresql://must-not-connect.invalid/catalog", encoding="utf-8"
+    )
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credential_dir))
+    cas_root = tmp_path / "cas"
+    plugin = build_station_plugin(_scientific_factories(), cas_root=cas_root)
 
     service = assemble_service(_station_config(), plugin, diagnostics=_Diagnostics())
     assert service.health().state.value == "stopped"

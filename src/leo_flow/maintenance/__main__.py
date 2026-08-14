@@ -129,21 +129,21 @@ def main(argv: list[str] | None = None) -> int:
                 ],
             }
         else:
-            from leo_flow.maintenance.filesystem_orphans import (
-                FileSystemCasInventory,
-                MaintenanceOrphanFileDeleter,
-            )
-            from leo_flow.maintenance.orphan_reconciliation import (
-                reconcile_unregistered_objects,
-            )
-            from leo_flow.maintenance.postgres_objects import (
-                service_connection_factory,
-            )
-            from leo_flow.maintenance.postgres_orphans import (
-                PostgresOrphanReconciliationCatalog,
-            )
-
             try:
+                from leo_flow.maintenance.filesystem_orphans import (
+                    FileSystemCasInventory,
+                    MaintenanceOrphanFileDeleter,
+                )
+                from leo_flow.maintenance.orphan_reconciliation import (
+                    reconcile_unregistered_objects,
+                )
+                from leo_flow.maintenance.postgres_objects import (
+                    service_connection_factory,
+                )
+                from leo_flow.maintenance.postgres_orphans import (
+                    PostgresOrphanReconciliationCatalog,
+                )
+
                 with FileSystemCasInventory(
                     args.blob_root, scan_budget=args.scan_budget
                 ) as inventory:
