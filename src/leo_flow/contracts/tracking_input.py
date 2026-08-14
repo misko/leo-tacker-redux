@@ -318,6 +318,35 @@ class TrackingInputSnapshot:
 
 
 @dataclass(frozen=True)
+class TrackingInputSnapshotIdentity:
+    """Exact scientific identity with replaceable object location excluded."""
+
+    snapshot_id: str
+    snapshot_digest: Digest
+    membership_digest: Digest
+    bundle_digest: Digest
+    bundle_byte_count: int
+    bundle_media_type: str
+    bundle_format_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            re.fullmatch(r"trackinput_[0-9a-f]{32}", self.snapshot_id) is None
+            or self.snapshot_id != f"trackinput_{self.snapshot_digest.value[:32]}"
+        ):
+            raise ValueError("tracking input snapshot identity ID differs")
+        require_positive(self.bundle_byte_count, "bundle_byte_count")
+        if (
+            self.bundle_media_type != TRACKING_INPUT_MEDIA_TYPE
+            or self.bundle_format_id != TRACKING_INPUT_FORMAT_ID
+        ):
+            raise ValueError("tracking input bundle identity metadata differs")
+
+    def identity_digest(self) -> Digest:
+        return canonical_digest(self)
+
+
+@dataclass(frozen=True)
 class TrackingInputSnapshotRef:
     snapshot_id: str
     snapshot_digest: Digest
@@ -338,20 +367,22 @@ class TrackingInputSnapshotRef:
         ):
             raise ValueError("tracking input bundle metadata differs")
 
-    def identity_digest(self) -> Digest:
-        return canonical_digest(
-            {
-                "snapshot_id": self.snapshot_id,
-                "snapshot_digest": self.snapshot_digest,
-                "membership_digest": self.membership_digest,
-                "bundle": {
-                    "digest": self.bundle_ref.digest,
-                    "byte_count": self.bundle_ref.byte_count,
-                    "media_type": self.bundle_ref.media_type,
-                    "format_id": self.bundle_ref.format_id,
-                },
-            }
+    def identity(self) -> TrackingInputSnapshotIdentity:
+        return TrackingInputSnapshotIdentity(
+            self.snapshot_id,
+            self.snapshot_digest,
+            self.membership_digest,
+            self.bundle_ref.digest,
+            self.bundle_ref.byte_count,
+            self.bundle_ref.media_type,
+            self.bundle_ref.format_id,
         )
+
+    def matches_identity(self, identity: TrackingInputSnapshotIdentity) -> bool:
+        return self.identity() == identity
+
+    def identity_digest(self) -> Digest:
+        return self.identity().identity_digest()
 
 
 def tracking_entry_key(entry: TrackingInputEntry) -> tuple[int, str, str]:

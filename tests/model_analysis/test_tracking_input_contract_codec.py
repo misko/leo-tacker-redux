@@ -59,6 +59,7 @@ from leo_flow.contracts.tracking_input import (
     RfReferenceFrame,
     TrackingInputEntry,
     TrackingInputSnapshot,
+    TrackingInputSnapshotIdentity,
     TrackingInputSnapshotRef,
     receiver_calibration_digest,
     tracking_input_membership_digest,
@@ -472,6 +473,16 @@ def test_tracking_snapshot_ref_identity_excludes_replaceable_locator() -> None:
     relocated = replace(
         first, bundle_ref=replace(bundle, locator="s3://archive/second")
     )
+    assert first.identity() == TrackingInputSnapshotIdentity(
+        snapshot.snapshot_id,
+        snapshot.snapshot_digest,
+        snapshot.membership_digest,
+        bundle.digest,
+        bundle.byte_count,
+        bundle.media_type,
+        bundle.format_id,
+    )
+    assert first.matches_identity(relocated.identity())
     assert first.identity_digest() == relocated.identity_digest()
 
     with pytest.raises(ValueError, match="metadata"):
