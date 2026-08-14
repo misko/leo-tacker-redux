@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>LEO Flow · Operator dashboard</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+  <script src="/assets/dashboard.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to dashboard content</a>
+  <header class="site-header">
+    <div>
+      <p class="eyebrow">LEO Flow / local operations</p>
+      <h1>Radio observation status</h1>
+      <p class="lede">Catalog facts from the read-only Redux dashboard API.</p>
+    </div>
+    <div id="app-status" class="system-state" data-state="loading" role="status" aria-live="polite">
+      <span class="state-dot" aria-hidden="true"></span>
+      <span id="app-status-text">Loading current window…</span>
+    </div>
+  </header>
+
+  <nav class="section-nav" aria-label="Dashboard sections">
+    <a href="#overview">Overview</a>
+    <a href="#recordings">Recordings</a>
+    <a href="#evaluation">Evaluation</a>
+    <a href="#models-tracks">Models &amp; tracks</a>
+    <a href="#storage">Storage</a>
+  </nav>
+
+  <main id="main-content" tabindex="-1">
+    <section id="overview" class="hero-panel" aria-labelledby="overview-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-index">01 / overview</p>
+          <h2 id="overview-heading">Activity window</h2>
+        </div>
+        <form id="window-form" class="window-controls">
+          <label for="window-hours">Past window</label>
+          <select id="window-hours" name="window-hours">
+            <option value="2" selected>2 hours</option>
+            <option value="6">6 hours</option>
+            <option value="24">24 hours</option>
+          </select>
+          <button type="submit">Refresh</button>
+        </form>
+      </div>
+      <p id="window-label" class="interval-label">UTC interval loading…</p>
+      <div id="activity-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading radio activity…</div>
+      <div class="table-wrap">
+        <table id="activity-table">
+          <caption>Scan and dwell counts by radio in the selected UTC half-open interval</caption>
+          <thead><tr><th scope="col">Radio</th><th scope="col">Scans</th><th scope="col">Dwells</th><th scope="col">Total</th></tr></thead>
+          <tbody id="activity-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="recordings" aria-labelledby="recordings-heading">
+      <div class="section-heading">
+        <div><p class="section-index">02 / recordings</p><h2 id="recordings-heading">Recent recordings</h2></div>
+        <span class="hint">Select a row for immutable detail and features</span>
+      </div>
+      <div id="recordings-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading recordings…</div>
+      <div class="split-layout">
+        <div class="table-wrap">
+          <table id="recordings-table">
+            <caption>Recent recordings in the selected window</caption>
+            <thead><tr><th scope="col">Recording</th><th scope="col">Radio</th><th scope="col">Started UTC</th><th scope="col">Activities</th><th scope="col">Analysis</th></tr></thead>
+            <tbody id="recordings-body"></tbody>
+          </table>
+        </div>
+        <article id="recording-detail" class="detail-card" data-state="empty" aria-labelledby="recording-detail-heading">
+          <p class="section-index">selected recording</p>
+          <h3 id="recording-detail-heading">No recording selected</h3>
+          <p id="recording-detail-state" class="panel-state">Choose a recording to inspect segments, object availability, and independent features.</p>
+          <dl id="recording-detail-facts" class="fact-grid"></dl>
+          <div id="features-region" hidden>
+            <h4>Independent features</h4>
+            <div id="features-state" class="panel-state" data-state="empty" role="status" aria-live="polite"></div>
+            <ul id="features-list" class="feature-list"></ul>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="evaluation" aria-labelledby="evaluation-heading">
+      <div class="section-heading">
+        <div><p class="section-index">03 / evaluation</p><h2 id="evaluation-heading">Detector evaluation</h2></div>
+      </div>
+      <form id="evaluation-form" class="lookup-form">
+        <label for="evaluation-id">Immutable evaluation or run ID</label>
+        <div><input id="evaluation-id" name="evaluation-id" required placeholder="eval_… or erun_…" autocomplete="off"><button type="submit">Load summary</button></div>
+      </form>
+      <div id="evaluation-state" class="panel-state" data-state="empty" role="status" aria-live="polite">Enter an exact ID; the API has no mutable “latest evaluation” query.</div>
+      <div id="evaluation-result" hidden>
+        <div id="evaluation-facts" class="metric-strip"></div>
+        <div class="table-wrap"><table><caption>Method metrics by immutable dataset split</caption><thead><tr><th scope="col">Method</th><th scope="col">Split</th><th scope="col">Firings</th><th scope="col">TP</th><th scope="col">FP</th><th scope="col">TN</th><th scope="col">FN</th><th scope="col">Coverage</th></tr></thead><tbody id="evaluation-body"></tbody></table></div>
+        <p class="availability-note">Covariance is retained in the canonical evaluation report object; Dashboard v1 does not yet expose a typed covariance endpoint.</p>
+      </div>
+    </section>
+
+    <section id="models-tracks" aria-labelledby="models-tracks-heading">
+      <div class="section-heading"><div><p class="section-index">04 / wider analysis</p><h2 id="models-tracks-heading">Models &amp; tracks</h2></div></div>
+      <div class="split-layout">
+        <article class="detail-card">
+          <h3>Model snapshot</h3>
+          <form id="model-form" class="lookup-form">
+            <label for="model-id">Snapshot ID or approved release alias</label>
+            <div><input id="model-id" name="model-id" required placeholder="model_… or alias" autocomplete="off"><button type="submit">Load model</button></div>
+          </form>
+          <div id="model-state" class="panel-state" data-state="empty" role="status" aria-live="polite">Enter an exact snapshot ID or release alias. “Latest” is intentionally unsupported.</div>
+          <dl id="model-facts" class="fact-grid"></dl>
+          <p class="availability-note">Typed LNB parameter estimates are not available in the Dashboard v1 API; no values are inferred here.</p>
+        </article>
+        <article class="detail-card">
+          <h3>Tracks in window</h3>
+          <div id="tracks-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading tracks…</div>
+          <ul id="tracks-list" class="track-list"></ul>
+          <p class="availability-note">The current track view identifies time span and model snapshot only; satellite and covariance detail require a future typed API.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="storage" aria-labelledby="storage-heading">
+      <div class="section-heading"><div><p class="section-index">05 / platform</p><h2 id="storage-heading">Storage health</h2></div></div>
+      <div id="storage-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading storage projection…</div>
+      <div id="storage-meter" class="storage-meter" hidden><div><span id="storage-free-label"></span><span id="storage-total-label"></span></div><progress id="storage-progress" max="100" value="0" aria-label="Storage used percentage">0%</progress></div>
+    </section>
+  </main>
+
+  <footer><p>Read-only local dashboard · UTC bounds are <code>[start, stop)</code> · Last successful refresh: <time id="last-refresh">never</time></p></footer>
+</body>
+</html>

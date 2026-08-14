@@ -34,6 +34,29 @@ method/split coverage, firing and confusion counts, warnings, and the exact
 canonical report `ObjectRef`. Covariance matrices remain in that canonical
 report; the JSON route neither opens the report nor exposes a filesystem path.
 
+## Operator interface
+
+The same process serves the operator interface at `/`, with packaged assets at
+`/assets/dashboard.css` and `/assets/dashboard.js`. It uses the JSON routes
+above on the same origin; there is no frontend daemon, filesystem report scan,
+or additional credential. The default two-hour view sends integer UTC
+nanosecond bounds as `[start_utc_ns, stop_utc_ns)`. Operators can select six or
+24 hours and refresh without changing server-side state.
+
+Models and detector evaluations are exact lookups because Dashboard v1 has no
+mutable list/latest route for either entity. Enter an immutable `model_`,
+`eval_`, or `erun_` identity, or an explicitly approved model release alias.
+The current API does not expose typed LNB parameters, evaluation covariance,
+satellite associations, or track covariance. The interface labels those gaps
+and never opens report objects or invents values. Browser “stale” means no
+successful local refresh for two minutes; it is not a claim about projection
+age, which the current DTOs do not carry.
+
+HTML and JSON responses are not cached. The non-fingerprinted CSS and
+JavaScript assets may be cached for at most five minutes. Static responses use
+a same-origin CSP and reject framing; the fixed allow-list does not translate a
+request path into a local resource path.
+
 The v1 HTTP adapter accepts only an explicit loopback address. Put an
 authenticated, TLS-terminating reverse proxy in front of it for remote access;
 do not change the bind address to a wildcard. `serve_once` waits at most 250 ms,
@@ -46,6 +69,29 @@ read-only storage-health query, proving database connectivity, assumption of the
 If that query fails, preflight closes the newly bound listener before reporting
 startup failure, so an unavailable database cannot leave a misleading open
 port. Connection, statement, and lock waits have finite five-second bounds.
+
+For access from one trusted workstation without installing a proxy, keep the
+listener on loopback and use a local SSH forward to `127.0.0.1:8090`. For a
+shared operator endpoint, use a dedicated authenticated TLS virtual host whose
+root proxies to the loopback listener. The interface uses absolute same-origin
+paths, so do not mount it below a path prefix. A minimal Nginx location inside
+an already secured virtual host is:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8090;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 10s;
+}
+```
+
+Authentication, TLS certificates, request limits, and operator authorization
+belong to that reverse proxy. Do not publish port 8090, forward credentials to
+the browser, weaken the loopback bind, or cache `/api/` responses. Verify `/`,
+one `/api/storage-health` request, authentication rejection, TLS, and the CSP
+after proxy installation.
 
 For a local one-request smoke test under a systemd credential environment:
 

@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+import http.client
+import threading
+
+from leo_flow.adapters.dashboard_http import StdlibDashboardServer
+from leo_flow.dashboard.api import DashboardJsonApplication, JsonRequest
+from leo_flow.dashboard.ui import DashboardUiApplication
+from leo_flow.deployments import dashboard_v1
+from leo_flow.services.bootstrap import Capability
+from leo_flow.services.config import (
+    DashboardServiceConfig,
+    RuntimeConfig,
+    SecretRef,
+)
+
+from ._fixtures import repository
+
+
+def application() -> DashboardUiApplication:
+    return DashboardUiApplication(DashboardJsonApplication(repository()))
+
+
+def test_static_routes_are_exact_allow_list_with_safe_content_and_cache_policy() -> (
+    None
+):
+    app = application()
+    expected = {
+        "/": ("text/html; charset=utf-8", "no-store"),
+        "/assets/dashboard.css": ("text/css; charset=utf-8", "public, max-age=300"),
+        "/assets/dashboard.js": (
+            "text/javascript; charset=utf-8",
+            "public, max-age=300",
+        ),
+    }
+    for path, (content_type, cache_control) in expected.items():
+        response = app.handle(JsonRequest("GET", path, {}))
+        headers = dict(response.headers)
+        assert response.status == 200
+        assert response.body
+        assert headers["content-type"] == content_type
+        assert headers["cache-control"] == cache_control
+        assert headers["referrer-policy"] == "no-referrer"
+        assert headers["x-frame-options"] == "DENY"
+        assert headers["cross-origin-resource-policy"] == "same-origin"
+        assert headers["permissions-policy"] == (
+            "camera=(), microphone=(), geolocation=()"
+        )
+        assert "default-src 'self'" in headers["content-security-policy"]
+        assert "object-src 'none'" in headers["content-security-policy"]
+        assert "frame-ancestors 'none'" in headers["content-security-policy"]
+
+    traversal = app.handle(JsonRequest("GET", "/assets/../dashboard/api.py", {}))
+    unknown = app.handle(JsonRequest("GET", "/index.html", {}))
+    assert traversal.status == unknown.status == 404
+    assert b"api.py" not in traversal.body
+    assert traversal.body == b"Not found\n"
+
+
+def test_head_and_json_delegation_preserve_existing_api_schema() -> None:
+    app = application()
+    head = app.handle(JsonRequest("HEAD", "/", {}))
+    assert head.status == 200
+    assert head.body.startswith(b"<!doctype html>")
+
+    api = app.handle(JsonRequest("GET", "/api/storage-health", {}))
+    assert api.status == 200
+    assert dict(api.headers) == {"content-type": "application/json; charset=utf-8"}
+    assert api.body == b'{"available":true,"free_bytes":250,"total_bytes":1000}'
+
+    mutation = app.handle(JsonRequest("POST", "/", {}))
+    assert mutation.status == 405
+    assert dict(mutation.headers)["content-type"] == "application/json; charset=utf-8"
+
+
+def test_html_has_keyboard_landmarks_labels_and_explicit_state_hooks() -> None:
+    html = application().handle(JsonRequest("GET", "/", {})).body.decode()
+    for required in (
+        'class="skip-link" href="#main-content"',
+        "<header",
+        '<nav class="section-nav" aria-label="Dashboard sections"',
+        '<main id="main-content" tabindex="-1"',
+        'aria-labelledby="overview-heading"',
+        'aria-labelledby="recordings-heading"',
+        'aria-labelledby="evaluation-heading"',
+        'aria-labelledby="models-tracks-heading"',
+        'aria-labelledby="storage-heading"',
+        '<label for="window-hours"',
+        '<label for="evaluation-id"',
+        '<label for="model-id"',
+        'aria-live="polite"',
+        "<caption>",
+        'data-state="loading"',
+        'data-state="empty"',
+    ):
+        assert required in html
+    assert "<script src=" in html
+    assert "<script>" not in html
+    assert "<style" not in html
+    assert "http://" not in html and "https://" not in html
+
+
+def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -> None:
+    app = application()
+    javascript = app.handle(
+        JsonRequest("GET", "/assets/dashboard.js", {})
+    ).body.decode()
+    css = app.handle(JsonRequest("GET", "/assets/dashboard.css", {})).body.decode()
+
+    for state in ("empty", "loading", "error", "ready", "stale", "missing"):
+        assert f'"{state}"' in javascript or f'[data-state="{state}"]' in css
+    for route in (
+        "/api/activity",
+        "/api/recordings",
+        "/api/evaluations/",
+        "/api/models/",
+        "/api/tracks",
+        "/api/storage-health",
+    ):
+        assert route in javascript
+    assert "Promise.allSettled" in javascript
+    assert "start_utc_ns=" in javascript and "stop_utc_ns=" in javascript
+    assert "stop is exclusive" in javascript
+    assert "innerHTML" not in javascript
+    assert "/home/" not in javascript and ".png" not in javascript.lower()
+    assert "@media (max-width: 58rem)" in css
+    assert "@media (max-width: 42rem)" in css
+    assert "prefers-reduced-motion" in css
+
+
+def test_same_listener_serves_ui_with_security_headers_and_json_no_store() -> None:
+    server = StdlibDashboardServer(request_timeout_s=0.05)
+    server.preflight("127.0.0.1", 0)
+    app = application()
+
+    def exchange(path: str) -> tuple[int, dict[str, str], bytes]:
+        worker = threading.Thread(target=server.serve_once, args=(app,))
+        worker.start()
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", server.bound_port, timeout=1
+        )
+        connection.request("GET", path)
+        response = connection.getresponse()
+        body = response.read()
+        headers = {name.casefold(): value for name, value in response.getheaders()}
+        connection.close()
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        return response.status, headers, body
+
+    ui_status, ui_headers, ui_body = exchange("/assets/dashboard.css")
+    assert ui_status == 200 and ui_body
+    assert ui_headers["content-type"] == "text/css; charset=utf-8"
+    assert ui_headers["cache-control"] == "public, max-age=300"
+    assert ui_headers["x-content-type-options"] == "nosniff"
+    assert ui_headers["content-security-policy"].startswith("default-src 'self'")
+
+    api_status, api_headers, api_body = exchange("/api/storage-health")
+    assert api_status == 200 and api_body
+    assert api_headers["content-type"] == "application/json; charset=utf-8"
+    assert api_headers["cache-control"] == "no-store"
+    server.close(0.1)
+
+
+def test_dashboard_v1_composition_serves_ui_without_adding_a_service() -> None:
+    class CapturingServer:
+        def __init__(self) -> None:
+            self.handler = None
+
+        def preflight(self, bind_host: str, bind_port: int) -> None:
+            assert (bind_host, bind_port) == ("127.0.0.1", 8090)
+
+        def serve_once(self, handler) -> bool:
+            self.handler = handler
+            return True
+
+        def close(self, timeout_s: float) -> None:
+            assert timeout_s == 1.0
+
+    class Queries:
+        def storage_health(self):
+            return repository().storage_health()
+
+    class Diagnostics:
+        def emit(self, event) -> None:
+            del event
+
+    config = DashboardServiceConfig(
+        1,
+        "dashboard",
+        RuntimeConfig(
+            "dashboard-ui-test",
+            0.01,
+            1.0,
+            (SecretRef(dashboard_v1.SECRET_PROVIDER, "catalog-dsn"),),
+        ),
+        dashboard_v1.QUERY_PROJECTION_REF,
+        dashboard_v1.SERVER_REF,
+        "127.0.0.1",
+        8090,
+    )
+    server = CapturingServer()
+    service = dashboard_v1._build_dashboard(
+        config,
+        {
+            Capability.QUERY_PROJECTION: Queries(),
+            Capability.DASHBOARD_SERVER: server,
+        },
+        Diagnostics(),
+    )
+
+    assert service.run_once()
+    assert isinstance(server.handler, DashboardUiApplication)
+    assert server.handler.handle(JsonRequest("GET", "/", {})).status == 200
+    assert (
+        server.handler.handle(JsonRequest("GET", "/api/storage-health", {})).status
+        == 200
+    )
+    service.shutdown()

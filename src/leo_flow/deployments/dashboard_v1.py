@@ -15,6 +15,7 @@ from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
 from leo_flow.contracts.ports import DashboardQueryPort
 from leo_flow.dashboard.api import DashboardJsonApplication, JsonDashboardHandler
+from leo_flow.dashboard.ui import DashboardUiApplication
 from leo_flow.services.bootstrap import (
     AdapterBuildContext,
     AdapterManifest,
@@ -125,7 +126,7 @@ def _build_dashboard(
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardJsonApplication(queries),
+        DashboardUiApplication(DashboardJsonApplication(queries)),
         diagnostics=diagnostics,
     )
 

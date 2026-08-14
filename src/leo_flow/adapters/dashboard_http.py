@@ -110,8 +110,11 @@ class StdlibDashboardServer:
                         raise DashboardHttpError("dashboard response header is invalid")
                     self.send_header(name, value)
                 self.send_header("content-length", str(len(response.body)))
-                self.send_header("cache-control", "no-store")
-                self.send_header("x-content-type-options", "nosniff")
+                header_names = {name.casefold() for name, _ in response.headers}
+                if "cache-control" not in header_names:
+                    self.send_header("cache-control", "no-store")
+                if "x-content-type-options" not in header_names:
+                    self.send_header("x-content-type-options", "nosniff")
                 self.send_header("connection", "close")
                 self.end_headers()
                 if write_body:
