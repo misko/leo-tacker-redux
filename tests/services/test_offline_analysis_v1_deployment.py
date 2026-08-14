@@ -71,10 +71,15 @@ def _artifact(name: str) -> ArtifactRef:
 
 
 def test_example_configuration_is_strictly_parseable() -> None:
-    path = Path(__file__).parents[2] / "config" / "offline-analysis-v1.example.json"
+    path = (
+        Path(__file__).parents[2]
+        / "deploy"
+        / "offline-analysis-v1"
+        / "analysis.json"
+    )
     config = load_service_config(path)
     assert isinstance(config, AnalysisServiceConfig)
-    assert config.runtime.instance_id == "offline-analysis-a-v1"
+    assert config.runtime.instance_id == "station-a-offline-analysis-1"
 
 
 @dataclass

@@ -42,7 +42,7 @@ inside the configured CAS temporary directory. Connections are scoped to each
 operation and close on every exit; the filesystem adapter owns no background
 resource.
 
-The checked-in [example configuration](../../config/offline-analysis-v1.example.json)
+The checked-in [example configuration](../../deploy/offline-analysis-v1/analysis.json)
 uses the stable process configuration schema. Adapter names are exact selections,
 not ambient discovery aliases. There is no production `PLUGIN` because no
 detector/fitter pair has passed the locked scientific promotion gate.
