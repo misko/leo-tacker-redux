@@ -68,57 +68,17 @@ class PostgresModelSnapshotCatalog:
         *,
         idempotency_key: str,
     ) -> ModelSnapshotRef:
-        if not idempotency_key:
-            raise ValueError("idempotency_key cannot be empty")
-        if model_snapshot_projection(request, bundle) != projection:
-            raise ModelSnapshotIntegrityError(
-                "model catalog projection is not derived from its bundle"
-            )
-        parameters = _parameters(projection, bundle_ref, idempotency_key)
         with (
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
-            self._verify_dataset_inputs(cursor, parameters, bundle)
-            _register_object(cursor, parameters)
-            cursor.execute(sql.PUBLISH_MODEL_SQL, parameters)
-            if cursor.fetchone() is not None:
-                return _ref(projection, bundle_ref)
-            cursor.execute(sql.GET_CONFLICTS_SQL, parameters)
-            rows = cursor.fetchall()
-            if len(rows) != 1:
-                raise ModelSnapshotConflictError(
-                    "model identities identify different rows"
-                )
-            existing = _cataloged(rows[0])
-            if (
-                str(rows[0]["idempotency_key"]) != idempotency_key
-                or existing.projection != projection
-                or existing.bundle_ref != bundle_ref
-            ):
-                raise ModelSnapshotConflictError(
-                    "model identity or idempotency key identifies different content"
-                )
-            return existing.ref
-
-    @staticmethod
-    def _verify_dataset_inputs(
-        cursor: psycopg.Cursor[dict[str, object]],
-        parameters: dict[str, object],
-        bundle: ModelSnapshotBundle,
-    ) -> None:
-        cursor.execute(sql.DATASET_INPUTS_SQL, parameters)
-        rows = cursor.fetchall()
-        if not rows or rows[0]["snapshot_id"] is None:
-            raise ModelDatasetMismatchError(
-                "model request does not identify an authoritative dataset"
-            )
-        expected = (bundle.dataset_membership_digest,) + tuple(
-            _digest(row, "feature") for row in rows
-        )
-        if bundle.provenance.input_digests != expected:
-            raise ModelDatasetMismatchError(
-                "model provenance does not close over exact dataset members"
+            return publish_model_snapshot_with_cursor(
+                cursor,
+                projection,
+                bundle_ref,
+                request,
+                bundle,
+                idempotency_key=idempotency_key,
             )
 
     def get(self, ref: ModelSnapshotRef) -> CatalogedModelSnapshot | None:
@@ -188,6 +148,65 @@ class PostgresModelSnapshotCatalog:
 
 def connection_factory(dsn: str) -> ConnectionFactory:
     return lambda: psycopg.connect(dsn, row_factory=dict_row)
+
+
+def publish_model_snapshot_with_cursor(
+    cursor: psycopg.Cursor[dict[str, object]],
+    projection: ModelSnapshotCatalogProjection,
+    bundle_ref: ObjectRef,
+    request: ModelAnalysisRequest,
+    bundle: ModelSnapshotBundle,
+    *,
+    idempotency_key: str,
+) -> ModelSnapshotRef:
+    """Publish using the caller's transaction and authoritative dataset locks."""
+
+    if not idempotency_key:
+        raise ValueError("idempotency_key cannot be empty")
+    if model_snapshot_projection(request, bundle) != projection:
+        raise ModelSnapshotIntegrityError(
+            "model catalog projection is not derived from its bundle"
+        )
+    parameters = _parameters(projection, bundle_ref, idempotency_key)
+    _verify_dataset_inputs(cursor, parameters, bundle)
+    _register_object(cursor, parameters)
+    cursor.execute(sql.PUBLISH_MODEL_SQL, parameters)
+    if cursor.fetchone() is not None:
+        return _ref(projection, bundle_ref)
+    cursor.execute(sql.GET_CONFLICTS_SQL, parameters)
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        raise ModelSnapshotConflictError("model identities identify different rows")
+    existing = _cataloged(rows[0])
+    if (
+        str(rows[0]["idempotency_key"]) != idempotency_key
+        or existing.projection != projection
+        or existing.bundle_ref != bundle_ref
+    ):
+        raise ModelSnapshotConflictError(
+            "model identity or idempotency key identifies different content"
+        )
+    return existing.ref
+
+
+def _verify_dataset_inputs(
+    cursor: psycopg.Cursor[dict[str, object]],
+    parameters: dict[str, object],
+    bundle: ModelSnapshotBundle,
+) -> None:
+    cursor.execute(sql.DATASET_INPUTS_SQL, parameters)
+    rows = cursor.fetchall()
+    if not rows or rows[0]["snapshot_id"] is None:
+        raise ModelDatasetMismatchError(
+            "model request does not identify an authoritative dataset"
+        )
+    expected = (bundle.dataset_membership_digest,) + tuple(
+        _digest(row, "feature") for row in rows
+    )
+    if bundle.provenance.input_digests != expected:
+        raise ModelDatasetMismatchError(
+            "model provenance does not close over exact dataset members"
+        )
 
 
 def _register_object(
