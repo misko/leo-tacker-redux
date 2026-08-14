@@ -6,6 +6,12 @@ from .analysis import (
     FencedAnalysisCycle,
     build_analysis_service,
 )
+from .analysis_router import (
+    AnalysisLeaseExecutor,
+    EphemerisLinkBackfillUnavailable,
+    TypedAnalysisRouterCycle,
+    UnsupportedAnalysisJobError,
+)
 from .bootstrap import (
     AdapterBuildContext,
     AdapterFactory,
@@ -57,6 +63,7 @@ __all__ = [
     "AdapterManifest",
     "AnalysisCycle",
     "AnalysisJobProcessor",
+    "AnalysisLeaseExecutor",
     "AnalysisServiceConfig",
     "BootstrapError",
     "Capability",
@@ -67,6 +74,7 @@ __all__ = [
     "DeploymentPlugin",
     "DiagnosticEvent",
     "DiagnosticSink",
+    "EphemerisLinkBackfillUnavailable",
     "FencedAnalysisCycle",
     "FencedRecordingAnalysisWorker",
     "HealthSnapshot",
@@ -84,6 +92,8 @@ __all__ = [
     "ServiceLifecycleError",
     "ServiceLoop",
     "ServiceState",
+    "TypedAnalysisRouterCycle",
+    "UnsupportedAnalysisJobError",
     "assemble_service",
     "build_analysis_service",
     "build_capture_service",

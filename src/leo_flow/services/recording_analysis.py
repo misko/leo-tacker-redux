@@ -92,6 +92,16 @@ class FencedRecordingAnalysisWorker:
         )
         if lease is None:
             return False
+        self.execute(lease)
+        return True
+
+    def execute(self, lease: JobLease) -> None:
+        """Execute an already-claimed lease for the typed analysis router."""
+
+        if lease.job_type is not JobType.RECORDING_ANALYSIS:
+            raise RecordingAnalysisJobError(
+                "worker accepts recording-analysis jobs only"
+            )
         try:
             prepared = self._preparer.prepare(lease)
             self._committer.commit(lease, prepared)
@@ -107,7 +117,6 @@ class FencedRecordingAnalysisWorker:
             except StaleLeaseError:
                 pass
             raise
-        return True
 
 
 def recording_analysis_payload(request: RecordingAnalysisRequest) -> JobPayload:
