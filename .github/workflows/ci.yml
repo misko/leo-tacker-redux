@@ -86,6 +86,7 @@ jobs:
           tests/model_analysis/test_sgp4_adapter.py
           tests/model_analysis/test_orbit_association.py
           tests/model_analysis/test_rf_association_validation.py
+          tests/model_analysis/test_tracking_ephemeris.py
 
   quality-package:
     runs-on: ubuntu-latest

@@ -5,6 +5,7 @@ import inspect
 import json
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,10 @@ from leo_flow.contracts.tracking_input import (
 from tests.model_analysis.test_tracking_input_builder import _case
 
 SGP4_FIXTURE = Path(__file__).with_name("fixtures") / "sgp4_vallado_reference.json"
+pytestmark = pytest.mark.skipif(
+    find_spec("sgp4") is None,
+    reason="tracking ephemeris verification requires the optional orbit extra",
+)
 
 
 def _digest(label: str) -> Digest:
