@@ -70,6 +70,10 @@ def test_reference_inventory_matches_every_current_object_blob_fk(
         ("dataset_snapshot", ("bundle_digest_algorithm", "bundle_digest_value")),
         ("feature_set", ("bundle_digest_algorithm", "bundle_digest_value")),
         ("model_snapshot", ("bundle_digest_algorithm", "bundle_digest_value")),
+        (
+            "tracking_input_snapshot",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
         ("hardware_snapshot", ("bundle_digest_algorithm", "bundle_digest_value")),
         (
             "detector_evaluation_report",
