@@ -85,6 +85,7 @@ jobs:
           uv run --frozen pytest -q
           tests/model_analysis/test_sgp4_adapter.py
           tests/model_analysis/test_orbit_association.py
+          tests/model_analysis/test_rf_association_validation.py
 
   quality-package:
     runs-on: ubuntu-latest

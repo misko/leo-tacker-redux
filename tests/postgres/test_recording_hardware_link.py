@@ -16,7 +16,7 @@ from leo_flow.adapters.hardware_postgres_catalog import (
     PostgresHardwareSnapshotCatalog,
     connection_factory,
 )
-from leo_flow.contracts.core import Digest, canonical_digest
+from leo_flow.contracts.core import Digest, HardwareSnapshotId, canonical_digest
 from leo_flow.contracts.hardware import RecordingHardwareLink
 from leo_flow.hardware import DurableHardwareMetadataRepository
 from leo_flow.storage.filesystem import FileSystemBlobStore
@@ -63,6 +63,23 @@ def _authorities(postgres_dsn: str, tmp_path):
     return published, hardware_ref, link
 
 
+def _link_with(recording, recording_digest, hardware_ref):
+    identity = {
+        "recording_id": str(recording.recording_id),
+        "recording_identity_digest": str(recording_digest),
+        "hardware_snapshot_id": str(hardware_ref.snapshot_id),
+        "hardware_snapshot_digest": str(hardware_ref.digest),
+    }
+    digest = canonical_digest(identity)
+    return RecordingHardwareLink(
+        f"hwlink_{digest.value[:32]}",
+        recording.recording_id,
+        recording_digest,
+        hardware_ref,
+        digest,
+    )
+
+
 @pytest.mark.integration
 def test_analysis_role_publishes_and_reads_exact_link(
     postgres_dsn: str, tmp_path
@@ -79,8 +96,8 @@ def test_analysis_role_publishes_and_reads_exact_link(
 def test_link_rejects_non_authoritative_recording_identity(
     postgres_dsn: str, tmp_path
 ) -> None:
-    _, _, link = _authorities(postgres_dsn, tmp_path)
-    wrong = replace(link, recording_identity_digest=Digest.sha256(b"wrong"))
+    _, hardware_ref, _ = _authorities(postgres_dsn, tmp_path)
+    wrong = _link_with(recording_object_ref(), Digest.sha256(b"wrong"), hardware_ref)
     with pytest.raises(RecordingHardwareAuthorityMismatchError):
         _role_catalog(postgres_dsn).publish(
             wrong, idempotency_key="recording-hardware:wrong-recording"
@@ -124,11 +141,19 @@ def test_one_recording_cannot_be_relinked(postgres_dsn: str, tmp_path) -> None:
     _, _, link = _authorities(postgres_dsn, tmp_path)
     catalog = _role_catalog(postgres_dsn)
     catalog.publish(link, idempotency_key="recording-hardware:stable")
-    other_digest = Digest.sha256(b"different-link")
-    conflicting = replace(
-        link,
-        link_id=f"hwlink_{other_digest.value[:32]}",
-        link_digest=other_digest,
+    hardware = DurableHardwareMetadataRepository(
+        FileSystemBlobStore(tmp_path / "cas"),
+        PostgresHardwareSnapshotCatalog(connection_factory(postgres_dsn)),
+    )
+    other_ref = hardware.publish(
+        replace(
+            _snapshot(),
+            snapshot_id=HardwareSnapshotId("hw_recording_link_alternate"),
+        ),
+        idempotency_key="hardware-link-snapshot-alternate",
+    )
+    conflicting = _link_with(
+        recording_object_ref(), link.recording_identity_digest, other_ref
     )
     with pytest.raises(RecordingHardwareLinkConflictError):
         catalog.publish(conflicting, idempotency_key="recording-hardware:different")

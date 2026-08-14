@@ -12,6 +12,7 @@ from leo_flow.contracts.core import (
     SchemaRef,
     StationId,
     UtcNs,
+    canonical_digest,
 )
 from leo_flow.contracts.hardware import (
     HardwareMetadataSnapshot,
@@ -184,3 +185,24 @@ def test_unlinked_legacy_recording_fails_closed() -> None:
     _, ref, _, _, _, _ = _fixture()
     with pytest.raises(RecordingHardwareAuthorityError, match="no authoritative"):
         require_recording_hardware_link(_Links(), ref.recording_id)
+
+
+def test_hardware_link_contract_recomputes_linked_identity_digest() -> None:
+    _, ref, hardware_ref, _, _, _ = _fixture()
+    identity = {
+        "recording_id": str(ref.recording_id),
+        "recording_identity_digest": str(ref.identity_digest()),
+        "hardware_snapshot_id": str(hardware_ref.snapshot_id),
+        "hardware_snapshot_digest": str(hardware_ref.digest),
+    }
+    digest = canonical_digest(identity)
+    link = RecordingHardwareLink(
+        f"hwlink_{digest.value[:32]}",
+        ref.recording_id,
+        ref.identity_digest(),
+        hardware_ref,
+        digest,
+    )
+
+    with pytest.raises(ValueError, match="linked identities"):
+        replace(link, recording_identity_digest=Digest.sha256(b"substituted"))

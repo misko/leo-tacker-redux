@@ -16,6 +16,7 @@ from .core import (
     SchemaRef,
     StationId,
     UtcNs,
+    canonical_digest,
 )
 
 
@@ -97,6 +98,14 @@ class RecordingHardwareLink:
     link_digest: Digest
 
     def __post_init__(self) -> None:
+        expected_digest = canonical_digest(
+            {
+                "recording_id": str(self.recording_id),
+                "recording_identity_digest": str(self.recording_identity_digest),
+                "hardware_snapshot_id": str(self.hardware_snapshot_ref.snapshot_id),
+                "hardware_snapshot_digest": str(self.hardware_snapshot_ref.digest),
+            }
+        )
         if not self.link_id.startswith("hwlink_") or len(self.link_id) != 39:
             raise ValueError("hardware link ID must be hwlink_ plus 32 hex characters")
         try:
@@ -109,5 +118,9 @@ class RecordingHardwareLink:
             raise ValueError("recording identity digest must use sha256")
         if self.link_digest.algorithm.value != "sha256":
             raise ValueError("hardware link digest must use sha256")
+        if self.hardware_snapshot_ref.digest.algorithm.value != "sha256":
+            raise ValueError("hardware snapshot digest must use sha256")
+        if self.link_digest != expected_digest:
+            raise ValueError("hardware link digest differs from linked identities")
         if self.link_id != f"hwlink_{self.link_digest.value[:32]}":
             raise ValueError("hardware link ID must derive from link digest")
