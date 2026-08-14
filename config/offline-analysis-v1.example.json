@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "process": "analysis",
+  "runtime": {
+    "instance_id": "offline-analysis-a-v1",
+    "poll_interval_s": 1.0,
+    "shutdown_timeout_s": 15.0,
+    "secret_refs": [
+      {
+        "provider": "systemd-credential",
+        "name": "catalog-dsn"
+      }
+    ]
+  },
+  "adapters": {
+    "job_repository_ref": "jobs.postgres-v1",
+    "recording_reader_ref": "recordings.sigmf-cas-v1",
+    "feature_publisher_ref": "features.atomic-postgres-cas-v1",
+    "model_publisher_ref": "models.atomic-postgres-cas-v1"
+  }
+}
