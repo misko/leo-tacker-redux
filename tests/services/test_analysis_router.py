@@ -74,8 +74,7 @@ def test_router_claims_and_dispatches_each_implemented_type_exactly_once() -> No
     assert not router.process_one_job()
     assert router.claimed_types == tuple(sorted(JobType, key=lambda kind: kind.value))
     assert all(
-        len(executor.calls) == 1
-        for executor in (recording, model, ephemeris, backfill)
+        len(executor.calls) == 1 for executor in (recording, model, ephemeris, backfill)
     )
 
 

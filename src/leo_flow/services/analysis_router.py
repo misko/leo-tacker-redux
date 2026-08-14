@@ -43,7 +43,9 @@ class TypedAnalysisRouterCycle:
         )
         if not all(callable(executor.execute) for executor in self._executors.values()):
             raise TypeError("every analysis executor must provide execute")
-        self._claimed_types = tuple(sorted(self._executors, key=lambda kind: kind.value))
+        self._claimed_types = tuple(
+            sorted(self._executors, key=lambda kind: kind.value)
+        )
         self._worker_id = worker_id
         self._lease_ttl_s = lease_ttl_s
         self._preflight = preflight
