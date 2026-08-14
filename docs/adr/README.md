@@ -37,3 +37,5 @@ golden fixtures that change.
 - [0032: Fenced reconciliation of unregistered CAS leaves](0032-fenced-unregistered-cas-reconciliation.md)
 - [0033: Fail-closed release qualification evidence](0033-fail-closed-release-qualification-evidence.md)
 - [0034: Same-process operator dashboard UI](0034-same-process-operator-dashboard-ui.md)
+- [0035: Capability-derived routing and terminal job parking](0035-capability-derived-routing-and-terminal-job-parking.md)
+- [0036: Dataset-scoped tracking input evidence](0036-dataset-scoped-tracking-input-evidence.md)
