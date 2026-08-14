@@ -40,8 +40,18 @@ from .lifecycle import (
     ServiceLoop,
     ServiceState,
 )
+from .recording_analysis import (
+    RECORDING_ANALYSIS_JOB_SCHEMA,
+    FencedRecordingAnalysisWorker,
+    PreparedRecordingAnalysis,
+    RecordingAnalysisJobError,
+    RecordingAnalysisJobPreparer,
+    decode_recording_analysis_payload,
+    recording_analysis_payload,
+)
 
 __all__ = [
+    "RECORDING_ANALYSIS_JOB_SCHEMA",
     "AdapterBuildContext",
     "AdapterFactory",
     "AdapterManifest",
@@ -58,11 +68,15 @@ __all__ = [
     "DiagnosticEvent",
     "DiagnosticSink",
     "FencedAnalysisCycle",
+    "FencedRecordingAnalysisWorker",
     "HealthSnapshot",
     "JsonLineDiagnosticSink",
+    "PreparedRecordingAnalysis",
     "Process",
     "ProcessBuilder",
     "ReadOnlyDashboardServer",
+    "RecordingAnalysisJobError",
+    "RecordingAnalysisJobPreparer",
     "RuntimeConfig",
     "SecretProvider",
     "SecretRef",
@@ -74,6 +88,8 @@ __all__ = [
     "build_analysis_service",
     "build_capture_service",
     "build_dashboard_service",
+    "decode_recording_analysis_payload",
     "load_service_config",
     "parse_service_config",
+    "recording_analysis_payload",
 ]

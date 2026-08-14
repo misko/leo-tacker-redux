@@ -63,41 +63,17 @@ class PostgresFeatureSetCatalog:
             raise FeatureRecordingMismatchError(
                 "feature projection and recording reference differ"
             )
-        parameters = _parameters(projection, bundle_ref, idempotency_key)
         with (
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
-            existing_recording = PostgresRecordingCatalog._get_with_cursor(
-                cursor, str(recording_ref.recording_id)
+            return publish_feature_set_with_cursor(
+                cursor,
+                projection,
+                bundle_ref,
+                recording_ref,
+                idempotency_key=idempotency_key,
             )
-            if (
-                existing_recording is None
-                or existing_recording.recording_object != recording_ref
-            ):
-                raise FeatureRecordingMismatchError(
-                    "recording catalog does not contain the exact analysis input"
-                )
-            _register_object(cursor, bundle_ref)
-            cursor.execute(feature_postgres_sql.PUBLISH_FEATURE_SET_SQL, parameters)
-            if cursor.fetchone() is not None:
-                return _ref(projection, bundle_ref)
-            cursor.execute(feature_postgres_sql.GET_CONFLICTS_SQL, parameters)
-            rows = cursor.fetchall()
-            if len(rows) != 1:
-                raise FeatureSetConflictError(
-                    "feature identity and idempotency key identify different rows"
-                )
-            existing = _cataloged(rows[0])
-            if (
-                str(rows[0]["idempotency_key"]) != idempotency_key
-                or existing.projection != projection
-                or existing.bundle_ref != bundle_ref
-            ):
-                raise FeatureSetConflictError(
-                    "feature identity or idempotency key identifies different content"
-                )
-            return existing.ref
 
     def get(self, ref: FeatureSetRef) -> CatalogedFeatureSet | None:
         with (
@@ -117,6 +93,49 @@ class PostgresFeatureSetCatalog:
 
 def connection_factory(dsn: str) -> ConnectionFactory:
     return lambda: psycopg.connect(dsn, row_factory=dict_row)
+
+
+def publish_feature_set_with_cursor(
+    cursor: psycopg.Cursor[dict[str, object]],
+    projection: FeatureSetCatalogProjection,
+    bundle_ref: ObjectRef,
+    recording_ref: RecordingObjectRef,
+    *,
+    idempotency_key: str,
+) -> FeatureSetRef:
+    """Publish using the caller's transaction for fenced job completion."""
+
+    existing_recording = PostgresRecordingCatalog._get_with_cursor(
+        cursor, str(recording_ref.recording_id)
+    )
+    if (
+        existing_recording is None
+        or existing_recording.recording_object != recording_ref
+    ):
+        raise FeatureRecordingMismatchError(
+            "recording catalog does not contain the exact analysis input"
+        )
+    _register_object(cursor, bundle_ref)
+    parameters = _parameters(projection, bundle_ref, idempotency_key)
+    cursor.execute(feature_postgres_sql.PUBLISH_FEATURE_SET_SQL, parameters)
+    if cursor.fetchone() is not None:
+        return _ref(projection, bundle_ref)
+    cursor.execute(feature_postgres_sql.GET_CONFLICTS_SQL, parameters)
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        raise FeatureSetConflictError(
+            "feature identity and idempotency key identify different rows"
+        )
+    existing = _cataloged(rows[0])
+    if (
+        str(rows[0]["idempotency_key"]) != idempotency_key
+        or existing.projection != projection
+        or existing.bundle_ref != bundle_ref
+    ):
+        raise FeatureSetConflictError(
+            "feature identity or idempotency key identifies different content"
+        )
+    return existing.ref
 
 
 def _register_object(cursor: psycopg.Cursor[dict[str, object]], ref: ObjectRef) -> None:
