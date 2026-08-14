@@ -5,6 +5,7 @@ import json
 import math
 from contextlib import nullcontext
 from dataclasses import replace
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,10 @@ from leo_flow.contracts.core import (
 from leo_flow.contracts.ephemeris import EphemerisSnapshotRef, EphemerisSource
 
 FIXTURE = Path(__file__).with_name("fixtures") / "sgp4_vallado_reference.json"
+REQUIRES_SGP4 = pytest.mark.skipif(
+    find_spec("sgp4") is None,
+    reason="SGP4 verification requires the optional orbit extra",
+)
 
 
 class _View:
@@ -125,6 +130,7 @@ def _station() -> StationGeometrySnapshot:
     )
 
 
+@REQUIRES_SGP4
 def test_native_teme_states_match_published_vallado_verification_vectors() -> None:
     document = _fixture()
     entry = _entry(document, "reference_satellite")
@@ -148,6 +154,7 @@ def test_native_teme_states_match_published_vallado_verification_vectors() -> No
         )
 
 
+@REQUIRES_SGP4
 def test_range_rate_acceleration_and_geocentric_elevation_are_frozen() -> None:
     entry = _entry(_fixture(), "reference_satellite")
     adapter, ref, _ = _adapter(entry)
@@ -169,6 +176,7 @@ def test_range_rate_acceleration_and_geocentric_elevation_are_frozen() -> None:
     assert state.elevation_deg == pytest.approx(-30.413040715663367, abs=1e-9)
 
 
+@REQUIRES_SGP4
 def test_published_sgp4_error_is_returned_as_an_explicit_gate() -> None:
     document = _fixture()
     satellite = document["error_satellite"]
@@ -198,6 +206,7 @@ def test_published_sgp4_error_is_returned_as_an_explicit_gate() -> None:
     assert state.range_rate_m_s == state.range_acceleration_m_s2 == 0.0
 
 
+@REQUIRES_SGP4
 def test_exact_snapshot_identity_digest_norad_and_specification_are_enforced() -> None:
     entry = _entry(_fixture(), "reference_satellite")
     adapter, ref, reader = _adapter(entry)
@@ -244,6 +253,7 @@ def test_optional_dependency_is_loaded_only_when_adapter_is_constructed(
         Sgp4OrbitPropagator(object())  # type: ignore[arg-type]
 
 
+@REQUIRES_SGP4
 def test_adapter_rejects_an_unpinned_sgp4_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
