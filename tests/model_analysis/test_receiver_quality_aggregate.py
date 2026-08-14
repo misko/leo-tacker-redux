@@ -227,7 +227,7 @@ def test_reader_must_return_exact_feature_membership_identity() -> None:
     assert features.calls == [first[0]]
 
 
-def test_replaceable_feature_locator_does_not_change_pinned_identity() -> None:
+def test_feature_reader_must_return_the_full_pinned_object_reference() -> None:
     first = feature_set(0, (("rx_0", 2.0, None),))
     second = feature_set(1, (("rx_0", 4.0, None),))
     snapshot = dataset((first[0], second[0]))
@@ -238,13 +238,13 @@ def test_replaceable_feature_locator_does_not_change_pinned_identity() -> None:
     hw = hardware_snapshot(receivers=("rx_0",))
     config = ReceiverQualityAggregateConfig()
     features = FakeFeatureSetReader(((moved, first[1]), second))
-    bundle = ReceiverQualityAggregateModel(snapshot, config, execution_context()).fit(
-        request(snapshot, config, (hw[0],)),
-        features,
-        FakeEphemerisReader(()),
-        FakeHardwareReader((hw,)),
-    )
-    assert bundle.parameters
+    with pytest.raises(ModelInputError, match="pinned membership"):
+        ReceiverQualityAggregateModel(snapshot, config, execution_context()).fit(
+            request(snapshot, config, (hw[0],)),
+            features,
+            FakeEphemerisReader(()),
+            FakeHardwareReader((hw,)),
+        )
 
 
 @pytest.mark.parametrize(

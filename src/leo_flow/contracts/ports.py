@@ -41,7 +41,6 @@ from .ephemeris import (
 )
 from .features import (
     FeatureSetBundle,
-    FeatureSetProjection,
     FeatureSetRef,
     RecordingAnalysisRequest,
 )
@@ -127,8 +126,7 @@ class FeatureSetPublisher(Protocol):
     def publish(
         self,
         request: RecordingAnalysisRequest,
-        bundle_ref: ObjectRef,
-        projection: FeatureSetProjection,
+        bundle: FeatureSetBundle,
         *,
         idempotency_key: str,
     ) -> FeatureSetRef: ...

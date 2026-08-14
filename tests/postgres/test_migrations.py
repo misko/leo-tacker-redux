@@ -22,6 +22,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0004_dashboard_projections.sql",),
         ("0005_dataset_snapshots.sql",),
         ("0006_dashboard_projection_identity.sql",),
+        ("0007_feature_set_catalog.sql",),
     ]
 
 
@@ -118,6 +119,31 @@ def test_dataset_snapshot_capabilities_are_narrow(postgres_dsn: str) -> None:
     assert not analysis_update
     assert dashboard_read
     assert not dashboard_append
+    assert not capture_read
+
+
+@pytest.mark.integration
+def test_feature_set_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        (
+            analysis_read,
+            analysis_append,
+            analysis_update,
+            dashboard_read,
+            capture_read,
+        ) = connection.execute(
+            """
+                SELECT has_table_privilege('leo_analysis', 'feature_set', 'SELECT'),
+                       has_table_privilege('leo_analysis', 'feature_set', 'INSERT'),
+                       has_table_privilege('leo_analysis', 'feature_set', 'UPDATE'),
+                       has_table_privilege('leo_dashboard', 'feature_set', 'SELECT'),
+                       has_table_privilege('leo_capture', 'feature_set', 'SELECT')
+                """
+        ).fetchone()
+    assert analysis_read
+    assert analysis_append
+    assert not analysis_update
+    assert dashboard_read
     assert not capture_read
 
 

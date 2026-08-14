@@ -28,6 +28,75 @@ def _repository(postgres_dsn: str, root):
     )
 
 
+@pytest.fixture(autouse=True)
+def authoritative_feature_members(postgres_dsn: str, clean_database) -> None:
+    """Dataset fixtures consume already-published feature identities."""
+
+    del clean_database
+    with psycopg.connect(postgres_dsn) as connection:
+        for index in range(1, 5):
+            refs = []
+            for kind in ("data", "metadata"):
+                digest = Digest.sha256(f"recording-{index}-{kind}".encode())
+                refs.append(digest)
+                connection.execute(
+                    """
+                    INSERT INTO object_blob
+                        (digest_algorithm, digest_value, byte_count, media_type,
+                         format_id, locator)
+                    VALUES ('sha256', %s, 1, 'application/octet-stream', %s, %s)
+                    """,
+                    (digest.value, f"recording-{kind}-v1", f"fixture://{index}/{kind}"),
+                )
+            connection.execute(
+                """
+                INSERT INTO recording
+                    (recording_id, data_digest_value, metadata_digest_value,
+                     manifest_digest_value, idempotency_key, state)
+                VALUES (%s, %s, %s, %s, %s, 'published')
+                """,
+                (
+                    f"rec_{index}",
+                    refs[0].value,
+                    refs[1].value,
+                    Digest.sha256(f"manifest-{index}".encode()).value,
+                    f"recording-fixture:{index}",
+                ),
+            )
+            feature_digest = Digest.sha256(f"feature-{index}".encode())
+            connection.execute(
+                """
+                INSERT INTO object_blob
+                    (digest_algorithm, digest_value, byte_count, media_type,
+                     format_id, locator)
+                VALUES ('sha256', %s, 512, 'application/json',
+                        'feature-set-json-v0.1', %s)
+                """,
+                (feature_digest.value, f"opaque://features/fset_{index}"),
+            )
+            connection.execute(
+                """
+                INSERT INTO feature_set
+                    (feature_set_id, analysis_run_id, recording_id,
+                     input_recording_digest_algorithm, input_recording_digest_value,
+                     request_digest_algorithm, request_digest_value,
+                     bundle_digest_algorithm, bundle_digest_value,
+                     observation_count, method_score_count, idempotency_key)
+                VALUES (%s, %s, %s, 'sha256', %s, 'sha256', %s,
+                        'sha256', %s, 0, 0, %s)
+                """,
+                (
+                    f"fset_{index}",
+                    f"arun_{index}",
+                    f"rec_{index}",
+                    Digest.sha256(f"recording-identity-{index}".encode()).value,
+                    Digest.sha256(f"request-{index}".encode()).value,
+                    feature_digest.value,
+                    f"feature-fixture:{index}",
+                ),
+            )
+
+
 class _ReadOnlyAuditConnection:
     def __init__(self, connection, observations: list[str]) -> None:
         self._connection = connection
@@ -59,7 +128,9 @@ def test_snapshot_and_all_members_become_visible_atomically(
     )
     assert repository.get(snapshot.ref) == snapshot
     with psycopg.connect(postgres_dsn) as connection:
-        assert connection.execute("SELECT count(*) FROM object_blob").fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM object_blob WHERE format_id = 'dataset-snapshot-bundle-v0.1'"
+        ).fetchone() == (1,)
         assert connection.execute(
             "SELECT count(*) FROM dataset_snapshot"
         ).fetchone() == (1,)
@@ -179,7 +250,8 @@ def test_member_failure_rolls_back_catalog_and_object_link(
                 "SELECT count(*) FROM dataset_member"
             ).fetchone() == (0,)
             assert connection.execute(
-                "SELECT count(*) FROM object_blob"
+                "SELECT count(*) FROM object_blob "
+                "WHERE format_id = 'dataset-snapshot-bundle-v0.1'"
             ).fetchone() == (0,)
         assert len(tuple((tmp_path / "cas" / "sha256").glob("*/*"))) == 1
     finally:

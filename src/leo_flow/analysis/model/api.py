@@ -407,11 +407,7 @@ class ReceiverQualityAggregateModel:
     ) -> FeatureSetBundle:
         with reader.open(ref) as view:
             actual_ref = view.ref
-            if (
-                actual_ref.feature_set_id != ref.feature_set_id
-                or actual_ref.analysis_run_id != ref.analysis_run_id
-                or actual_ref.bundle_ref.digest != ref.bundle_ref.digest
-            ):
+            if actual_ref != ref:
                 raise ModelInputError(
                     f"feature reader did not return pinned membership {ref.feature_set_id}"
                 )

@@ -218,17 +218,6 @@ class FeatureSetRef:
 
 
 @dataclass(frozen=True)
-class FeatureSetProjection:
-    feature_set_id: FeatureSetId
-    observation_count: int
-    method_score_count: int
-
-    def __post_init__(self) -> None:
-        require_nonnegative(self.observation_count, "observation_count")
-        require_nonnegative(self.method_score_count, "method_score_count")
-
-
-@dataclass(frozen=True)
 class DecisionRuleRef:
     rule_id: str
     rule_digest: Digest
