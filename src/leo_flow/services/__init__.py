@@ -46,17 +46,24 @@ from .lifecycle import (
 )
 from .model_analysis import (
     MODEL_ANALYSIS_JOB_SCHEMA,
+    TRACKING_MODEL_ANALYSIS_JOB_SCHEMA,
     ModelAnalysisJobError,
     ModelAnalysisJobPreparer,
     ModelAnalysisJobProcessor,
     PreparedModelAnalysis,
     decode_model_analysis_payload,
+    decode_tracking_model_analysis_payload,
     model_analysis_payload,
+    tracking_model_analysis_payload,
 )
 from .model_submission import (
     ModelAnalysisSubmission,
     ModelAnalysisSubmissionService,
     SubmittedModelAnalysis,
+    SubmittedTrackingModelAnalysis,
+    TrackingModelAnalysisSubmission,
+    TrackingModelAnalysisSubmissionService,
+    TrackingModelSubmissionError,
     model_analysis_job_id,
 )
 from .recording_analysis import (
@@ -72,6 +79,7 @@ from .recording_analysis import (
 __all__ = [
     "MODEL_ANALYSIS_JOB_SCHEMA",
     "RECORDING_ANALYSIS_JOB_SCHEMA",
+    "TRACKING_MODEL_ANALYSIS_JOB_SCHEMA",
     "AdapterBuildContext",
     "AdapterFactory",
     "AdapterManifest",
@@ -112,6 +120,10 @@ __all__ = [
     "ServiceLoop",
     "ServiceState",
     "SubmittedModelAnalysis",
+    "SubmittedTrackingModelAnalysis",
+    "TrackingModelAnalysisSubmission",
+    "TrackingModelAnalysisSubmissionService",
+    "TrackingModelSubmissionError",
     "TypedAnalysisRouterCycle",
     "assemble_service",
     "build_analysis_service",
@@ -119,9 +131,11 @@ __all__ = [
     "build_dashboard_service",
     "decode_model_analysis_payload",
     "decode_recording_analysis_payload",
+    "decode_tracking_model_analysis_payload",
     "load_service_config",
     "model_analysis_job_id",
     "model_analysis_payload",
     "parse_service_config",
     "recording_analysis_payload",
+    "tracking_model_analysis_payload",
 ]

@@ -19,6 +19,7 @@ from leo_flow.contracts.core import (
     HardwareSnapshotId,
     SchemaRef,
     SchemaVersion,
+    canonical_json_bytes,
 )
 from leo_flow.contracts.ephemeris import EphemerisSnapshotRef, EphemerisSource
 from leo_flow.contracts.hardware import HardwareMetadataSnapshotRef
@@ -34,9 +35,15 @@ from leo_flow.contracts.ports import (
     HardwareMetadataReader,
     ModelFitter,
 )
+from leo_flow.contracts.tracking_input import TrackingInputSnapshotIdentity
+from leo_flow.contracts.tracking_model import TrackingModelAnalysisRequest
 from leo_flow.jobs.contracts import JobLease, JobPayload, JobType
 
 MODEL_ANALYSIS_JOB_SCHEMA = SchemaRef("org.leo-flow.model-analysis-job")
+TRACKING_MODEL_ANALYSIS_JOB_SCHEMA = SchemaRef(
+    "org.leo-flow.tracking-model-analysis-job"
+)
+MAX_TRACKING_MODEL_ANALYSIS_PAYLOAD_BYTES = 16 * 1024
 
 
 class ModelAnalysisJobError(ValueError):
@@ -167,6 +174,33 @@ def decode_model_analysis_payload(
         raise ModelAnalysisJobError(str(error)) from error
 
 
+def tracking_model_analysis_payload(
+    request: TrackingModelAnalysisRequest,
+) -> JobPayload:
+    payload = JobPayload.create(
+        TRACKING_MODEL_ANALYSIS_JOB_SCHEMA,
+        {"request": _tracking_request_document(request)},
+    )
+    _require_bounded_tracking_payload(payload)
+    return payload
+
+
+def decode_tracking_model_analysis_payload(
+    payload: JobPayload,
+) -> TrackingModelAnalysisRequest:
+    if payload.schema != TRACKING_MODEL_ANALYSIS_JOB_SCHEMA:
+        raise ModelAnalysisJobError("unsupported tracking model-analysis job schema")
+    _require_bounded_tracking_payload(payload)
+    document = cast(dict[str, object], thaw_value(payload.value))
+    _keys(document, {"request"}, "payload")
+    try:
+        return _tracking_request(document["request"])
+    except ModelAnalysisJobError:
+        raise
+    except (TypeError, ValueError) as error:
+        raise ModelAnalysisJobError(str(error)) from error
+
+
 def _request(value: object) -> ModelAnalysisRequest:
     item = _object(value, "request")
     _keys(
@@ -201,6 +235,63 @@ def _request(value: object) -> ModelAnalysisRequest:
         ),
         model_config_ref=_artifact(item["model_config_ref"], "model_config_ref"),
         algorithm_ref=_artifact(item["algorithm_ref"], "algorithm_ref"),
+    )
+
+
+def _tracking_request(value: object) -> TrackingModelAnalysisRequest:
+    item = _object(value, "request")
+    _keys(
+        item,
+        {
+            "schema",
+            "tracking_input_identity",
+            "model_config_ref",
+            "algorithm_ref",
+        },
+        "request",
+    )
+    return TrackingModelAnalysisRequest(
+        schema=_schema(item["schema"], "request.schema"),
+        tracking_input_identity=_tracking_input_identity(
+            item["tracking_input_identity"]
+        ),
+        model_config_ref=_artifact(item["model_config_ref"], "model_config_ref"),
+        algorithm_ref=_artifact(item["algorithm_ref"], "algorithm_ref"),
+    )
+
+
+def _tracking_input_identity(value: object) -> TrackingInputSnapshotIdentity:
+    item = _object(value, "tracking_input_identity")
+    _keys(
+        item,
+        {"snapshot_id", "snapshot_digest", "membership_digest", "bundle"},
+        "tracking_input_identity",
+    )
+    bundle = _object(item["bundle"], "tracking_input_identity.bundle")
+    _keys(
+        bundle,
+        {"digest", "byte_count", "media_type", "format_id"},
+        "tracking_input_identity.bundle",
+    )
+    byte_count = bundle["byte_count"]
+    if isinstance(byte_count, bool) or not isinstance(byte_count, int):
+        raise ModelAnalysisJobError("tracking input byte_count must be an integer")
+    return TrackingInputSnapshotIdentity(
+        snapshot_id=_string(item["snapshot_id"], "tracking_input.snapshot_id"),
+        snapshot_digest=_digest(
+            item["snapshot_digest"], "tracking_input.snapshot_digest"
+        ),
+        membership_digest=_digest(
+            item["membership_digest"], "tracking_input.membership_digest"
+        ),
+        bundle_digest=_digest(bundle["digest"], "tracking_input.bundle.digest"),
+        bundle_byte_count=byte_count,
+        bundle_media_type=_string(
+            bundle["media_type"], "tracking_input.bundle.media_type"
+        ),
+        bundle_format_id=_string(
+            bundle["format_id"], "tracking_input.bundle.format_id"
+        ),
     )
 
 
@@ -296,6 +387,38 @@ def _request_document(value: ModelAnalysisRequest) -> dict[str, object]:
         "model_config_ref": _artifact_document(value.model_config_ref),
         "algorithm_ref": _artifact_document(value.algorithm_ref),
     }
+
+
+def _tracking_request_document(
+    value: TrackingModelAnalysisRequest,
+) -> dict[str, object]:
+    identity = value.tracking_input_identity
+    return {
+        "schema": _schema_document(value.schema),
+        "tracking_input_identity": {
+            "snapshot_id": identity.snapshot_id,
+            "snapshot_digest": _digest_document(identity.snapshot_digest),
+            "membership_digest": _digest_document(identity.membership_digest),
+            "bundle": {
+                "digest": _digest_document(identity.bundle_digest),
+                "byte_count": identity.bundle_byte_count,
+                "media_type": identity.bundle_media_type,
+                "format_id": identity.bundle_format_id,
+            },
+        },
+        "model_config_ref": _artifact_document(value.model_config_ref),
+        "algorithm_ref": _artifact_document(value.algorithm_ref),
+    }
+
+
+def _require_bounded_tracking_payload(payload: JobPayload) -> None:
+    document = {
+        "schema_id": payload.schema.schema_id,
+        "schema_version": str(payload.schema.version),
+        "value": thaw_value(payload.value),
+    }
+    if len(canonical_json_bytes(document)) > MAX_TRACKING_MODEL_ANALYSIS_PAYLOAD_BYTES:
+        raise ModelAnalysisJobError("tracking model-analysis payload is oversized")
 
 
 def _schema_document(value: SchemaRef) -> dict[str, object]:
