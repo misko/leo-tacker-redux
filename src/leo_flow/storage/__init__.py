@@ -1,6 +1,14 @@
 """Capability-limited storage interfaces; concrete adapters live elsewhere."""
 
 from .filesystem import BlobIntegrityError, FileSystemBlobStore
+from .legacy_recording import (
+    LegacyFileRef,
+    LegacyRecordingError,
+    LegacyRecordingReader,
+    LegacyRecordingRegistration,
+    UnsupportedLegacyRecordingError,
+    legacy_selected_chunk_index_digest,
+)
 from .local_recording import (
     LocalRecordingNotFinalizedError,
     LocalRecordingSecurityError,
@@ -29,6 +37,10 @@ __all__ = [
     "BlobWriter",
     "FileSystemBlobStore",
     "GarbageCollectionPort",
+    "LegacyFileRef",
+    "LegacyRecordingError",
+    "LegacyRecordingReader",
+    "LegacyRecordingRegistration",
     "LocalRecordingNotFinalizedError",
     "LocalRecordingSecurityError",
     "LocalRecordingSource",
@@ -39,6 +51,8 @@ __all__ = [
     "RootedSigMFRecordingStore",
     "SigMFRecordingObjectReader",
     "SigMFRecordingWriter",
+    "UnsupportedLegacyRecordingError",
     "UnverifiedContinuityError",
+    "legacy_selected_chunk_index_digest",
     "recover_completed_local_recording",
 ]
