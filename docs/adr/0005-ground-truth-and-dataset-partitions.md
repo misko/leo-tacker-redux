@@ -57,8 +57,17 @@ noise recording, the derived fixture must add the base-recording digest and a
 separate injection-spec digest, and inherit the base recording's split group.
 Production detector code must never be called to generate this truth.
 
+The paper-derived `leo-flow.starlink-edge-pilot-if-fixture/v1` source is also
+detector-independent. It may supply exact digital-injection positives and
+conducted-loopback fixtures, but its label covers only the generated edge-pilot
+subset—not satellite identity, a complete Starlink waveform, over-air presence,
+or received SNR after the analog chain. A real recording used as its background
+remains named and digest-bound because it may already contain an unknown signal.
+The source fixture and injection result are distinct immutable identities.
+
 ## Compatibility
 
-This adds an analysis-owned development API and does not change frozen v0.1
-capture, FeatureSet, or model contracts. Future serialization needs its own
-schema version and migration ADR before persisted snapshots are published.
+This adds analysis-owned development fixtures and does not change frozen v0.1
+capture, FeatureSet, or model contracts. Future production serialization needs
+its own schema version and migration ADR before persisted snapshots are
+published.

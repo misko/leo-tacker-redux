@@ -63,6 +63,30 @@ drift, SNR ratio/dB, receiver delay/gain/phase/DC, clipping, paired CI16 layout,
 and normative byte hashes. It tests plumbing and estimator bookkeeping; it is
 not a realistic Starlink waveform or a substitute for real-noise injection.
 
+`benchmark.starlink_pilot_if` is the separate
+`leo-flow.starlink-edge-pilot-if-fixture/v1` validation source. It generates a
+selectable subset of the published 4QAM edge-pilot codes at the baseband offsets
+seen by a receiver tuned to an edge-pilot-band center. It is still not a full
+Starlink waveform. Its immutable truth bytes name the paper-derived pilot
+indices, exact local offsets, level, optional deterministic digital noise,
+frame-phase model, IF-center metadata, converter envelope, and CI16 digest.
+The generator imports no detector or runtime pipeline component.
+
+For example, explicitly materialize one two-pilot, three-frame lower-edge
+fixture at 5 MS/s:
+
+```text
+python3 -m benchmark.starlink_pilot_if \
+  --sample-rate 5000000 --sample-count 20000 \
+  --edge lower --pilots 531,532 \
+  --signal-rms 128 --if-center-hz 1709687500 \
+  --output /tmp/starlink-two-pilot.ci16
+```
+
+This writes only the requested CI16 file and its adjacent `.truth.json`. Normal
+callers should use the in-memory return value and persist an injection as a
+content-addressed analysis artifact rather than building a directory workflow.
+
 ## Validation
 
 Run the dependency-free checks from the repository root:
