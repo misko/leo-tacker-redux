@@ -1,4 +1,4 @@
-"""Exact, offline-only ephemeris materialization for tracking analysis.
+"""Exact, offline-only orbit materialization for tracking analysis.
 
 The public prediction boundary deliberately has no locator, snapshot-selection,
 NORAD-selection, raw-recording, or provider capability.  Those choices are

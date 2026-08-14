@@ -9,18 +9,18 @@ from pathlib import Path
 
 import pytest
 
-import leo_flow.analysis.model.tracking_ephemeris as materialization_module
+import leo_flow.analysis.orbit.tracking_ephemeris as materialization_module
 from leo_flow.analysis.ephemeris.normalization import NormalizedTLE, parse_tle_catalog
-from leo_flow.analysis.model.tracking_ephemeris import (
+from leo_flow.analysis.orbit.association import (
+    SatelliteCarrierHypothesis,
+    StationGeometrySnapshot,
+)
+from leo_flow.analysis.orbit.tracking_ephemeris import (
     ExactArchivedEphemerisReader,
     TrackingEphemerisMaterializationError,
     TrackingPredictionRequest,
     materialize_tracking_ephemerides,
     referenced_carrier_hypothesis,
-)
-from leo_flow.analysis.orbit.association import (
-    SatelliteCarrierHypothesis,
-    StationGeometrySnapshot,
 )
 from leo_flow.contracts.core import (
     V0_1,
