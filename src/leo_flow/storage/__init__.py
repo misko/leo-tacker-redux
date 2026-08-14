@@ -1,6 +1,6 @@
 """Capability-limited storage interfaces; concrete adapters live elsewhere."""
 
-from .filesystem import BlobIntegrityError, FileSystemBlobStore
+from .filesystem import BlobIntegrityError, FileSystemBlobReader, FileSystemBlobStore
 from .legacy_recording import (
     LegacyFileRef,
     LegacyRecordingError,
@@ -35,6 +35,7 @@ __all__ = [
     "BlobIntegrityError",
     "BlobReader",
     "BlobWriter",
+    "FileSystemBlobReader",
     "FileSystemBlobStore",
     "GarbageCollectionPort",
     "LegacyFileRef",

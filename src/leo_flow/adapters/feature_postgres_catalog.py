@@ -105,7 +105,7 @@ def publish_feature_set_with_cursor(
 ) -> FeatureSetRef:
     """Publish using the caller's transaction for fenced job completion."""
 
-    existing_recording = PostgresRecordingCatalog._get_with_cursor(
+    existing_recording = PostgresRecordingCatalog.get_with_cursor(
         cursor, str(recording_ref.recording_id)
     )
     if (

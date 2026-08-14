@@ -48,7 +48,7 @@ class PostgresRecordingHardwareLinkCatalog:
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
-            authoritative = PostgresRecordingCatalog._get_with_cursor(
+            authoritative = PostgresRecordingCatalog.get_with_cursor(
                 cursor, str(link.recording_id)
             )
             if (

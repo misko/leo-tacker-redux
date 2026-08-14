@@ -93,7 +93,7 @@ class PostgresRecordingCatalog:
                     raise RecordingConflictError(
                         "recording ID or idempotency key was reused"
                     )
-                existing = self._get_with_cursor(
+                existing = self.get_with_cursor(
                     cursor, str(conflicts[0]["recording_id"])
                 )
                 if existing is None or existing.recording_object != recording:
@@ -108,7 +108,7 @@ class PostgresRecordingCatalog:
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
-            return self._get_with_cursor(cursor, str(recording_id))
+            return self.get_with_cursor(cursor, str(recording_id))
 
     @staticmethod
     def _register_object(
@@ -129,9 +129,10 @@ class PostgresRecordingCatalog:
             )
 
     @staticmethod
-    def _get_with_cursor(
+    def get_with_cursor(
         cursor: psycopg.Cursor[dict[str, object]], recording_id: str
     ) -> PublishedRecordingRef | None:
+        """Read one exact publication through a caller-owned transaction."""
         cursor.execute(postgres_sql.GET_RECORDING_SQL, {"recording_id": recording_id})
         row = cursor.fetchone()
         return None if row is None else _published_from_row(row)

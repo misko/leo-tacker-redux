@@ -1,6 +1,6 @@
-"""Deterministic, TRAIN-only threshold calibration for the closed-loop fixture.
+"""Deterministic, TRAIN-only threshold calibration for Starlink benchmarks.
 
-This is test support, not a production threshold fitter.  It accepts only
+This is benchmark support, not a production threshold fitter.  It accepts only
 already-extracted FeatureSets and frozen binary membership.  Validation and
 locked-test members have no representation at this boundary, preventing their
 scores or labels from influencing the calibrated rule.

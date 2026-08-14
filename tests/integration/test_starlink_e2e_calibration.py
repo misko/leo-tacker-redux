@@ -4,6 +4,10 @@ from dataclasses import replace
 
 import pytest
 
+from benchmark.starlink_e2e_calibration import (
+    FrozenTrainCalibrationMember,
+    calibrate_train_thresholds,
+)
 from leo_flow.analysis.dataset import DatasetSplit
 from leo_flow.contracts.core import (
     AnalysisRunId,
@@ -16,10 +20,6 @@ from leo_flow.contracts.core import (
     UtcNs,
 )
 from leo_flow.contracts.features import FeatureSetBundle, MethodScore
-from tests.integration.starlink_e2e_calibration import (
-    FrozenTrainCalibrationMember,
-    calibrate_train_thresholds,
-)
 
 METHODS = ("energy@1", "paired@1")
 

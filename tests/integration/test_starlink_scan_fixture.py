@@ -5,6 +5,12 @@ import math
 
 import pytest
 
+from benchmark.starlink_scan_fixture import (
+    ReceiverPath,
+    StarlinkPilotScanCase,
+    StarlinkScanFixtureError,
+    generate_paired_starlink_scan_fixture,
+)
 from leo_flow.capture.scan_plan import (
     StarlinkEdgeScanSpec,
     build_starlink_edge_scan_plan,
@@ -12,12 +18,6 @@ from leo_flow.capture.scan_plan import (
 from leo_flow.contracts import canonical_digest
 from leo_flow.contracts.capture import GainMode, GainSetting
 from leo_flow.contracts.core import PlanId, RadioId, ReceiverChainId
-from tests.integration.starlink_scan_fixture import (
-    ReceiverPath,
-    StarlinkPilotScanCase,
-    StarlinkScanFixtureError,
-    generate_paired_starlink_scan_fixture,
-)
 
 
 def _plan(*, sample_count: int = 5_000, plan_id: str = "plan_paired_starlink_fixture"):

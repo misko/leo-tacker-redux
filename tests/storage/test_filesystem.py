@@ -9,6 +9,7 @@ from leo_flow.contracts.core import Digest
 from leo_flow.contracts.storage import ByteRange
 from leo_flow.storage.filesystem import (
     BlobIntegrityError,
+    FileSystemBlobReader,
     FileSystemBlobStore,
     IdempotencyConflictError,
 )
@@ -98,3 +99,15 @@ def test_locator_cannot_escape_store(tmp_path) -> None:
     ref = put(store, b"safe")
     with pytest.raises(BlobIntegrityError, match="locator"):
         store.head(replace(ref, locator="../../escape"))
+
+
+def test_reader_opens_existing_objects_without_creating_store_state(tmp_path) -> None:
+    writer = FileSystemBlobStore(tmp_path)
+    ref = put(writer, b"read-only")
+    (tmp_path / ".tmp").rmdir()
+
+    reader = FileSystemBlobReader(tmp_path)
+    with reader.open(ref) as stream:
+        assert stream.read() == b"read-only"
+
+    assert not (tmp_path / ".tmp").exists()

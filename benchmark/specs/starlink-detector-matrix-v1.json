@@ -1,0 +1,101 @@
+{
+  "schema": "leo-flow.starlink-detector-matrix-spec/v1",
+  "purpose": "bounded offline comparison of the independent detector suite over frozen paired-RX Starlink edge-pilot injections",
+  "acquisition": {
+    "sample_rate_hz": 2083332,
+    "bandwidth_hz": 2000000,
+    "sample_count": 4096,
+    "ambient_noise_rms_counts": 128,
+    "converter_min": -2048,
+    "converter_max": 2047
+  },
+  "detector_config": {
+    "window_samples": 4096,
+    "stride_samples": 4096,
+    "periodic_lag_samples": 9,
+    "max_pair_delay_samples": 4,
+    "clip_threshold_abs": 2048
+  },
+  "conditions": [
+    {
+      "condition_id": "null",
+      "snr_db": null,
+      "pilot_subset": "inner",
+      "edge_flip": false,
+      "cfo_hz": -60000,
+      "target_channel_offset": 0,
+      "near_clipping": false
+    },
+    {
+      "condition_id": "snr_m18_inner",
+      "snr_db": -18,
+      "pilot_subset": "inner",
+      "edge_flip": false,
+      "cfo_hz": -60000,
+      "target_channel_offset": 0,
+      "near_clipping": false
+    },
+    {
+      "condition_id": "snr_m10_full",
+      "snr_db": -10,
+      "pilot_subset": "full",
+      "edge_flip": true,
+      "cfo_hz": -30000,
+      "target_channel_offset": 1,
+      "near_clipping": false
+    },
+    {
+      "condition_id": "snr_m2_inner",
+      "snr_db": -2,
+      "pilot_subset": "inner",
+      "edge_flip": false,
+      "cfo_hz": 0,
+      "target_channel_offset": 2,
+      "near_clipping": false
+    },
+    {
+      "condition_id": "snr_p6_full",
+      "snr_db": 6,
+      "pilot_subset": "full",
+      "edge_flip": true,
+      "cfo_hz": 30000,
+      "target_channel_offset": 3,
+      "near_clipping": false
+    },
+    {
+      "condition_id": "snr_p14_full_near_clip",
+      "snr_db": 14,
+      "pilot_subset": "full",
+      "edge_flip": false,
+      "cfo_hz": 60000,
+      "target_channel_offset": 0,
+      "near_clipping": true
+    }
+  ],
+  "background_groups": [
+    {"group_id":"background_00","split":"train","seed_u64":1001,"base_edge":"lower","target_channel_base":1,"second_receiver":{"integer_delay_samples":0,"gain_linear":0.65,"phase_offset_rad":-1.2}},
+    {"group_id":"background_01","split":"train","seed_u64":2003,"base_edge":"upper","target_channel_base":2,"second_receiver":{"integer_delay_samples":1,"gain_linear":0.8,"phase_offset_rad":-0.5}},
+    {"group_id":"background_02","split":"train","seed_u64":3001,"base_edge":"lower","target_channel_base":3,"second_receiver":{"integer_delay_samples":2,"gain_linear":0.95,"phase_offset_rad":0.0}},
+    {"group_id":"background_03","split":"train","seed_u64":4001,"base_edge":"upper","target_channel_base":4,"second_receiver":{"integer_delay_samples":3,"gain_linear":1.1,"phase_offset_rad":0.7}},
+    {"group_id":"background_04","split":"train","seed_u64":5003,"base_edge":"lower","target_channel_base":1,"second_receiver":{"integer_delay_samples":4,"gain_linear":1.15,"phase_offset_rad":1.4}},
+    {"group_id":"background_05","split":"train","seed_u64":6007,"base_edge":"upper","target_channel_base":2,"second_receiver":{"integer_delay_samples":0,"gain_linear":0.8,"phase_offset_rad":0.7}},
+    {"group_id":"background_06","split":"train","seed_u64":7001,"base_edge":"lower","target_channel_base":3,"second_receiver":{"integer_delay_samples":1,"gain_linear":0.95,"phase_offset_rad":1.4}},
+    {"group_id":"background_07","split":"train","seed_u64":8009,"base_edge":"upper","target_channel_base":4,"second_receiver":{"integer_delay_samples":2,"gain_linear":1.1,"phase_offset_rad":-1.2}},
+    {"group_id":"background_08","split":"train","seed_u64":9001,"base_edge":"lower","target_channel_base":1,"second_receiver":{"integer_delay_samples":3,"gain_linear":1.15,"phase_offset_rad":-0.5}},
+    {"group_id":"background_09","split":"train","seed_u64":10009,"base_edge":"upper","target_channel_base":2,"second_receiver":{"integer_delay_samples":4,"gain_linear":0.65,"phase_offset_rad":0.0}},
+    {"group_id":"background_10","split":"train","seed_u64":11003,"base_edge":"lower","target_channel_base":3,"second_receiver":{"integer_delay_samples":0,"gain_linear":0.95,"phase_offset_rad":-0.5}},
+    {"group_id":"background_11","split":"train","seed_u64":12007,"base_edge":"upper","target_channel_base":4,"second_receiver":{"integer_delay_samples":1,"gain_linear":1.1,"phase_offset_rad":0.0}},
+    {"group_id":"background_12","split":"validation","seed_u64":13001,"base_edge":"lower","target_channel_base":1,"second_receiver":{"integer_delay_samples":2,"gain_linear":1.15,"phase_offset_rad":0.7}},
+    {"group_id":"background_13","split":"validation","seed_u64":14009,"base_edge":"upper","target_channel_base":2,"second_receiver":{"integer_delay_samples":3,"gain_linear":0.65,"phase_offset_rad":1.4}},
+    {"group_id":"background_14","split":"validation","seed_u64":15013,"base_edge":"lower","target_channel_base":3,"second_receiver":{"integer_delay_samples":4,"gain_linear":0.8,"phase_offset_rad":-1.2}},
+    {"group_id":"background_15","split":"validation","seed_u64":16001,"base_edge":"upper","target_channel_base":4,"second_receiver":{"integer_delay_samples":0,"gain_linear":1.1,"phase_offset_rad":1.4}},
+    {"group_id":"background_16","split":"validation","seed_u64":17011,"base_edge":"lower","target_channel_base":1,"second_receiver":{"integer_delay_samples":1,"gain_linear":1.15,"phase_offset_rad":-1.2}},
+    {"group_id":"background_17","split":"validation","seed_u64":18013,"base_edge":"upper","target_channel_base":2,"second_receiver":{"integer_delay_samples":2,"gain_linear":0.65,"phase_offset_rad":-0.5}},
+    {"group_id":"background_18","split":"locked_test","seed_u64":19001,"base_edge":"lower","target_channel_base":3,"second_receiver":{"integer_delay_samples":3,"gain_linear":0.8,"phase_offset_rad":0.0}},
+    {"group_id":"background_19","split":"locked_test","seed_u64":20011,"base_edge":"upper","target_channel_base":4,"second_receiver":{"integer_delay_samples":4,"gain_linear":0.95,"phase_offset_rad":0.7}},
+    {"group_id":"background_20","split":"locked_test","seed_u64":21001,"base_edge":"lower","target_channel_base":1,"second_receiver":{"integer_delay_samples":0,"gain_linear":1.15,"phase_offset_rad":0.0}},
+    {"group_id":"background_21","split":"locked_test","seed_u64":22003,"base_edge":"upper","target_channel_base":2,"second_receiver":{"integer_delay_samples":1,"gain_linear":0.65,"phase_offset_rad":0.7}},
+    {"group_id":"background_22","split":"locked_test","seed_u64":23003,"base_edge":"lower","target_channel_base":3,"second_receiver":{"integer_delay_samples":2,"gain_linear":0.8,"phase_offset_rad":1.4}},
+    {"group_id":"background_23","split":"locked_test","seed_u64":24001,"base_edge":"upper","target_channel_base":4,"second_receiver":{"integer_delay_samples":3,"gain_linear":0.95,"phase_offset_rad":-1.2}}
+  ]
+}

@@ -8,7 +8,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from benchmark.starlink_e2e_calibration import (
+    FrozenTrainCalibrationMember,
+    calibrate_train_thresholds,
+)
 from benchmark.starlink_pilot_if import SUBCARRIER_SPACING_HZ
+from benchmark.starlink_scan_fixture import (
+    PairedStarlinkScanFixture,
+    ReceiverPath,
+    StarlinkPilotScanCase,
+    generate_paired_starlink_scan_fixture,
+)
 from leo_flow.analysis.dataset import (
     DatasetCandidate,
     DatasetSnapshotBundle,
@@ -110,16 +120,6 @@ from leo_flow.storage import (
 )
 from leo_flow.storage.catalog import InMemoryRecordingCatalog, RecordingPublisherAdapter
 from testkit import FakeClock
-from tests.integration.starlink_e2e_calibration import (
-    FrozenTrainCalibrationMember,
-    calibrate_train_thresholds,
-)
-from tests.integration.starlink_scan_fixture import (
-    PairedStarlinkScanFixture,
-    ReceiverPath,
-    StarlinkPilotScanCase,
-    generate_paired_starlink_scan_fixture,
-)
 
 SAMPLE_RATE_HZ = 2_083_332
 BANDWIDTH_HZ = 2_000_000

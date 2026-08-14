@@ -1,6 +1,6 @@
-"""Detector-independent paired-RX fixtures for an exact Starlink scan plan.
+"""Detector-independent paired-RX fixture for an exact Starlink scan plan.
 
-This module is test support.  It deliberately composes the benchmark pilot
+This module is benchmark support.  It deliberately composes the pilot
 generator with the public capture-plan contract and does not import analysis
 or detector code.
 """
