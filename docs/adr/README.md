@@ -33,4 +33,7 @@ golden fixtures that change.
 - [0028: Queryable retention and fenced garbage collection](0028-queryable-retention-and-fenced-gc.md)
 - [0029: Explicit read-in-place legacy recording registration](0029-legacy-recording-reader.md)
 - [0030: Operator storage-capacity qualification](0030-operator-storage-capacity-qualification.md)
+- [0031: Offline analysis deployment composition](0031-offline-analysis-deployment-composition.md)
+- [0032: Fenced reconciliation of unregistered CAS leaves](0032-fenced-unregistered-cas-reconciliation.md)
 - [0033: Fail-closed release qualification evidence](0033-fail-closed-release-qualification-evidence.md)
+- [0034: Same-process operator dashboard UI](0034-same-process-operator-dashboard-ui.md)
