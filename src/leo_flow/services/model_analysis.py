@@ -104,6 +104,11 @@ class ModelAnalysisJobProcessor:
         self._committer = committer
 
     def process(self, lease: JobLease) -> ArtifactRef:
+        return self.execute(lease)
+
+    def execute(self, lease: JobLease) -> ArtifactRef:
+        """Execute an already-claimed lease for the typed analysis router."""
+
         if lease.job_type is not JobType.MODEL_ANALYSIS:
             raise ModelAnalysisJobError("worker accepts model-analysis jobs only")
         return self._committer.commit(lease, self._preparer.prepare(lease))
