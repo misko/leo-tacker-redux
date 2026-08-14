@@ -26,3 +26,4 @@ golden fixtures that change.
 - [0021: Pinned offline SGP4 propagation adapter](0021-pinned-offline-sgp4-adapter.md)
 - [0022: Authoritative recording-to-hardware links](0022-authoritative-recording-hardware-links.md)
 - [0025: Experimental offline residual tracking](0025-experimental-offline-residual-tracking.md)
+- [0023: Exact cross-recording model-input assembly](0023-exact-cross-recording-model-input-assembly.md)

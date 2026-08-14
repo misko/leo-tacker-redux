@@ -15,6 +15,12 @@ from .codec import (
     encode_model_snapshot,
 )
 from .dataset_resolution import DatasetResolutionError, resolve_model_dataset
+from .inputs import (
+    AssembledModelInputs,
+    EphemerisLinkRequirement,
+    ModelInputAssemblyError,
+    assemble_model_inputs,
+)
 from .nuisance import (
     NuisanceBatchConfig,
     RelativeRadioLnbNuisanceModel,
@@ -34,11 +40,14 @@ from .simulator import (
 )
 
 __all__ = [
+    "AssembledModelInputs",
     "DatasetResolutionError",
     "DurableModelSnapshotRepository",
+    "EphemerisLinkRequirement",
     "MalformedModelSnapshotError",
     "ModelConfigurationError",
     "ModelExecutionContext",
+    "ModelInputAssemblyError",
     "ModelInputError",
     "ModelSnapshotIntegrityError",
     "ModelSnapshotNotFoundError",
@@ -49,6 +58,7 @@ __all__ = [
     "ReceiverQualityAggregateConfig",
     "ReceiverQualityAggregateModel",
     "RelativeRadioLnbNuisanceModel",
+    "assemble_model_inputs",
     "decode_model_snapshot",
     "encode_model_snapshot",
     "nuisance_batch_algorithm_ref",

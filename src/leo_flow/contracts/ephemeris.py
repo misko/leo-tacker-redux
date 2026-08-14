@@ -12,8 +12,10 @@ from .core import (
     Digest,
     EphemerisRetrievalId,
     EphemerisSnapshotId,
+    RecordingId,
     SchemaRef,
     UtcNs,
+    canonical_digest,
 )
 from .storage import ObjectRef
 
@@ -149,3 +151,51 @@ class EphemerisSelection:
         require_utc_ns(self.as_of_utc_ns, "as_of_utc_ns")
         if self.source is not self.snapshot_ref.source:
             raise ValueError("selection cannot cross providers")
+
+
+@dataclass(frozen=True)
+class RecordingEphemerisLink:
+    """Immutable authority joining one recording identity to one selection."""
+
+    link_id: str
+    recording_id: RecordingId
+    recording_identity_digest: Digest
+    recording_interval: RecordingInterval
+    scope: str
+    selection: EphemerisSelection
+    link_digest: Digest
+
+    def __post_init__(self) -> None:
+        require_token(self.scope, "scope")
+        expected_digest = canonical_digest(
+            {
+                "recording_identity_digest": str(self.recording_identity_digest),
+                "recording_interval": self.recording_interval,
+                "source": self.selection.source.value,
+                "scope": self.scope,
+                "policy": self.selection.policy.value,
+                "policy_ref": self.selection.policy_ref,
+                "as_of_utc_ns": self.selection.as_of_utc_ns,
+                "snapshot_ref": self.selection.snapshot_ref,
+            }
+        )
+        if not self.link_id.startswith("ephlink_") or len(self.link_id) != 40:
+            raise ValueError(
+                "ephemeris link ID must be ephlink_ plus 32 hex characters"
+            )
+        try:
+            int(self.link_id[8:], 16)
+        except ValueError as error:
+            raise ValueError(
+                "ephemeris link ID suffix must be lowercase hex"
+            ) from error
+        if self.link_id[8:] != self.link_id[8:].lower():
+            raise ValueError("ephemeris link ID suffix must be lowercase hex")
+        if self.recording_identity_digest.algorithm.value != "sha256":
+            raise ValueError("recording identity digest must use sha256")
+        if self.link_digest.algorithm.value != "sha256":
+            raise ValueError("ephemeris link digest must use sha256")
+        if self.link_digest != expected_digest:
+            raise ValueError("ephemeris link digest differs from linked identities")
+        if self.link_id != f"ephlink_{self.link_digest.value[:32]}":
+            raise ValueError("ephemeris link ID must derive from link digest")

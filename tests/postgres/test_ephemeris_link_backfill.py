@@ -8,6 +8,7 @@ from psycopg.rows import dict_row
 
 from leo_flow.adapters.ephemeris_link_postgres import (
     AtomicPostgresEphemerisLinkCommitter,
+    PostgresRecordingEphemerisLinkCatalog,
 )
 from leo_flow.analysis.ephemeris.backfill import (
     EphemerisLinkRequest,
@@ -45,7 +46,13 @@ def _committer(postgres_dsn: str, *, role: bool = False):
     return AtomicPostgresEphemerisLinkCommitter(connect)
 
 
-def _claimed(postgres_dsn: str, *, ttl_s: float = 5.0):
+def _claimed(
+    postgres_dsn: str,
+    *,
+    ttl_s: float = 5.0,
+    job_id: str = "job_ephemeris_link",
+    as_of_utc_ns: int = FINISH + 100,
+):
     recording_request, _ = _fixture()
     ref = recording_request.recording_object_ref
     PostgresRecordingCatalog(connection_factory(postgres_dsn)).publish(
@@ -60,11 +67,11 @@ def _claimed(postgres_dsn: str, *, ttl_s: float = 5.0):
         "starlink",
         EphemerisSelectionPolicy.AVAILABLE_THEN,
         ArtifactRef("temporal-v1", digest("temporal")),
-        UtcNs(FINISH + 100),
+        UtcNs(as_of_utc_ns),
     )
     jobs = PostgresJobLeaseRepository(connection_factory(postgres_dsn))
     jobs.enqueue(
-        JobId("job_ephemeris_link"),
+        JobId(job_id),
         JobType.EPHEMERIS_LINK_BACKFILL,
         ephemeris_link_payload(request),
     )
@@ -77,6 +84,35 @@ def _claimed(postgres_dsn: str, *, ttl_s: float = 5.0):
             request, ref, RecordingInterval(UtcNs(START), UtcNs(FINISH))
         ),
     )
+
+
+@pytest.mark.integration
+def test_exact_reader_never_selects_another_link_for_recording(
+    postgres_dsn: str,
+) -> None:
+    _, first_lease, first = _claimed(postgres_dsn, job_id="job_ephemeris_link_first")
+    first_result = _committer(postgres_dsn, role=True).commit(first_lease, first)
+    _, second_lease, second = _claimed(
+        postgres_dsn,
+        job_id="job_ephemeris_link_second",
+        as_of_utc_ns=FINISH + 200,
+    )
+    second_result = _committer(postgres_dsn, role=True).commit(second_lease, second)
+    reader = PostgresRecordingEphemerisLinkCatalog(connection_factory(postgres_dsn))
+
+    selected = reader.get_exact(
+        first.request.recording_id,
+        first.request.source,
+        first.request.scope,
+        first.request.policy,
+        first.request.policy_ref,
+        first.request.as_of_utc_ns,
+    )
+
+    assert selected is not None
+    assert selected.selection.as_of_utc_ns == first.request.as_of_utc_ns
+    assert selected.link_id == first_result.artifact_id
+    assert selected.link_id != second_result.artifact_id
 
 
 @pytest.mark.integration

@@ -18,11 +18,20 @@ from leo_flow.contracts.core import (
     Digest,
     DigestAlgorithm,
     EphemerisSnapshotId,
+    RecordingId,
     SchemaRef,
+    SchemaVersion,
     UtcNs,
     canonical_digest,
 )
-from leo_flow.contracts.ephemeris import EphemerisSnapshotRef, EphemerisSource
+from leo_flow.contracts.ephemeris import (
+    EphemerisSelection,
+    EphemerisSelectionPolicy,
+    EphemerisSnapshotRef,
+    EphemerisSource,
+    RecordingEphemerisLink,
+    RecordingInterval,
+)
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import StaleLeaseError
 from leo_flow.jobs.postgres_sql import COMPLETE_SQL
@@ -41,6 +50,53 @@ class RecordingAuthorityMismatchError(EphemerisLinkPersistenceError):
 
 class EphemerisLinkConflictError(EphemerisLinkPersistenceError):
     pass
+
+
+class PostgresRecordingEphemerisLinkCatalog:
+    """Read exact immutable links; it has no temporal/latest resolver."""
+
+    def __init__(self, connect: ConnectionFactory) -> None:
+        self._connect = connect
+
+    def get_exact(
+        self,
+        recording_id: RecordingId,
+        source: EphemerisSource,
+        scope: str,
+        policy: EphemerisSelectionPolicy,
+        policy_ref: ArtifactRef,
+        as_of_utc_ns: UtcNs,
+    ) -> RecordingEphemerisLink | None:
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(
+                _GET_EXACT_SQL,
+                {
+                    "recording_id": str(recording_id),
+                    "source": source.value,
+                    "scope": scope,
+                    "selection_policy": policy.value,
+                    "policy_artifact_id": policy_ref.artifact_id,
+                    "policy_digest_algorithm": policy_ref.digest.algorithm.value,
+                    "policy_digest_value": policy_ref.digest.value,
+                    "policy_schema_id": (
+                        None
+                        if policy_ref.schema is None
+                        else policy_ref.schema.schema_id
+                    ),
+                    "policy_schema_version": (
+                        None
+                        if policy_ref.schema is None
+                        else str(policy_ref.schema.version)
+                    ),
+                    "as_of_utc_ns": int(as_of_utc_ns),
+                },
+            )
+            row = cursor.fetchone()
+            return None if row is None else _link(row)
 
 
 class AtomicPostgresEphemerisLinkCommitter:
@@ -241,6 +297,68 @@ def _artifact(ref: ArtifactRef) -> dict[str, object]:
     }
 
 
+def _link(row: dict[str, object]) -> RecordingEphemerisLink:
+    source = EphemerisSource(str(row["source"]))
+    policy_schema = None
+    if row["policy_schema_id"] is not None:
+        policy_schema = SchemaRef(
+            str(row["policy_schema_id"]),
+            SchemaVersion.parse(str(row["policy_schema_version"])),
+        )
+    policy_ref = ArtifactRef(
+        str(row["policy_artifact_id"]),
+        Digest(
+            DigestAlgorithm(str(row["policy_digest_algorithm"])),
+            str(row["policy_digest_value"]),
+        ),
+        policy_schema,
+    )
+    snapshot_ref = EphemerisSnapshotRef(
+        EphemerisSnapshotId(str(row["snapshot_id"])),
+        source,
+        Digest(
+            DigestAlgorithm(str(row["raw_digest_algorithm"])),
+            str(row["raw_digest_value"]),
+        ),
+        Digest(
+            DigestAlgorithm(str(row["normalized_digest_algorithm"])),
+            str(row["normalized_digest_value"]),
+        ),
+    )
+    return RecordingEphemerisLink(
+        link_id=str(row["link_id"]),
+        recording_id=RecordingId(str(row["recording_id"])),
+        recording_identity_digest=Digest(
+            DigestAlgorithm(str(row["recording_identity_digest_algorithm"])),
+            str(row["recording_identity_digest_value"]),
+        ),
+        recording_interval=RecordingInterval(
+            UtcNs(
+                _database_int(
+                    row["recording_started_utc_ns"], "recording_started_utc_ns"
+                )
+            ),
+            UtcNs(
+                _database_int(
+                    row["recording_finished_utc_ns"], "recording_finished_utc_ns"
+                )
+            ),
+        ),
+        scope=str(row["scope"]),
+        selection=EphemerisSelection(
+            source,
+            EphemerisSelectionPolicy(str(row["selection_policy"])),
+            policy_ref,
+            snapshot_ref,
+            UtcNs(_database_int(row["as_of_utc_ns"], "as_of_utc_ns")),
+        ),
+        link_digest=Digest(
+            DigestAlgorithm(str(row["link_digest_algorithm"])),
+            str(row["link_digest_value"]),
+        ),
+    )
+
+
 _COLUMNS = """link_id, recording_id, recording_identity_digest_algorithm,
 recording_identity_digest_value, recording_started_utc_ns,
 recording_finished_utc_ns, source, scope, selection_policy, policy_artifact_id,
@@ -253,3 +371,15 @@ _VALUES = ", ".join(
 )
 _PUBLISH_SQL = f"INSERT INTO recording_ephemeris_link ({_COLUMNS}) VALUES ({_VALUES}) ON CONFLICT DO NOTHING RETURNING link_id"
 _CONFLICT_SQL = f"SELECT {_COLUMNS} FROM recording_ephemeris_link WHERE link_id = %(link_id)s OR idempotency_key = %(idempotency_key)s"
+_GET_EXACT_SQL = (
+    f"SELECT {_COLUMNS} FROM recording_ephemeris_link "
+    "WHERE recording_id = %(recording_id)s "
+    "AND source = %(source)s AND scope = %(scope)s "
+    "AND selection_policy = %(selection_policy)s "
+    "AND policy_artifact_id = %(policy_artifact_id)s "
+    "AND policy_digest_algorithm = %(policy_digest_algorithm)s "
+    "AND policy_digest_value = %(policy_digest_value)s "
+    "AND policy_schema_id IS NOT DISTINCT FROM %(policy_schema_id)s "
+    "AND policy_schema_version IS NOT DISTINCT FROM %(policy_schema_version)s "
+    "AND as_of_utc_ns = %(as_of_utc_ns)s"
+)
