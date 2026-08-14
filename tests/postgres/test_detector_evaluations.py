@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from leo_flow.adapters.dashboard_postgres import PostgresDashboardRepository
 from leo_flow.adapters.evaluation_dashboard_postgres import PostgresEvaluationDashboard
 from leo_flow.adapters.evaluation_postgres_catalog import (
     EvaluationConflictError,
@@ -16,6 +18,7 @@ from leo_flow.analysis.dataset.evaluation_persistence import (
     DurableDetectorEvaluationRepository,
 )
 from leo_flow.contracts.core import Digest, EvaluationRunId
+from leo_flow.dashboard import DashboardJsonApplication, JsonRequest
 from leo_flow.storage.filesystem import FileSystemBlobStore
 from tests.dataset_analysis.test_evaluation_persistence import evaluation_report
 
@@ -157,6 +160,26 @@ def test_runtime_roles_enforce_append_only_and_dashboard_read_only(
         str(ref.run_id)
     )
     assert view.ref == ref
+    application = DashboardJsonApplication(
+        PostgresDashboardRepository(dashboard_connect)
+    )
+    for identity, kind in (
+        (str(ref.evaluation_id), "evaluation_id"),
+        (str(ref.run_id), "run_id"),
+    ):
+        response = application.handle(
+            JsonRequest("GET", f"/api/evaluations/{identity}", {})
+        )
+        assert response.status == 200
+        payload = json.loads(response.body)
+        assert payload["queried_identity"] == identity
+        assert payload["queried_identity_kind"] == kind
+        assert payload["evaluation_id"] == str(ref.evaluation_id)
+        assert payload["report_object"]["locator"] == (
+            f"cas:sha256:{ref.report_digest.value}"
+        )
+        assert "covariance" not in response.body.decode()
+        assert "/home/" not in response.body.decode()
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute("SET ROLE leo_dashboard")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):

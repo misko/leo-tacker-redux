@@ -46,6 +46,7 @@ from .ephemeris import (
     RetrievalResult,
     ValidationResult,
 )
+from .evaluation import DetectorEvaluationView
 from .features import (
     FeatureSetBundle,
     FeatureSetRef,
@@ -275,6 +276,10 @@ class DashboardQueryPort(Protocol):
     ) -> Page[FeatureView]: ...
 
     def model_snapshot(self, model_id_or_release_alias: str) -> ModelView: ...
+
+    def detector_evaluation(
+        self, evaluation_id_or_run_id: str
+    ) -> DetectorEvaluationView: ...
 
     def tracks(
         self, query: TimeRangeQuery, cursor: str | None = None

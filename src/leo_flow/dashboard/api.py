@@ -6,8 +6,16 @@ from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import unquote
 
-from leo_flow.contracts.core import RadioId, RecordingId, UtcNs, canonical_json_bytes
+from leo_flow.contracts.core import (
+    DetectorEvaluationId,
+    EvaluationRunId,
+    RadioId,
+    RecordingId,
+    UtcNs,
+    canonical_json_bytes,
+)
 from leo_flow.contracts.dashboard import TimeRangeQuery
+from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.ports import DashboardQueryPort
 
 from .repository import DashboardNotFound, InvalidCursor
@@ -69,6 +77,15 @@ class DashboardJsonApplication:
         if path.startswith("/api/models/"):
             identity = _one_path_component(path, "/api/models/")
             return self._queries.model_snapshot(identity)
+        if path.startswith("/api/evaluations/"):
+            identity, identity_kind = _evaluation_identity(
+                _one_path_component(path, "/api/evaluations/")
+            )
+            return _evaluation_payload(
+                self._queries.detector_evaluation(identity),
+                queried_identity=identity,
+                queried_identity_kind=identity_kind,
+            )
         if path.startswith("/api/recordings/"):
             suffix = path.removeprefix("/api/recordings/")
             parts = suffix.split("/")
@@ -105,6 +122,60 @@ def _one_path_component(path: str, prefix: str) -> str:
     if not value or "/" in value:
         raise DashboardNotFound(f"route {path} was not found")
     return value
+
+
+def _evaluation_identity(value: str) -> tuple[str, str]:
+    if value.startswith("eval_"):
+        return str(DetectorEvaluationId(value)), "evaluation_id"
+    if value.startswith("erun_"):
+        return str(EvaluationRunId(value)), "run_id"
+    raise ValueError("evaluation identity must start with 'eval_' or 'erun_'")
+
+
+def _evaluation_payload(
+    view: DetectorEvaluationView,
+    *,
+    queried_identity: str,
+    queried_identity_kind: str,
+) -> dict[str, object]:
+    report = view.ref.report_object
+    expected_locator = f"cas:{report.digest.algorithm.value}:{report.digest.value}"
+    if report.locator != expected_locator:
+        raise RuntimeError("evaluation report locator is not a canonical CAS locator")
+    return {
+        "schema_version": 1,
+        "queried_identity": queried_identity,
+        "queried_identity_kind": queried_identity_kind,
+        "evaluation_id": str(view.ref.evaluation_id),
+        "run_id": str(view.ref.run_id),
+        "method_count": view.method_count,
+        "union_window_count": view.union_window_count,
+        "warnings": view.warnings,
+        "methods": tuple(
+            {
+                "method_id": method.method_id,
+                "split": method.split,
+                "coverage": {
+                    "feature_set_count": method.feature_set_count,
+                    "feature_set_present_count": method.feature_set_present_count,
+                    "union_window_count": method.union_window_count,
+                    "present_window_count": method.present_window_count,
+                    "missing_window_count": method.missing_window_count,
+                    "scored_prediction_count": method.scored_prediction_count,
+                    "missing_prediction_count": method.missing_prediction_count,
+                },
+                "firing_count": method.firing_count,
+                "confusion": {
+                    "true_positive": method.true_positive,
+                    "false_positive": method.false_positive,
+                    "true_negative": method.true_negative,
+                    "false_negative": method.false_negative,
+                },
+            }
+            for method in view.methods
+        ),
+        "report_object": report,
+    }
 
 
 def _error(status: int, code: str, message: str) -> JsonResponse:

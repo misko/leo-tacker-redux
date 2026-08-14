@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from leo_flow.contracts.capture import ActivityKind
-from leo_flow.contracts.core import ModelSnapshotId, RadioId, RecordingId, UtcNs
+from leo_flow.contracts.core import (
+    DetectorEvaluationId,
+    Digest,
+    EvaluationRunId,
+    ModelSnapshotId,
+    RadioId,
+    RecordingId,
+    UtcNs,
+)
 from leo_flow.contracts.dashboard import (
     FeatureView,
     ModelView,
@@ -9,6 +17,12 @@ from leo_flow.contracts.dashboard import (
     StorageHealth,
     TrackView,
 )
+from leo_flow.contracts.evaluation import (
+    DetectorEvaluationRef,
+    DetectorEvaluationView,
+    DetectorMethodSplitSummary,
+)
+from leo_flow.contracts.storage import ObjectRef
 from leo_flow.dashboard.repository import (
     ActivityProjection,
     FeatureProjection,
@@ -21,6 +35,59 @@ from leo_flow.dashboard.repository import (
 RADIO_A = RadioId("radio_a")
 RADIO_B = RadioId("radio_b")
 MODEL_A = ModelSnapshotId("model_a")
+EVALUATION_DIGEST = Digest.sha256(b"dashboard-evaluation-report")
+EVALUATION_ID = DetectorEvaluationId(f"eval_{EVALUATION_DIGEST.value}")
+EVALUATION_RUN_ID = EvaluationRunId("erun_dashboard")
+
+
+def evaluation() -> DetectorEvaluationView:
+    report_object = ObjectRef(
+        EVALUATION_DIGEST,
+        123,
+        "application/json",
+        "detector-evaluation-report-v0.1",
+        f"cas:sha256:{EVALUATION_DIGEST.value}",
+    )
+    methods = tuple(
+        DetectorMethodSplitSummary(
+            "energy@1",
+            split,
+            2.5,
+            "power",
+            2,
+            2,
+            4,
+            3,
+            1,
+            2,
+            1,
+            1,
+            1,
+            0,
+            3,
+            1,
+        )
+        for split in ("train", "validation", "locked_test")
+    )
+    return DetectorEvaluationView(
+        DetectorEvaluationRef(
+            EVALUATION_ID,
+            EVALUATION_RUN_ID,
+            EVALUATION_DIGEST,
+            report_object,
+        ),
+        "dataset_dashboard",
+        Digest.sha256(b"dataset"),
+        Digest.sha256(b"membership"),
+        "train-quantile-v1",
+        Digest.sha256(b"rule"),
+        "dataset_dashboard",
+        "train",
+        1,
+        4,
+        ("fixture warning",),
+        methods,
+    )
 
 
 def recording(
@@ -137,6 +204,7 @@ def repository(page_size: int = 2) -> InMemoryDashboardRepository:
         activities=activities,
         features=features,
         models=models,
+        evaluations=(evaluation(),),
         tracks=tracks,
         storage_health=StorageHealth(True, 1_000, 250),
         page_size=page_size,

@@ -24,9 +24,11 @@ from leo_flow.contracts.dashboard import (
     TimeRangeQuery,
     TrackView,
 )
+from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.dashboard import DashboardNotFound, InvalidCursor
 
 from . import dashboard_postgres_sql as sql
+from .evaluation_dashboard_postgres import PostgresEvaluationDashboard
 
 _CURSOR_VERSION: Final = 1
 _MAX_PAGE_SIZE: Final = 200
@@ -41,6 +43,7 @@ class PostgresDashboardRepository:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
         self._connect = connect
         self._page_size = page_size
+        self._evaluations = PostgresEvaluationDashboard(connect)
 
     def recent_recordings(
         self, query: TimeRangeQuery, cursor: str | None = None
@@ -161,6 +164,11 @@ class PostgresDashboardRepository:
             _int(row["parameter_count"], "parameter_count"),
             tuple(warnings),
         )
+
+    def detector_evaluation(
+        self, evaluation_id_or_run_id: str
+    ) -> DetectorEvaluationView:
+        return self._evaluations.detector_evaluation(evaluation_id_or_run_id)
 
     def tracks(
         self, query: TimeRangeQuery, cursor: str | None = None

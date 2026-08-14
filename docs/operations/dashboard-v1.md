@@ -27,6 +27,13 @@ source path in the unit. The database login must be able to assume only the
 `leo_dashboard` role established by the PostgreSQL migrations. Each query also
 verifies that its transaction is read-only.
 
+Detector evaluation summaries are available at
+`GET /api/evaluations/{identity}`, where `identity` is an immutable `eval_`
+evaluation ID or `erun_` execution ID. The versioned response contains bounded
+method/split coverage, firing and confusion counts, warnings, and the exact
+canonical report `ObjectRef`. Covariance matrices remain in that canonical
+report; the JSON route neither opens the report nor exposes a filesystem path.
+
 The v1 HTTP adapter accepts only an explicit loopback address. Put an
 authenticated, TLS-terminating reverse proxy in front of it for remote access;
 do not change the bind address to a wildcard. `serve_once` waits at most 250 ms,

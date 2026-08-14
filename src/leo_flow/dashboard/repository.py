@@ -23,6 +23,7 @@ from leo_flow.contracts.dashboard import (
     TimeRangeQuery,
     TrackView,
 )
+from leo_flow.contracts.evaluation import DetectorEvaluationView
 
 _CURSOR_VERSION: Final = 1
 _UNAVAILABLE_STORAGE: Final = StorageHealth(False, None, None)
@@ -110,6 +111,7 @@ class InMemoryDashboardRepository:
         activities: Sequence[ActivityProjection] = (),
         features: Sequence[FeatureProjection] = (),
         models: Sequence[ModelProjection] = (),
+        evaluations: Sequence[DetectorEvaluationView] = (),
         tracks: Sequence[TrackProjection] = (),
         storage_health: StorageHealth = _UNAVAILABLE_STORAGE,
         page_size: int = 50,
@@ -120,6 +122,7 @@ class InMemoryDashboardRepository:
         self._activities = activities
         self._features = features
         self._models = models
+        self._evaluations = evaluations
         self._tracks = tracks
         self._storage_health = storage_health
         self._page_size = page_size
@@ -237,6 +240,25 @@ class InMemoryDashboardRepository:
         return cast(
             ModelView, max(matches, key=lambda row: row.projection_sequence).view
         )
+
+    def detector_evaluation(
+        self, evaluation_id_or_run_id: str
+    ) -> DetectorEvaluationView:
+        if not evaluation_id_or_run_id:
+            raise ValueError("evaluation ID or run ID cannot be empty")
+        matches = [
+            view
+            for view in self._evaluations
+            if str(view.ref.evaluation_id) == evaluation_id_or_run_id
+            or str(view.ref.run_id) == evaluation_id_or_run_id
+        ]
+        if not matches:
+            raise DashboardNotFound(
+                f"detector evaluation {evaluation_id_or_run_id} was not found"
+            )
+        if len(matches) != 1:
+            raise RuntimeError("detector evaluation identity is ambiguous")
+        return matches[0]
 
     def tracks(
         self, query: TimeRangeQuery, cursor: str | None = None
