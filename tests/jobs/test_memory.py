@@ -8,10 +8,10 @@ from leo_flow.contracts.core import ArtifactRef, JobId, SchemaRef, UtcNs
 from leo_flow.jobs import (
     InMemoryJobLeaseRepository,
     JobPayload,
+    JobState,
     JobType,
     StaleLeaseError,
 )
-from leo_flow.jobs.memory import JobState
 from testkit import digest
 
 
@@ -96,3 +96,82 @@ def test_concurrent_claim_exposes_only_one_lease() -> None:
     for thread in threads:
         thread.join()
     assert len(leases) == 1
+
+
+def test_park_is_terminal_inspectable_and_never_claimable() -> None:
+    repo, clock = repository()
+    lease = repo.claim((JobType.RECORDING_ANALYSIS,), "worker", 1.0)
+    assert lease is not None
+
+    repo.park(
+        lease.job_id,
+        lease.lease_token,
+        lease.lease_generation,
+        "operator_action_required",
+    )
+    first = repo.snapshot(lease.job_id)
+    assert first == repo.snapshot(lease.job_id)
+    assert first.state is JobState.PARKED
+    assert first.park_reason == "operator_action_required"
+    assert first.parked_at_utc_ns == UtcNs(clock.now)
+    assert first.result_ref is None
+    assert first.last_error is None
+
+    clock.now += 100 * 365 * 24 * 60 * 60 * 1_000_000_000
+    assert repo.claim((JobType.RECORDING_ANALYSIS,), "later", 1.0) is None
+
+
+def test_park_rejects_stale_generation_and_expired_lease() -> None:
+    repo, clock = repository()
+    first = repo.claim((JobType.RECORDING_ANALYSIS,), "first", 1.0)
+    assert first is not None
+    clock.now = int(first.lease_expires_utc_ns)
+    second = repo.claim((JobType.RECORDING_ANALYSIS,), "second", 1.0)
+    assert second is not None
+
+    with pytest.raises(StaleLeaseError):
+        repo.park(
+            first.job_id,
+            first.lease_token,
+            first.lease_generation,
+            "stale_generation",
+        )
+    clock.now = int(second.lease_expires_utc_ns)
+    with pytest.raises(StaleLeaseError):
+        repo.park(
+            second.job_id,
+            second.lease_token,
+            second.lease_generation,
+            "expired_lease",
+        )
+
+
+@pytest.mark.parametrize(
+    "reason",
+    ["", "Contains Spaces", "UPPERCASE", "x" * 129, "exception\nsecret"],
+)
+def test_park_requires_bounded_sanitized_reason(reason: str) -> None:
+    repo, _clock = repository()
+    lease = repo.claim((JobType.RECORDING_ANALYSIS,), "worker", 1.0)
+    assert lease is not None
+
+    with pytest.raises(ValueError, match="parking reason"):
+        repo.park(lease.job_id, lease.lease_token, lease.lease_generation, reason)
+    assert repo.snapshot(lease.job_id).state is JobState.LEASED
+
+
+def test_fail_none_legacy_semantics_remain_immediately_retryable() -> None:
+    repo, _clock = repository()
+    lease = repo.claim((JobType.RECORDING_ANALYSIS,), "worker", 1.0)
+    assert lease is not None
+    repo.fail(
+        lease.job_id,
+        lease.lease_token,
+        lease.lease_generation,
+        "legacy_failure",
+        None,
+    )
+
+    retried = repo.claim((JobType.RECORDING_ANALYSIS,), "retry", 1.0)
+    assert retried is not None
+    assert retried.attempt == 2

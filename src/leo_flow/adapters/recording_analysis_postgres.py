@@ -20,7 +20,7 @@ from leo_flow.contracts.core import ArtifactRef, Digest
 from leo_flow.contracts.storage import ObjectRef
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import StaleLeaseError
-from leo_flow.jobs.postgres_sql import COMPLETE_SQL
+from leo_flow.jobs.postgres_sql import COMPLETE_SQL, LOCK_ACTIVE_SQL
 from leo_flow.services.recording_analysis import PreparedRecordingAnalysis
 
 from .feature_postgres_catalog import publish_feature_set_with_cursor
@@ -72,19 +72,7 @@ class AtomicPostgresRecordingAnalysisCommitter:
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
-            cursor.execute(
-                """
-                SELECT job_id FROM job
-                WHERE job_id = %(job_id)s
-                  AND job_type = 'recording_analysis'
-                  AND state = 'leased'
-                  AND lease_token = %(lease_token)s
-                  AND lease_generation = %(lease_generation)s
-                  AND lease_expires_utc > clock_timestamp()
-                FOR UPDATE
-                """,
-                _lease_parameters(lease),
-            )
+            cursor.execute(LOCK_ACTIVE_SQL, _lease_parameters(lease))
             if cursor.fetchone() is None:
                 raise StaleLeaseError(
                     "lease token, generation, type, or expiry is stale"
@@ -114,6 +102,7 @@ def _lease_parameters(lease: JobLease) -> dict[str, object]:
         "job_id": str(lease.job_id),
         "lease_token": lease.lease_token,
         "lease_generation": lease.lease_generation,
+        "job_type": lease.job_type.value,
     }
 
 

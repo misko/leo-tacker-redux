@@ -65,6 +65,8 @@ WHERE h.snapshot_id = %(snapshot_id)s
 """
 )
 
+# Unique-index conflict serialization plus append-only role grants make this
+# exact conflict read stable without granting UPDATE merely for a row lock.
 GET_CONFLICTS_SQL = (
     SNAPSHOT_SELECT
     + """
@@ -72,7 +74,6 @@ WHERE h.snapshot_id = %(snapshot_id)s
    OR h.idempotency_key = %(idempotency_key)s
    OR (h.snapshot_digest_algorithm, h.snapshot_digest_value) =
       (%(snapshot_digest_algorithm)s, %(snapshot_digest_value)s)
-FOR UPDATE OF h
 """
 )
 

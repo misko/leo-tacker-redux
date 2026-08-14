@@ -5,13 +5,13 @@ from dataclasses import replace
 
 import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from leo_flow.adapters.model_postgres_catalog import (
     ModelDatasetMismatchError,
     ModelReleaseConflictError,
     ModelSnapshotConflictError,
     PostgresModelSnapshotCatalog,
-    connection_factory,
 )
 from leo_flow.analysis.model import (
     DurableModelSnapshotRepository,
@@ -185,10 +185,16 @@ def _seed_authoritative_dataset(postgres_dsn: str, snapshot) -> None:
             )
 
 
-def _repository(postgres_dsn: str, root):
+def _repository(postgres_dsn: str, root, *, role: bool = False):
+    def connect():
+        connection = psycopg.connect(postgres_dsn, row_factory=dict_row)
+        if role:
+            connection.execute("SET ROLE leo_analysis")
+        return connection
+
     return DurableModelSnapshotRepository(
         FileSystemBlobStore(root),
-        PostgresModelSnapshotCatalog(connection_factory(postgres_dsn)),
+        PostgresModelSnapshotCatalog(connect),
     )
 
 
@@ -322,7 +328,7 @@ def test_concurrent_exact_model_publication_exposes_one_row(
     _seed_authoritative_dataset(postgres_dsn, snapshot)
 
     def publish(_index: int):
-        return _repository(postgres_dsn, tmp_path / "cas").publish(
+        return _repository(postgres_dsn, tmp_path / "cas", role=True).publish(
             model_request, bundle, idempotency_key="model:concurrent"
         )
 

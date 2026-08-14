@@ -6,15 +6,18 @@ SELECT register_live_object_blob(
      %(bundle_media_type)s, %(bundle_format_id)s, %(bundle_locator)s)
 """
 
+# register_live_object_blob holds its object row lock through the transaction;
+# verification does not need another UPDATE-requiring lock.
 VERIFY_OBJECT_SQL = """
 SELECT byte_count, media_type, format_id, locator
 FROM object_blob
 WHERE digest_algorithm = %(bundle_digest_algorithm)s
   AND digest_value = %(bundle_digest_value)s
   AND lifecycle_state = 'live'
-FOR UPDATE
 """
 
+# Dataset/member identities are immutable to analysis after publication. Their
+# plain MVCC read is stable under the supported role boundary.
 DATASET_INPUTS_SQL = """
 SELECT ds.snapshot_id, ds.feature_membership_digest_algorithm,
        ds.feature_membership_digest_value,
@@ -25,7 +28,6 @@ WHERE ds.snapshot_id = %(dataset_snapshot_id)s
   AND ds.feature_membership_digest_algorithm = %(dataset_membership_digest_algorithm)s
   AND ds.feature_membership_digest_value = %(dataset_membership_digest_value)s
 ORDER BY dm.member_index
-FOR SHARE OF ds, dm
 """
 
 PUBLISH_MODEL_SQL = """
@@ -66,6 +68,8 @@ JOIN object_blob AS ob
      (ms.bundle_digest_algorithm, ms.bundle_digest_value)
 """
 
+# Unique INSERT conflict serialization makes the append-only row visible before
+# this exact comparison; no UPDATE privilege is needed for conflict inspection.
 GET_CONFLICTS_SQL = (
     MODEL_SELECT
     + """
@@ -74,7 +78,6 @@ WHERE ms.model_snapshot_id = %(model_snapshot_id)s
    OR (ms.bundle_digest_algorithm, ms.bundle_digest_value) =
       (%(bundle_digest_algorithm)s, %(bundle_digest_value)s)
    OR ms.idempotency_key = %(idempotency_key)s
-FOR UPDATE OF ms
 """
 )
 
@@ -119,6 +122,7 @@ JOIN object_blob AS ob
      (mr.bundle_digest_algorithm, mr.bundle_digest_value)
 """
 
+# Model releases are append-only events and use the same unique-conflict proof.
 GET_RELEASE_CONFLICTS_SQL = (
     RELEASE_SELECT
     + """
@@ -127,7 +131,6 @@ WHERE mr.idempotency_key = %(idempotency_key)s
        AND mr.model_snapshot_id = %(model_snapshot_id)s
        AND mr.approval_digest_algorithm = %(approval_digest_algorithm)s
        AND mr.approval_digest_value = %(approval_digest_value)s)
-FOR UPDATE OF mr
 """
 )
 

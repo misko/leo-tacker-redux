@@ -6,13 +6,13 @@ SELECT register_live_object_blob(
      %(media_type)s, %(format_id)s, %(locator)s)
 """
 
+# Registration already holds the object-row fence through publication.
 VERIFY_OBJECT_SQL = """
 SELECT byte_count, media_type, format_id, locator
 FROM object_blob
 WHERE digest_algorithm = %(digest_algorithm)s
   AND digest_value = %(digest_value)s
   AND lifecycle_state = 'live'
-FOR SHARE
 """
 
 PUBLISH_SNAPSHOT_SQL = """
@@ -77,11 +77,13 @@ GET_BY_SNAPSHOT_SQL = SNAPSHOT_SELECT + " WHERE e.snapshot_id = %(snapshot_id)s"
 
 GET_BY_RETRIEVAL_SQL = SNAPSHOT_SELECT + " WHERE e.retrieval_id = %(retrieval_id)s"
 
+# Ephemeris rows are append-only. A unique conflict waits for the winning insert
+# before this exact comparison, so an UPDATE-requiring row lock adds no safety.
 GET_CONFLICTS_SQL = (
     SNAPSHOT_SELECT
     + """ WHERE e.snapshot_id = %(snapshot_id)s
               OR e.retrieval_id = %(retrieval_id)s
-          FOR UPDATE OF e"""
+          """
 )
 
 HISTORY_SQL = """
@@ -91,16 +93,4 @@ SELECT snapshot_id, source, retrieved_at_utc_ns,
 FROM ephemeris_snapshot
 WHERE source = %(source)s AND scope = %(scope)s
 ORDER BY retrieved_at_utc_ns, snapshot_id
-"""
-
-LOCK_ACTIVE_LEASE_SQL = """
-SELECT job_id
-FROM job
-WHERE job_id = %(job_id)s
-  AND job_type = 'ephemeris_retrieval'
-  AND state = 'leased'
-  AND lease_token = %(lease_token)s
-  AND lease_generation = %(lease_generation)s
-  AND lease_expires_utc > clock_timestamp()
-FOR UPDATE
 """

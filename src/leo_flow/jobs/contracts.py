@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -12,7 +13,7 @@ from leo_flow.contracts._validation import (
     require_token,
     require_utc_ns,
 )
-from leo_flow.contracts.core import JobId, SchemaRef, UtcNs
+from leo_flow.contracts.core import ArtifactRef, JobId, SchemaRef, UtcNs
 
 
 class JobType(str, Enum):
@@ -20,6 +21,26 @@ class JobType(str, Enum):
     MODEL_ANALYSIS = "model_analysis"
     EPHEMERIS_RETRIEVAL = "ephemeris_retrieval"
     EPHEMERIS_LINK_BACKFILL = "ephemeris_link_backfill"
+
+
+class JobState(str, Enum):
+    READY = "ready"
+    LEASED = "leased"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    PARKED = "parked"
+
+
+_PARK_REASON = re.compile(r"[a-z0-9][a-z0-9._:-]{0,127}")
+
+
+def validate_park_reason(reason: str) -> None:
+    """Require a bounded reason code, never raw exception or provider text."""
+
+    if _PARK_REASON.fullmatch(reason) is None:
+        raise ValueError(
+            "parking reason must be a lowercase reason code of at most 128 bytes"
+        )
 
 
 @dataclass(frozen=True)
@@ -55,3 +76,17 @@ class JobLease:
         require_token(self.lease_token, "lease_token")
         require_positive(self.lease_generation, "lease_generation")
         require_utc_ns(self.lease_expires_utc_ns, "lease_expires_utc_ns")
+
+
+@dataclass(frozen=True)
+class JobSnapshot:
+    """Stable inspection projection for terminal and active job state."""
+
+    job_id: JobId
+    state: JobState
+    attempt: int
+    lease_generation: int
+    result_ref: ArtifactRef | None
+    last_error: str | None
+    park_reason: str | None
+    parked_at_utc_ns: UtcNs | None

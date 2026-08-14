@@ -6,7 +6,7 @@ from typing import Protocol
 
 from leo_flow.contracts.core import ArtifactRef, JobId, UtcNs
 
-from .contracts import JobLease, JobType
+from .contracts import JobLease, JobSnapshot, JobType
 
 
 class StaleLeaseError(RuntimeError):
@@ -45,3 +45,17 @@ class JobLeaseRepository(Protocol):
         reason: str,
         retry_at_utc_ns: UtcNs | None,
     ) -> None: ...
+
+    def park(
+        self,
+        job_id: JobId,
+        lease_token: str,
+        generation: int,
+        reason: str,
+    ) -> None: ...
+
+
+class JobInspectionRepository(Protocol):
+    """Separate read capability for operators and deterministic tests."""
+
+    def snapshot(self, job_id: JobId) -> JobSnapshot: ...

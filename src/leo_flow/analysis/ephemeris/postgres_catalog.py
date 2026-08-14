@@ -28,6 +28,7 @@ from leo_flow.contracts.ephemeris import (
 from leo_flow.contracts.storage import ObjectRef
 from leo_flow.jobs.contracts import JobLease
 from leo_flow.jobs.ports import StaleLeaseError
+from leo_flow.jobs.postgres_sql import COMPLETE_SQL, LOCK_ACTIVE_SQL
 
 from . import postgres_sql
 from .catalog import ArchivedEphemerisSnapshot, EphemerisCatalogConflictError
@@ -140,25 +141,16 @@ class PostgresFencedEphemerisCommitter:
         ):
             lease_parameters = {
                 "job_id": str(lease.job_id),
+                "job_type": lease.job_type.value,
                 "lease_token": lease.lease_token,
                 "lease_generation": lease.lease_generation,
             }
-            cursor.execute(postgres_sql.LOCK_ACTIVE_LEASE_SQL, lease_parameters)
+            cursor.execute(LOCK_ACTIVE_SQL, lease_parameters)
             if cursor.fetchone() is None:
                 raise StaleLeaseError("lease token, generation, or expiry is stale")
             PostgresEphemerisSnapshotCatalog._publish_with_cursor(cursor, archived)
             cursor.execute(
-                """
-                UPDATE job
-                SET state = 'succeeded', result_ref = %(result_ref)s,
-                    lease_token = NULL, lease_expires_utc = NULL
-                WHERE job_id = %(job_id)s
-                  AND state = 'leased'
-                  AND lease_token = %(lease_token)s
-                  AND lease_generation = %(lease_generation)s
-                  AND lease_expires_utc > clock_timestamp()
-                RETURNING job_id
-                """,
+                COMPLETE_SQL,
                 {**lease_parameters, "result_ref": Jsonb(_artifact_value(result_ref))},
             )
             if cursor.fetchone() is None:

@@ -13,6 +13,8 @@ from psycopg.types.json import Jsonb
 
 from leo_flow.contracts.core import (
     ArtifactRef,
+    Digest,
+    DigestAlgorithm,
     JobId,
     SchemaRef,
     SchemaVersion,
@@ -20,7 +22,14 @@ from leo_flow.contracts.core import (
 )
 
 from . import postgres_sql
-from .contracts import JobLease, JobPayload, JobType
+from .contracts import (
+    JobLease,
+    JobPayload,
+    JobSnapshot,
+    JobState,
+    JobType,
+    validate_park_reason,
+)
 from .ports import StaleLeaseError
 
 
@@ -64,28 +73,22 @@ class PostgresJobLeaseRepository:
             connection.cursor(row_factory=dict_row) as cursor,
         ):
             cursor.execute(
-                """
-                INSERT INTO job
-                    (job_id, job_type, payload_schema_id, payload_schema_version,
-                     payload, state, available_at_utc)
-                VALUES (%s, %s, %s, %s, %s, 'ready', %s)
-                ON CONFLICT (job_id) DO NOTHING
-                RETURNING job_id
-                """,
-                (
-                    str(job_id),
-                    job_type.value,
-                    payload.schema.schema_id,
-                    str(payload.schema.version),
-                    Jsonb(payload_value),
-                    available,
-                ),
+                postgres_sql.ENQUEUE_SQL,
+                {
+                    "job_id": str(job_id),
+                    "job_type": job_type.value,
+                    "payload_schema_id": payload.schema.schema_id,
+                    "payload_schema_version": str(payload.schema.version),
+                    "payload": Jsonb(payload_value),
+                    "available_at_utc": available,
+                },
             )
-            if cursor.fetchone() is not None:
+            inserted = cursor.fetchone()
+            if inserted is None:
+                raise PostgresJobError("enqueue function returned no outcome")
+            if next(iter(inserted.values())) is True:
                 return
-            cursor.execute(
-                "SELECT * FROM job WHERE job_id = %s FOR UPDATE", (str(job_id),)
-            )
+            cursor.execute("SELECT * FROM job WHERE job_id = %s", (str(job_id),))
             row = cursor.fetchone()
             if row is None or not _same_job(row, job_type, payload):
                 raise JobConflictError("job ID identifies a different payload")
@@ -176,6 +179,35 @@ class PostgresJobLeaseRepository:
             },
         )
 
+    def park(
+        self,
+        job_id: JobId,
+        lease_token: str,
+        generation: int,
+        reason: str,
+    ) -> None:
+        validate_park_reason(reason)
+        self._fenced_update(
+            postgres_sql.PARK_SQL,
+            {
+                "job_id": str(job_id),
+                "lease_token": lease_token,
+                "lease_generation": generation,
+                "reason": reason,
+            },
+        )
+
+    def snapshot(self, job_id: JobId) -> JobSnapshot:
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            cursor.execute(postgres_sql.SNAPSHOT_SQL, {"job_id": str(job_id)})
+            row = cursor.fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return _snapshot_from_row(row)
+
     def _fenced_update(self, sql: str, parameters: dict[str, object]) -> None:
         with (
             self._connect() as connection,
@@ -227,6 +259,60 @@ def _same_job(row: dict[str, object], job_type: JobType, payload: JobPayload) ->
         and row["payload_schema_version"] == str(payload.schema.version)
         and row["payload"] == _json_value(payload.value)
     )
+
+
+def _snapshot_from_row(row: dict[str, object]) -> JobSnapshot:
+    parked_at = row["parked_at_utc"]
+    if parked_at is not None and not isinstance(parked_at, datetime):
+        raise PostgresJobError("database parked_at_utc is not a timestamp")
+    result_value = row["result_ref"]
+    return JobSnapshot(
+        JobId(str(row["job_id"])),
+        JobState(str(row["state"])),
+        _database_int(row["attempt"], "attempt"),
+        _database_int(row["lease_generation"], "lease_generation"),
+        None if result_value is None else _artifact_from_value(result_value),
+        _optional_string(row["last_error"], "last_error"),
+        _optional_string(row["park_reason"], "park_reason"),
+        None if parked_at is None else _datetime_to_ns(parked_at),
+    )
+
+
+def _artifact_from_value(value: object) -> ArtifactRef:
+    if not isinstance(value, dict):
+        raise PostgresJobError("database result_ref is not an object")
+    try:
+        artifact_id = value["artifact_id"]
+        algorithm = value["digest_algorithm"]
+        digest_value = value["digest_value"]
+    except KeyError as error:
+        raise PostgresJobError("database result_ref is incomplete") from error
+    schema_id = value.get("schema_id")
+    schema_version = value.get("schema_version")
+    if not all(
+        isinstance(item, str) for item in (artifact_id, algorithm, digest_value)
+    ):
+        raise PostgresJobError("database result_ref identity is invalid")
+    if (schema_id is None) != (schema_version is None):
+        raise PostgresJobError("database result_ref schema is incomplete")
+    schema = None
+    if schema_id is not None and schema_version is not None:
+        if not isinstance(schema_id, str) or not isinstance(schema_version, str):
+            raise PostgresJobError("database result_ref schema is invalid")
+        schema = SchemaRef(schema_id, SchemaVersion.parse(schema_version))
+    return ArtifactRef(
+        artifact_id,
+        Digest(DigestAlgorithm(algorithm), digest_value),
+        schema,
+    )
+
+
+def _optional_string(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PostgresJobError(f"database {field} is not a string")
+    return value
 
 
 def _artifact_value(ref: ArtifactRef) -> dict[str, object]:

@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from leo_flow.adapters.feature_postgres_catalog import (
     FeatureRecordingMismatchError,
@@ -20,10 +21,16 @@ from leo_flow.storage.postgres_catalog import PostgresRecordingCatalog
 from tests.recording_analysis.test_feature_persistence import _fixture
 
 
-def _repository(postgres_dsn: str, root):
+def _repository(postgres_dsn: str, root, *, role: bool = False):
+    def connect():
+        connection = psycopg.connect(postgres_dsn, row_factory=dict_row)
+        if role:
+            connection.execute("SET ROLE leo_analysis")
+        return connection
+
     return DurableFeatureSetRepository(
         FileSystemBlobStore(root),
-        PostgresFeatureSetCatalog(connection_factory(postgres_dsn)),
+        PostgresFeatureSetCatalog(connect),
     )
 
 
@@ -158,7 +165,7 @@ def test_concurrent_exact_feature_publication_exposes_one_row(
     request, bundle = _publish_recording(postgres_dsn)
 
     def publish(_index: int):
-        return _repository(postgres_dsn, tmp_path / "cas").publish(
+        return _repository(postgres_dsn, tmp_path / "cas", role=True).publish(
             request, bundle, idempotency_key="feature:concurrent"
         )
 

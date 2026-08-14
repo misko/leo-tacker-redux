@@ -14,15 +14,19 @@ def test_first_slice_schema_has_atomic_pair_and_fenced_jobs() -> None:
 def test_postgres_claim_uses_skip_locked_and_all_mutations_are_fenced() -> None:
     from leo_flow.jobs import postgres_sql
 
-    assert "FOR UPDATE SKIP LOCKED" in postgres_sql.CLAIM_SQL
-    for statement in (
-        postgres_sql.HEARTBEAT_SQL,
-        postgres_sql.COMPLETE_SQL,
-        postgres_sql.FAIL_SQL,
+    migration = Path("migrations/0015_job_parking.sql").read_text()
+    assert "FOR UPDATE SKIP LOCKED" in migration
+    assert "CREATE FUNCTION lock_active_job_lease" in migration
+    for name, statement in (
+        ("heartbeat_job", postgres_sql.HEARTBEAT_SQL),
+        ("complete_job", postgres_sql.COMPLETE_SQL),
+        ("fail_job", postgres_sql.FAIL_SQL),
+        ("park_job", postgres_sql.PARK_SQL),
     ):
-        assert "lease_token = %(lease_token)s" in statement
-        assert "lease_generation = %(lease_generation)s" in statement
-        assert "lease_expires_utc > clock_timestamp()" in statement
+        assert name in statement
+        assert "%(lease_token)s" in statement
+        assert "%(lease_generation)s" in statement
+    assert "lease_expires_utc > clock_timestamp()" in migration
 
 
 def test_postgres_recording_read_joins_both_objects_without_update_lock() -> None:

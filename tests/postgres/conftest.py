@@ -100,6 +100,7 @@ def postgres_dsn() -> str:
             "0012_detector_evaluation_catalog.sql",
             "0013_object_retention_gc.sql",
             "0014_unregistered_object_reconciliation.sql",
+            "0015_job_parking.sql",
         )
         yield dsn
     finally:

@@ -7,11 +7,17 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
 
 from leo_flow.contracts.core import ArtifactRef, JobId, UtcNs
 
-from .contracts import JobLease, JobPayload, JobType
+from .contracts import (
+    JobLease,
+    JobPayload,
+    JobSnapshot,
+    JobState,
+    JobType,
+    validate_park_reason,
+)
 from .ports import StaleLeaseError
 
 
@@ -21,23 +27,6 @@ class LeaseError(RuntimeError):
 
 class JobConflictError(LeaseError):
     pass
-
-
-class JobState(str, Enum):
-    READY = "ready"
-    LEASED = "leased"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
-
-@dataclass(frozen=True)
-class JobSnapshot:
-    job_id: JobId
-    state: JobState
-    attempt: int
-    lease_generation: int
-    result_ref: ArtifactRef | None
-    last_error: str | None
 
 
 @dataclass
@@ -53,6 +42,8 @@ class _JobRecord:
     lease_expires_utc_ns: int | None = None
     result_ref: ArtifactRef | None = None
     last_error: str | None = None
+    park_reason: str | None = None
+    parked_at_utc_ns: int | None = None
 
 
 class InMemoryJobLeaseRepository:
@@ -106,7 +97,7 @@ class InMemoryJobLeaseRepository:
                 record
                 for record in self._jobs.values()
                 if record.job_type in types
-                and record.state is not JobState.SUCCEEDED
+                and record.state not in (JobState.SUCCEEDED, JobState.PARKED)
                 and record.available_at_utc_ns <= now
                 and (
                     record.state in (JobState.READY, JobState.FAILED)
@@ -171,6 +162,25 @@ class InMemoryJobLeaseRepository:
             record.lease_token = None
             record.lease_expires_utc_ns = None
 
+    def park(
+        self,
+        job_id: JobId,
+        lease_token: str,
+        generation: int,
+        reason: str,
+    ) -> None:
+        validate_park_reason(reason)
+        with self._lock:
+            now = self._now()
+            record = self._require_active(job_id, lease_token, generation, now)
+            record.state = JobState.PARKED
+            record.park_reason = reason
+            record.parked_at_utc_ns = now
+            record.result_ref = None
+            record.last_error = None
+            record.lease_token = None
+            record.lease_expires_utc_ns = None
+
     def snapshot(self, job_id: JobId) -> JobSnapshot:
         with self._lock:
             record = self._jobs[job_id]
@@ -181,6 +191,12 @@ class InMemoryJobLeaseRepository:
                 record.lease_generation,
                 record.result_ref,
                 record.last_error,
+                record.park_reason,
+                (
+                    None
+                    if record.parked_at_utc_ns is None
+                    else UtcNs(record.parked_at_utc_ns)
+                ),
             )
 
     def _require_active(

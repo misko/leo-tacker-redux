@@ -34,7 +34,7 @@ from leo_flow.contracts.ephemeris import (
 )
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import StaleLeaseError
-from leo_flow.jobs.postgres_sql import COMPLETE_SQL
+from leo_flow.jobs.postgres_sql import COMPLETE_SQL, LOCK_ACTIVE_SQL
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 LINK_SCHEMA = SchemaRef("org.leo-flow.recording-ephemeris-link")
@@ -111,6 +111,7 @@ class AtomicPostgresEphemerisLinkCommitter:
         request = prepared.request
         lease_parameters = {
             "job_id": str(lease.job_id),
+            "job_type": lease.job_type.value,
             "lease_token": lease.lease_token,
             "lease_generation": lease.lease_generation,
         }
@@ -118,19 +119,7 @@ class AtomicPostgresEphemerisLinkCommitter:
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
-            cursor.execute(
-                """
-                SELECT job_id FROM job
-                WHERE job_id = %(job_id)s
-                  AND job_type = 'ephemeris_link_backfill'
-                  AND state = 'leased'
-                  AND lease_token = %(lease_token)s
-                  AND lease_generation = %(lease_generation)s
-                  AND lease_expires_utc > clock_timestamp()
-                FOR UPDATE
-                """,
-                lease_parameters,
-            )
+            cursor.execute(LOCK_ACTIVE_SQL, lease_parameters)
             if cursor.fetchone() is None:
                 raise StaleLeaseError("link-backfill lease is stale")
             _verify_recording(cursor, prepared)

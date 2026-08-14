@@ -44,10 +44,16 @@ def _claimed(postgres_dsn: str, *, ttl_s: float = 5.0):
     return jobs, lease, PreparedModelAnalysis(model_request, durable_ref, bundle)
 
 
-def _committer(postgres_dsn: str, root):
+def _committer(postgres_dsn: str, root, *, role: bool = False):
+    def connect():
+        connection = psycopg.connect(postgres_dsn, row_factory=dict_row)
+        if role:
+            connection.execute("SET ROLE leo_analysis")
+        return connection
+
     return AtomicPostgresModelAnalysisCommitter(
         FileSystemBlobStore(root),
-        lambda: psycopg.connect(postgres_dsn, row_factory=dict_row),
+        connect,
     )
 
 
@@ -56,7 +62,9 @@ def test_model_visibility_and_job_completion_share_one_transaction(
     postgres_dsn: str, tmp_path
 ) -> None:
     _, lease, prepared = _claimed(postgres_dsn)
-    result = _committer(postgres_dsn, tmp_path / "cas").commit(lease, prepared)
+    result = _committer(postgres_dsn, tmp_path / "cas", role=True).commit(
+        lease, prepared
+    )
 
     with psycopg.connect(postgres_dsn) as connection:
         model = connection.execute(

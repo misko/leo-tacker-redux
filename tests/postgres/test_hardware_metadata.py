@@ -4,11 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from leo_flow.adapters.hardware_postgres_catalog import (
     HardwareSnapshotConflictError,
     PostgresHardwareSnapshotCatalog,
-    connection_factory,
 )
 from leo_flow.contracts.core import Digest, HardwareSnapshotId
 from leo_flow.contracts.hardware import HardwareMetadataSnapshotRef
@@ -21,10 +21,16 @@ from leo_flow.storage.filesystem import FileSystemBlobStore
 from tests.hardware.test_hardware_persistence import _snapshot
 
 
-def _repository(postgres_dsn: str, root):
+def _repository(postgres_dsn: str, root, *, role: bool = False):
+    def connect():
+        connection = psycopg.connect(postgres_dsn, row_factory=dict_row)
+        if role:
+            connection.execute("SET ROLE leo_analysis")
+        return connection
+
     return DurableHardwareMetadataRepository(
         FileSystemBlobStore(root),
-        PostgresHardwareSnapshotCatalog(connection_factory(postgres_dsn)),
+        PostgresHardwareSnapshotCatalog(connect),
     )
 
 
@@ -144,7 +150,7 @@ def test_concurrent_exact_hardware_publication_exposes_one_snapshot(
     snapshot = _snapshot()
 
     def publish(_index: int):
-        return _repository(postgres_dsn, tmp_path / "cas").publish(
+        return _repository(postgres_dsn, tmp_path / "cas", role=True).publish(
             snapshot, idempotency_key="hardware:concurrent"
         )
 

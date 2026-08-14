@@ -54,6 +54,9 @@ WHERE f.feature_set_id = %(feature_set_id)s
 """
 )
 
+# A conflicting unique INSERT waits for its publisher to finish. Feature rows
+# are append-only to leo_analysis, so the following exact read is stable without
+# a row lock (which would incorrectly require UPDATE privilege).
 GET_CONFLICTS_SQL = (
     FEATURE_SET_SELECT
     + """
@@ -61,6 +64,5 @@ WHERE f.feature_set_id = %(feature_set_id)s
    OR f.idempotency_key = %(idempotency_key)s
    OR (f.bundle_digest_algorithm, f.bundle_digest_value) =
       (%(bundle_digest_algorithm)s, %(bundle_digest_value)s)
-FOR UPDATE OF f
 """
 )

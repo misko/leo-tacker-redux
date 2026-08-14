@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from leo_flow.analysis.ephemeris.catalog import (
     ArchivedEphemerisSnapshot,
@@ -140,9 +141,12 @@ def test_concurrent_identical_publication_has_one_visibility_point(
     value = archived()
 
     def publish(_: int) -> None:
-        PostgresEphemerisSnapshotCatalog(connection_factory(postgres_dsn)).publish(
-            value
-        )
+        def connect():
+            connection = psycopg.connect(postgres_dsn, row_factory=dict_row)
+            connection.execute("SET ROLE leo_analysis")
+            return connection
+
+        PostgresEphemerisSnapshotCatalog(connect).publish(value)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         list(executor.map(publish, range(8)))
@@ -222,9 +226,15 @@ def test_fenced_commit_atomically_publishes_then_completes_job(
     lease = jobs.claim((JobType.EPHEMERIS_RETRIEVAL,), "worker", 2.0)
     assert lease is not None
     value = archived()
+
+    def analysis_connect():
+        connection = psycopg.connect(postgres_dsn, row_factory=dict_row)
+        connection.execute("SET ROLE leo_analysis")
+        return connection
+
     completed = EphemerisRetrievalWorker(
         PreparedSnapshot(value),
-        PostgresFencedEphemerisCommitter(connect),
+        PostgresFencedEphemerisCommitter(analysis_connect),
         jobs,
         EphemerisRetryPolicy(),
     ).execute(lease)
