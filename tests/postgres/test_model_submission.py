@@ -3,16 +3,12 @@ from __future__ import annotations
 import psycopg
 import pytest
 
-import leo_flow.application.model_submission as submission_module
+import leo_flow.services.model_submission as submission_module
 from leo_flow.analysis.dataset import DatasetSnapshotRef
 from leo_flow.analysis.model import (
     AssembledModelInputs,
     EphemerisLinkRequirement,
     ReceiverQualityAggregateConfig,
-)
-from leo_flow.application import (
-    ModelAnalysisSubmission,
-    ModelAnalysisSubmissionService,
 )
 from leo_flow.contracts.core import ArtifactRef, Digest, UtcNs
 from leo_flow.contracts.ephemeris import (
@@ -23,6 +19,10 @@ from leo_flow.jobs import JobType
 from leo_flow.jobs.postgres_repository import (
     PostgresJobLeaseRepository,
     connection_factory,
+)
+from leo_flow.services import (
+    ModelAnalysisSubmission,
+    ModelAnalysisSubmissionService,
 )
 from tests.model_analysis.fakes import (
     dataset,

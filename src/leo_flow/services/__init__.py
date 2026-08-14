@@ -55,6 +55,12 @@ from .model_analysis import (
     decode_model_analysis_payload,
     model_analysis_payload,
 )
+from .model_submission import (
+    ModelAnalysisSubmission,
+    ModelAnalysisSubmissionService,
+    SubmittedModelAnalysis,
+    model_analysis_job_id,
+)
 from .recording_analysis import (
     RECORDING_ANALYSIS_JOB_SCHEMA,
     FencedRecordingAnalysisWorker,
@@ -92,6 +98,8 @@ __all__ = [
     "ModelAnalysisJobError",
     "ModelAnalysisJobPreparer",
     "ModelAnalysisJobProcessor",
+    "ModelAnalysisSubmission",
+    "ModelAnalysisSubmissionService",
     "PreparedModelAnalysis",
     "PreparedRecordingAnalysis",
     "Process",
@@ -106,6 +114,7 @@ __all__ = [
     "ServiceLifecycleError",
     "ServiceLoop",
     "ServiceState",
+    "SubmittedModelAnalysis",
     "TypedAnalysisRouterCycle",
     "UnsupportedAnalysisJobError",
     "assemble_service",
@@ -115,6 +124,7 @@ __all__ = [
     "decode_model_analysis_payload",
     "decode_recording_analysis_payload",
     "load_service_config",
+    "model_analysis_job_id",
     "model_analysis_payload",
     "parse_service_config",
     "recording_analysis_payload",

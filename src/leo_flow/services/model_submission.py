@@ -1,4 +1,9 @@
-"""Exact, restart-safe submission of cross-recording model analysis jobs."""
+"""Exact, restart-safe submission of cross-recording model analysis jobs.
+
+Submission coordinates analysis authority resolution with the durable job
+repository, so it belongs to the service layer rather than the dependency-light
+application projection package.
+"""
 
 from __future__ import annotations
 

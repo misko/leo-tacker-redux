@@ -13,7 +13,7 @@ be mutated unspecified.
 
 ## Decision
 
-`ModelAnalysisSubmission` is the application command. It names one complete
+`ModelAnalysisSubmission` is the service-layer command. It names one complete
 `DatasetSnapshotRef`, the exact ephemeris source, scope, policy artifact, and
 `as_of_utc_ns`, plus immutable model-config and algorithm artifacts. The
 submission service reads that exact dataset and calls `assemble_model_inputs`.
@@ -28,7 +28,7 @@ queue, migration, mutable alias, provider call, or capture dependency.
 
 The existing job codec records the exact resolved ephemeris snapshot refs, not
 the selection query that found them. The returned `SubmittedModelAnalysis`
-retains the assembled identities for the invoking application. Persisting the
+retains the assembled identities for the invoking service client. Persisting the
 selection query itself would require a separately versioned payload decision;
 silently widening the strict v0.1 codec is outside this change.
 

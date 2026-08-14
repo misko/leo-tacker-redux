@@ -21,8 +21,9 @@ from leo_flow.contracts.capture import GainMode, RecordingManifest
 from leo_flow.contracts.continuity import ContiguousRfSpan, SafeSampleWindow
 from leo_flow.contracts.core import Digest, DigestAlgorithm, SegmentId, canonical_digest
 from leo_flow.contracts.storage import RecordingObjectRef
-from leo_flow.storage.ports import RecordingView
-from leo_flow.storage.recording_codec import UnverifiedContinuityError
+
+from .ports import RecordingView
+from .recording_codec import UnverifiedContinuityError
 
 
 class LegacyRecordingError(RuntimeError):

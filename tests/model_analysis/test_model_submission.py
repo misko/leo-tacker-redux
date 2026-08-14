@@ -4,12 +4,12 @@ from dataclasses import replace
 
 import pytest
 
-from leo_flow.application import (
+from leo_flow.contracts.core import ArtifactRef
+from leo_flow.jobs import InMemoryJobLeaseRepository, JobType
+from leo_flow.services import (
     ModelAnalysisSubmission,
     ModelAnalysisSubmissionService,
 )
-from leo_flow.contracts.core import ArtifactRef
-from leo_flow.jobs import InMemoryJobLeaseRepository, JobType
 from leo_flow.services.model_analysis import decode_model_analysis_payload
 from tests.model_analysis.test_model_input_assembly import (
     REQUIREMENT,
