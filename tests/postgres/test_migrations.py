@@ -25,6 +25,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0007_feature_set_catalog.sql",),
         ("0008_model_snapshot_catalog.sql",),
         ("0009_recording_ephemeris_link.sql",),
+        ("0010_hardware_metadata_catalog.sql",),
     ]
 
 
@@ -110,6 +111,38 @@ def test_ephemeris_link_capabilities_are_narrow(postgres_dsn: str) -> None:
     assert not analysis_update
     assert dashboard_read
     assert not capture_read
+
+
+@pytest.mark.integration
+def test_hardware_metadata_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        (
+            analysis_read,
+            analysis_append,
+            analysis_update,
+            capture_read,
+            capture_append,
+            dashboard_read,
+        ) = connection.execute(
+            """
+            SELECT has_table_privilege(
+                       'leo_analysis', 'hardware_snapshot', 'SELECT'),
+                   has_table_privilege(
+                       'leo_analysis', 'hardware_receiver_chain', 'INSERT'),
+                   has_table_privilege(
+                       'leo_analysis', 'hardware_radio', 'UPDATE'),
+                   has_table_privilege(
+                       'leo_capture', 'hardware_snapshot', 'SELECT'),
+                   has_table_privilege(
+                       'leo_capture', 'hardware_receiver_chain', 'INSERT'),
+                   has_table_privilege(
+                       'leo_dashboard', 'hardware_radio', 'SELECT')
+            """
+        ).fetchone()
+    assert analysis_read and analysis_append
+    assert not analysis_update
+    assert capture_read and not capture_append
+    assert dashboard_read
 
 
 @pytest.mark.integration

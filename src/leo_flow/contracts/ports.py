@@ -159,6 +159,12 @@ class HardwareMetadataReader(Protocol):
     def get(self, ref: HardwareMetadataSnapshotRef) -> HardwareMetadataSnapshot: ...
 
 
+class HardwareMetadataPublisher(Protocol):
+    def publish(
+        self, snapshot: HardwareMetadataSnapshot, *, idempotency_key: str
+    ) -> HardwareMetadataSnapshotRef: ...
+
+
 class ModelFitter(Protocol):
     def fit(
         self,

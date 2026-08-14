@@ -9,6 +9,7 @@ golden fixtures that change.
 - [0003: V5 refill continuity](0003-v5-refill-continuity.md)
 - [0004: Immutable ephemeris archive and temporal selection](0004-ephemeris-archive-and-selection.md)
 - [0018: Authoritative recording-to-ephemeris links](0018-authoritative-recording-ephemeris-links.md)
+- [0020: Authoritative effective-dated hardware metadata](0020-authoritative-hardware-metadata.md)
 - [0019: Offline orbit and RF association boundary](0019-offline-orbit-rf-association-boundary.md)
 - [0005: Ground truth and dataset partitions](0005-ground-truth-and-dataset-partitions.md)
 - [0007: Fail-closed V5 startup attestation](0007-v5-startup-attestation.md)

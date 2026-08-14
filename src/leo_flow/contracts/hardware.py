@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from ._validation import require_utc_ns
 from .core import (
@@ -30,6 +31,12 @@ class ReceiverChainMetadata:
 
     def __post_init__(self) -> None:
         require_utc_ns(self.valid_from_utc_ns, "valid_from_utc_ns")
+        if not isinstance(self.lnb_id, str) or not self.lnb_id:
+            raise ValueError("lnb_id must be non-empty")
+        if self.polarization is not None and not self.polarization:
+            raise ValueError("polarization must be non-empty when present")
+        if self.cable_id is not None and not self.cable_id:
+            raise ValueError("cable_id must be non-empty when present")
         if self.radio_channel < 0:
             raise ValueError("radio_channel must be non-negative")
         if self.valid_until_utc_ns is not None:
@@ -53,8 +60,23 @@ class HardwareMetadataSnapshot:
             raise ValueError("unsupported hardware metadata schema")
         if len(set(self.radio_ids)) != len(self.radio_ids):
             raise ValueError("radio IDs must be unique")
+        if not self.radio_ids:
+            raise ValueError("hardware snapshot must contain a radio")
         if any(chain.radio_id not in self.radio_ids for chain in self.receiver_chains):
             raise ValueError("receiver chain references unknown radio")
+        by_receiver: dict[ReceiverChainId, list[ReceiverChainMetadata]] = {}
+        for chain in self.receiver_chains:
+            by_receiver.setdefault(chain.receiver_chain_id, []).append(chain)
+        for receiver, intervals in by_receiver.items():
+            ordered = sorted(intervals, key=lambda item: int(item.valid_from_utc_ns))
+            for previous, current in pairwise(ordered):
+                if (
+                    previous.valid_until_utc_ns is None
+                    or previous.valid_until_utc_ns > current.valid_from_utc_ns
+                ):
+                    raise ValueError(
+                        f"receiver chain {receiver} has overlapping effective dates"
+                    )
 
 
 @dataclass(frozen=True)
