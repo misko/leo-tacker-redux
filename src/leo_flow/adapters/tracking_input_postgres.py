@@ -8,6 +8,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from leo_flow.analysis.model.tracking_input_codec import MAX_TRACKING_INPUT_BYTES
 from leo_flow.analysis.model.tracking_input_persistence import (
     CatalogedTrackingInput,
     TrackingInputEntryProjection,
@@ -21,9 +22,12 @@ from leo_flow.contracts.core import (
     DigestAlgorithm,
     SchemaRef,
     SchemaVersion,
+    canonical_json_bytes,
 )
 from leo_flow.contracts.storage import ObjectRef
 from leo_flow.contracts.tracking_input import (
+    TRACKING_INPUT_FORMAT_ID,
+    TRACKING_INPUT_MEDIA_TYPE,
     DurableDatasetIdentity,
     TrackingInputSnapshotIdentity,
     TrackingInputSnapshotRef,
@@ -122,6 +126,16 @@ def connection_factory(dsn: str) -> ConnectionFactory:
 
 
 def _validate_projection(projection: TrackingInputProjection) -> None:
+    bundle = projection.ref.bundle_ref
+    if (
+        bundle.byte_count < 1
+        or bundle.byte_count > MAX_TRACKING_INPUT_BYTES
+        or bundle.media_type != TRACKING_INPUT_MEDIA_TYPE
+        or bundle.format_id != TRACKING_INPUT_FORMAT_ID
+    ):
+        raise TrackingInputIntegrityError(
+            "tracking input bundle metadata is outside catalog bounds"
+        )
     if projection.entry_count != len(projection.entries) or not projection.entries:
         raise TrackingInputIntegrityError("tracking input entry count differs")
     if any(
@@ -176,10 +190,18 @@ def _parameters(
         "provenance_digest_value": projection.provenance_digest.value,
         "bundle_digest_algorithm": ref.bundle_ref.digest.algorithm.value,
         "bundle_digest_value": ref.bundle_ref.digest.value,
+        "bundle_byte_count": ref.bundle_ref.byte_count,
+        "bundle_media_type": ref.bundle_ref.media_type,
+        "bundle_format_id": ref.bundle_ref.format_id,
+        "bundle_locator": ref.bundle_ref.locator,
         "entry_count": projection.entry_count,
         "idempotency_key": idempotency_key,
         "entries": [_entry_document(entry) for entry in projection.entries],
     }
+    if len(canonical_json_bytes(publication)) > MAX_TRACKING_INPUT_BYTES:
+        raise TrackingInputIntegrityError(
+            "tracking input catalog publication exceeds its size bound"
+        )
     return {
         "publication": Jsonb(publication),
         "bundle_digest_algorithm": ref.bundle_ref.digest.algorithm.value,

@@ -10,6 +10,7 @@ from typing import cast
 import psycopg
 import pytest
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from leo_flow.adapters import tracking_input_postgres_sql as tracking_sql
 from leo_flow.adapters.tracking_input_postgres import (
@@ -18,12 +19,17 @@ from leo_flow.adapters.tracking_input_postgres import (
     TrackingInputObjectCollisionError,
     _parameters,
 )
-from leo_flow.analysis.model.tracking_input_codec import encode_tracking_input
+from leo_flow.analysis.model.tracking_input_codec import (
+    MAX_TRACKING_INPUT_BYTES,
+    encode_tracking_input,
+)
 from leo_flow.analysis.model.tracking_input_persistence import (
     DurableTrackingInputRepository,
+    TrackingInputIntegrityError,
+    TrackingInputProjection,
     tracking_input_projection,
 )
-from leo_flow.contracts.core import Digest
+from leo_flow.contracts.core import Digest, DigestAlgorithm
 from leo_flow.contracts.storage import ObjectRef
 from leo_flow.contracts.tracking_input import (
     TRACKING_INPUT_FORMAT_ID,
@@ -184,13 +190,30 @@ def _seed_authorities(postgres_dsn: str) -> TrackingInputSnapshot:
                  bundle_digest_algorithm, bundle_digest_value, station_id,
                  radio_count, chain_count, idempotency_key)
             VALUES (%s, 'sha256', %s, 'sha256', %s, 'station_tracking',
-                    1, 0, 'tracking-source-hardware')
+                    1, 1, 'tracking-source-hardware')
             """,
             (
                 str(hardware_ref.snapshot_id),
                 hardware_ref.digest.value,
                 hardware_ref.digest.value,
             ),
+        )
+        connection.execute(
+            """
+            INSERT INTO hardware_radio
+                (snapshot_id, radio_index, radio_id)
+            VALUES (%s, 0, 'radio_tracking')
+            """,
+            (str(hardware_ref.snapshot_id),),
+        )
+        connection.execute(
+            """
+            INSERT INTO hardware_receiver_chain
+                (snapshot_id, chain_index, receiver_chain_id, radio_id,
+                 radio_channel, lnb_id, valid_from_utc_ns, valid_until_utc_ns)
+            VALUES (%s, 0, %s, 'radio_tracking', 0, 'lnb_tracking', 1000, 2000)
+            """,
+            (str(hardware_ref.snapshot_id), str(entry.measurement.receiver_chain_id)),
         )
         connection.execute(
             """
@@ -302,7 +325,7 @@ def _seed_authorities(postgres_dsn: str) -> TrackingInputSnapshot:
 
 
 @pytest.mark.integration
-def test_publication_is_exact_idempotent_and_locator_independent(
+def test_publication_is_exact_idempotent_and_request_locator_independent(
     postgres_dsn: str, tmp_path: Path
 ) -> None:
     snapshot = _seed_authorities(postgres_dsn)
@@ -314,10 +337,10 @@ def test_publication_is_exact_idempotent_and_locator_independent(
     assert view.ref == ref
     assert view.snapshot == snapshot
 
-    relocated_request = replace(
-        ref, bundle_ref=replace(ref.bundle_ref, locator="cas:relocated-request")
+    different_locator_request = replace(
+        ref, bundle_ref=replace(ref.bundle_ref, locator="cas:request-only-location")
     )
-    cataloged = _catalog(postgres_dsn).get(relocated_request)
+    cataloged = _catalog(postgres_dsn).get(different_locator_request)
     assert cataloged is not None
     assert cataloged.projection.ref == ref
     with psycopg.connect(postgres_dsn) as connection:
@@ -327,6 +350,28 @@ def test_publication_is_exact_idempotent_and_locator_independent(
         assert connection.execute(
             "SELECT count(*) FROM tracking_input_entry"
         ).fetchone() == (len(snapshot.entries),)
+        assert connection.execute(
+            """
+            SELECT bundle_byte_count, bundle_media_type, bundle_format_id
+              FROM tracking_input_snapshot
+            """
+        ).fetchone() == (
+            ref.bundle_ref.byte_count,
+            TRACKING_INPUT_MEDIA_TYPE,
+            TRACKING_INPUT_FORMAT_ID,
+        )
+        assert connection.execute(
+            """
+            SELECT hardware_snapshot_id, hardware_snapshot_digest_value,
+                   receiver_chain_id, receiver_chain_valid_from_utc_ns
+              FROM tracking_input_entry
+            """
+        ).fetchone() == (
+            str(snapshot.entries[0].hardware_link.hardware_snapshot_ref.snapshot_id),
+            snapshot.entries[0].hardware_link.hardware_snapshot_ref.digest.value,
+            str(snapshot.entries[0].measurement.receiver_chain_id),
+            1000,
+        )
 
 
 @pytest.mark.integration
@@ -364,8 +409,164 @@ def test_identity_idempotency_object_and_authority_conflicts_fail_closed(
     )
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute("TRUNCATE tracking_input_entry, tracking_input_snapshot")
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
         _catalog(postgres_dsn).publish(absent, idempotency_key="tracking:substituted")
+    with psycopg.connect(postgres_dsn) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_snapshot"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_entry"
+        ).fetchone() == (0,)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("midpoint_utc_ns", "receiver_chain_id", "accepted"),
+    [
+        (1000, "rx_tracking", True),
+        (2000, "rx_tracking", False),
+        (1500, "rx_other", False),
+    ],
+)
+def test_receiver_chain_authority_is_exact_and_half_open(
+    postgres_dsn: str,
+    tmp_path: Path,
+    midpoint_utc_ns: int,
+    receiver_chain_id: str,
+    accepted: bool,
+) -> None:
+    snapshot = _seed_authorities(postgres_dsn)
+    ref = _repository(postgres_dsn, tmp_path / "cas").publish(
+        snapshot, idempotency_key="tracking:authority-source"
+    )
+    projection = tracking_input_projection(snapshot, ref)
+    changed_entry = replace(
+        projection.entries[0],
+        midpoint_utc_ns=midpoint_utc_ns,
+        receiver_chain_id=receiver_chain_id,
+    )
+    changed = replace(projection, entries=(changed_entry,))
+    with psycopg.connect(postgres_dsn) as connection:
+        connection.execute("TRUNCATE tracking_input_entry, tracking_input_snapshot")
+
+    if accepted:
+        assert (
+            _catalog(postgres_dsn).publish(
+                changed, idempotency_key="tracking:authority-boundary"
+            )
+            == ref
+        )
+    else:
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            _catalog(postgres_dsn).publish(
+                changed, idempotency_key="tracking:authority-boundary"
+            )
+    with psycopg.connect(postgres_dsn) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_snapshot"
+        ).fetchone() == ((1 if accepted else 0),)
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_entry"
+        ).fetchone() == ((1 if accepted else 0),)
+
+
+@pytest.mark.integration
+def test_declarative_link_authority_rejects_crossed_hardware_snapshot(
+    postgres_dsn: str, tmp_path: Path
+) -> None:
+    snapshot = _seed_authorities(postgres_dsn)
+    _repository(postgres_dsn, tmp_path / "cas").publish(
+        snapshot, idempotency_key="tracking:hardware-authority"
+    )
+    alternate_digest = Digest.sha256(b"alternate-hardware-snapshot")
+    with psycopg.connect(postgres_dsn) as connection:
+        _insert_object(connection, alternate_digest)
+        connection.execute(
+            """
+            INSERT INTO hardware_snapshot
+                (snapshot_id, snapshot_digest_algorithm, snapshot_digest_value,
+                 bundle_digest_algorithm, bundle_digest_value, station_id,
+                 radio_count, chain_count, idempotency_key)
+            VALUES ('hw_alternate', 'sha256', %s, 'sha256', %s,
+                    'station_tracking', 1, 1, 'tracking-alternate-hardware')
+            """,
+            (alternate_digest.value, alternate_digest.value),
+        )
+        connection.execute(
+            "INSERT INTO hardware_radio VALUES ('hw_alternate', 0, 'radio_alternate')"
+        )
+        connection.execute(
+            """
+            INSERT INTO hardware_receiver_chain
+                (snapshot_id, chain_index, receiver_chain_id, radio_id,
+                 radio_channel, lnb_id, valid_from_utc_ns, valid_until_utc_ns)
+            VALUES ('hw_alternate', 0, 'rx_tracking', 'radio_alternate',
+                    0, 'lnb_alternate', 1000, 2000)
+            """
+        )
+
+    with (
+        psycopg.connect(postgres_dsn) as connection,
+        pytest.raises(psycopg.errors.ForeignKeyViolation),
+    ):
+        connection.execute(
+            """
+            UPDATE tracking_input_entry
+               SET hardware_snapshot_id = 'hw_alternate',
+                   hardware_snapshot_digest_value = %s
+            """,
+            (alternate_digest.value,),
+        )
+
+
+@pytest.mark.integration
+def test_catalog_read_fails_closed_on_owner_level_receiver_authority_corruption(
+    postgres_dsn: str, tmp_path: Path
+) -> None:
+    snapshot = _seed_authorities(postgres_dsn)
+    ref = _repository(postgres_dsn, tmp_path / "cas").publish(
+        snapshot, idempotency_key="tracking:corruption-read"
+    )
+    with psycopg.connect(postgres_dsn) as connection:
+        connection.execute("SET session_replication_role = replica")
+        connection.execute(
+            "UPDATE tracking_input_entry SET receiver_chain_valid_from_utc_ns = 999"
+        )
+        connection.execute("SET session_replication_role = origin")
+
+    with pytest.raises(TrackingInputIntegrityError, match="entry count differs"):
+        _catalog(postgres_dsn).get_by_identity(ref.identity())
+
+
+@pytest.mark.integration
+def test_adapter_rejects_oversized_bundle_before_object_registration(
+    postgres_dsn: str,
+) -> None:
+    snapshot = _seed_authorities(postgres_dsn)
+    digest = Digest.sha256(b"oversized-tracking-bundle")
+    ref = TrackingInputSnapshotRef(
+        snapshot.snapshot_id,
+        snapshot.snapshot_digest,
+        snapshot.membership_digest,
+        ObjectRef(
+            digest,
+            MAX_TRACKING_INPUT_BYTES + 1,
+            TRACKING_INPUT_MEDIA_TYPE,
+            TRACKING_INPUT_FORMAT_ID,
+            "fixture:oversized-tracking-bundle",
+        ),
+    )
+    with pytest.raises(TrackingInputIntegrityError, match="outside catalog bounds"):
+        _catalog(postgres_dsn).publish(
+            tracking_input_projection(snapshot, ref),
+            idempotency_key="tracking:oversized",
+        )
+    with psycopg.connect(postgres_dsn) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM object_blob WHERE digest_value = %s",
+            (digest.value,),
+        ).fetchone() == (0,)
 
 
 @pytest.mark.integration
@@ -389,6 +590,83 @@ def test_concurrent_role_publication_exposes_one_complete_snapshot(
         assert connection.execute(
             "SELECT count(*) FROM tracking_input_entry"
         ).fetchone() == (len(snapshot.entries),)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("conflict_axis", ["snapshot", "idempotency"])
+def test_crossed_concurrent_conflict_rolls_back_losing_object_and_all_rows(
+    postgres_dsn: str, conflict_axis: str
+) -> None:
+    snapshot = _seed_authorities(postgres_dsn)
+    payload = encode_tracking_input(snapshot)
+    base_bundle = ObjectRef(
+        Digest.sha256(payload),
+        len(payload),
+        TRACKING_INPUT_MEDIA_TYPE,
+        TRACKING_INPUT_FORMAT_ID,
+        "fixture:crossed-base",
+    )
+    base_ref = TrackingInputSnapshotRef(
+        snapshot.snapshot_id,
+        snapshot.snapshot_digest,
+        snapshot.membership_digest,
+        base_bundle,
+    )
+    base = tracking_input_projection(snapshot, base_ref)
+    alternate_digest = Digest.sha256(b"crossed-alternate-snapshot")
+    if conflict_axis == "snapshot":
+        alternate_digest = Digest(
+            DigestAlgorithm.SHA256,
+            snapshot.snapshot_digest.value[:32] + alternate_digest.value[32:],
+        )
+    alternate_ref = TrackingInputSnapshotRef(
+        f"trackinput_{alternate_digest.value[:32]}",
+        alternate_digest,
+        snapshot.membership_digest,
+        ObjectRef(
+            Digest.sha256(b"crossed-alternate-bundle"),
+            len(payload),
+            TRACKING_INPUT_MEDIA_TYPE,
+            TRACKING_INPUT_FORMAT_ID,
+            "fixture:crossed-alternate",
+        ),
+    )
+    alternate = replace(base, ref=alternate_ref)
+    barrier = threading.Barrier(2)
+
+    def publish(item: tuple[TrackingInputProjection, str]) -> object:
+        projection, key = item
+        barrier.wait(timeout=5)
+        try:
+            return _catalog(postgres_dsn, role=True).publish(
+                projection, idempotency_key=key
+            )
+        except TrackingInputConflictError as error:
+            return error
+
+    keys = (
+        ("tracking:crossed-a", "tracking:crossed-b")
+        if conflict_axis == "snapshot"
+        else ("tracking:crossed", "tracking:crossed")
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(publish, ((base, keys[0]), (alternate, keys[1]))))
+    assert sum(isinstance(item, TrackingInputSnapshotRef) for item in results) == 1
+    assert sum(isinstance(item, TrackingInputConflictError) for item in results) == 1
+    with psycopg.connect(postgres_dsn) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_snapshot"
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_entry"
+        ).fetchone() == (len(snapshot.entries),)
+        assert connection.execute(
+            """
+            SELECT count(*) FROM object_blob
+             WHERE digest_value IN (%s, %s)
+            """,
+            (base_bundle.digest.value, alternate_ref.bundle_ref.digest.value),
+        ).fetchone() == (1,)
 
 
 @pytest.mark.integration
@@ -425,6 +703,120 @@ def test_roles_have_read_and_publish_function_but_no_table_mutation(
         connection.execute(
             "INSERT INTO tracking_input_snapshot (snapshot_id) VALUES ('trackinput_00000000000000000000000000000000')"
         )
+
+
+@pytest.mark.integration
+def test_role_temp_objects_and_functions_cannot_shadow_publication_authority(
+    postgres_dsn: str,
+) -> None:
+    snapshot = _seed_authorities(postgres_dsn)
+    payload = encode_tracking_input(snapshot)
+    ref = TrackingInputSnapshotRef(
+        snapshot.snapshot_id,
+        snapshot.snapshot_digest,
+        snapshot.membership_digest,
+        ObjectRef(
+            Digest.sha256(payload),
+            len(payload),
+            TRACKING_INPUT_MEDIA_TYPE,
+            TRACKING_INPUT_FORMAT_ID,
+            "fixture:temp-shadow",
+        ),
+    )
+    parameters = _parameters(
+        tracking_input_projection(snapshot, ref), "tracking:temp-shadow"
+    )
+    with _connect(postgres_dsn, role=True) as connection:
+        connection.execute("CREATE TEMP TABLE object_blob (marker text)")
+        connection.execute("CREATE TEMP TABLE tracking_input_snapshot (marker text)")
+        connection.execute("CREATE TEMP TABLE tracking_input_entry (marker text)")
+        connection.execute(
+            """
+            CREATE FUNCTION pg_temp.register_live_object_blob(
+                text, text, bigint, text, text, text) RETURNS void
+            LANGUAGE sql AS 'SELECT NULL::void'
+            """
+        )
+        connection.execute(
+            """
+            CREATE FUNCTION pg_temp.publish_tracking_input_snapshot(jsonb)
+            RETURNS boolean LANGUAGE sql AS 'SELECT false'
+            """
+        )
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(tracking_sql.REGISTER_OBJECT_SQL, parameters)
+            cursor.execute(tracking_sql.PUBLISH_SQL, parameters)
+            assert cursor.fetchone() == {"inserted": True}
+        assert connection.execute("SELECT count(*) FROM object_blob").fetchone() == {
+            "count": 0
+        }
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_snapshot"
+        ).fetchone() == {"count": 0}
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_entry"
+        ).fetchone() == {"count": 0}
+        assert connection.execute(
+            "SELECT count(*) FROM public.tracking_input_snapshot"
+        ).fetchone() == {"count": 1}
+        assert connection.execute(
+            "SELECT count(*) FROM public.tracking_input_entry"
+        ).fetchone() == {"count": len(snapshot.entries)}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("field", "substitution"),
+    [
+        ("bundle_byte_count", 0),
+        ("bundle_media_type", "text/plain"),
+        ("bundle_format_id", "substituted-format"),
+    ],
+)
+def test_definer_metadata_mismatch_rolls_back_object_and_catalog_atomically(
+    postgres_dsn: str, field: str, substitution: object
+) -> None:
+    snapshot = _seed_authorities(postgres_dsn)
+    payload = encode_tracking_input(snapshot)
+    ref = TrackingInputSnapshotRef(
+        snapshot.snapshot_id,
+        snapshot.snapshot_digest,
+        snapshot.membership_digest,
+        ObjectRef(
+            Digest.sha256(payload),
+            len(payload),
+            TRACKING_INPUT_MEDIA_TYPE,
+            TRACKING_INPUT_FORMAT_ID,
+            "fixture:definer-metadata-mismatch",
+        ),
+    )
+    parameters = _parameters(
+        tracking_input_projection(snapshot, ref), "tracking:definer-mismatch"
+    )
+    publication = cast(Jsonb, parameters["publication"])
+    substituted = dict(cast(dict[str, object], publication.obj))
+    substituted[field] = substitution
+    bad_parameters = {**parameters, "publication": Jsonb(substituted)}
+
+    with (
+        _connect(postgres_dsn, role=True) as connection,
+        connection.cursor(row_factory=dict_row) as cursor,
+        pytest.raises(psycopg.errors.CheckViolation),
+    ):
+        cursor.execute(tracking_sql.REGISTER_OBJECT_SQL, parameters)
+        cursor.execute(tracking_sql.PUBLISH_SQL, bad_parameters)
+
+    with psycopg.connect(postgres_dsn) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM object_blob WHERE digest_value = %s",
+            (ref.bundle_ref.digest.value,),
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_snapshot"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM tracking_input_entry"
+        ).fetchone() == (0,)
 
 
 @pytest.mark.integration

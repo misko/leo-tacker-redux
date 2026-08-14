@@ -1,21 +1,21 @@
 """SQL for immutable tracking-input snapshot publication and exact reads."""
 
 REGISTER_OBJECT_SQL = """
-SELECT register_live_object_blob(
+SELECT public.register_live_object_blob(
     %(bundle_digest_algorithm)s, %(bundle_digest_value)s, %(bundle_byte_count)s,
     %(bundle_media_type)s, %(bundle_format_id)s, %(bundle_locator)s)
 """
 
 VERIFY_OBJECT_SQL = """
 SELECT byte_count, media_type, format_id, locator
-FROM object_blob
+FROM public.object_blob
 WHERE digest_algorithm = %(bundle_digest_algorithm)s
   AND digest_value = %(bundle_digest_value)s
   AND lifecycle_state = 'live'
 """
 
 PUBLISH_SQL = """
-SELECT publish_tracking_input_snapshot(%(publication)s::jsonb) AS inserted
+SELECT public.publish_tracking_input_snapshot(%(publication)s::jsonb) AS inserted
 """
 
 SNAPSHOT_SELECT = """
@@ -35,16 +35,16 @@ SELECT tis.snapshot_id,
        tis.selector_schema_version,
        tis.provenance_digest_algorithm, tis.provenance_digest_value,
        tis.entry_count, tis.idempotency_key,
-       ob.digest_algorithm AS bundle_digest_algorithm,
-       ob.digest_value AS bundle_digest_value,
-       ob.byte_count AS bundle_byte_count,
-       ob.media_type AS bundle_media_type,
-       ob.format_id AS bundle_format_id,
+       tis.bundle_digest_algorithm, tis.bundle_digest_value,
+       tis.bundle_byte_count, tis.bundle_media_type, tis.bundle_format_id,
        ob.locator AS bundle_locator
-FROM tracking_input_snapshot AS tis
-JOIN object_blob AS ob
+FROM public.tracking_input_snapshot AS tis
+JOIN public.object_blob AS ob
   ON (ob.digest_algorithm, ob.digest_value) =
      (tis.bundle_digest_algorithm, tis.bundle_digest_value)
+ AND ob.byte_count = tis.bundle_byte_count
+ AND ob.media_type = tis.bundle_media_type
+ AND ob.format_id = tis.bundle_format_id
 WHERE ob.lifecycle_state = 'live'
 """
 
@@ -77,22 +77,29 @@ GET_CONFLICTS_SQL = (
 )
 
 GET_ENTRIES_SQL = """
-SELECT entry_index, feature_set_id, analysis_run_id,
-       feature_bundle_digest_algorithm, feature_bundle_digest_value,
-       feature_id, recording_id,
-       recording_identity_digest_algorithm, recording_identity_digest_value,
-       receiver_chain_id, midpoint_utc_ns,
-       hardware_link_id, hardware_link_digest_algorithm,
-       hardware_link_digest_value,
-       ephemeris_link_id, ephemeris_link_digest_algorithm,
-       ephemeris_link_digest_value,
-       calibration_artifact_id, calibration_digest_algorithm,
-       calibration_digest_value, calibration_schema_id,
-       calibration_schema_version,
-       prediction_policy_artifact_id, prediction_policy_digest_algorithm,
-       prediction_policy_digest_value, prediction_policy_schema_id,
-       prediction_policy_schema_version
-FROM tracking_input_entry
-WHERE tracking_input_snapshot_id = %(catalog_snapshot_id)s
-ORDER BY entry_index
+SELECT entry.*
+FROM public.tracking_input_entry AS entry
+JOIN public.recording_hardware_link AS hardware_link
+  ON hardware_link.link_id = entry.hardware_link_id
+ AND hardware_link.link_digest_algorithm = entry.hardware_link_digest_algorithm
+ AND hardware_link.link_digest_value = entry.hardware_link_digest_value
+ AND hardware_link.recording_id = entry.recording_id
+ AND hardware_link.recording_identity_digest_algorithm =
+     entry.recording_identity_digest_algorithm
+ AND hardware_link.recording_identity_digest_value =
+     entry.recording_identity_digest_value
+ AND hardware_link.hardware_snapshot_id = entry.hardware_snapshot_id
+ AND hardware_link.hardware_snapshot_digest_algorithm =
+     entry.hardware_snapshot_digest_algorithm
+ AND hardware_link.hardware_snapshot_digest_value =
+     entry.hardware_snapshot_digest_value
+JOIN public.hardware_receiver_chain AS receiver_chain
+  ON receiver_chain.snapshot_id = entry.hardware_snapshot_id
+ AND receiver_chain.receiver_chain_id = entry.receiver_chain_id
+ AND receiver_chain.valid_from_utc_ns = entry.receiver_chain_valid_from_utc_ns
+ AND receiver_chain.valid_from_utc_ns <= entry.midpoint_utc_ns
+ AND (receiver_chain.valid_until_utc_ns IS NULL
+      OR entry.midpoint_utc_ns < receiver_chain.valid_until_utc_ns)
+WHERE entry.tracking_input_snapshot_id = %(catalog_snapshot_id)s
+ORDER BY entry.entry_index
 """

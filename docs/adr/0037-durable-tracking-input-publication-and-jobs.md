@@ -20,7 +20,8 @@ count, media type, and format, but no locator. Durable scientific requests,
 payloads, job identity, provenance, and model identity use only this
 locator-independent identity. The repository resolves that identity to the
 current full reference and verifies both before opening bytes. Moving exact CAS
-bytes must not create a different scientific request or job.
+bytes must not create a different scientific request or job. This is request
+locator independence, not an implemented relocation operation.
 
 Tracking uses a distinct strict `TrackingModelAnalysisRequest` and
 `org.leo-flow.tracking-model-analysis-job/0.1` payload. It requires exactly one
@@ -40,14 +41,30 @@ descriptive preparer continues to reject it.
 
 Tracking execution receives one immutable scientific join instead of reopening
 FeatureSets or consulting recording, hardware-link, ephemeris-link, provider,
-clock, path, network, or raw-IQ capabilities. CAS relocation is operational
+clock, path, network, or raw-IQ capabilities. CAS location is operational
 metadata, not a scientific input. Exact duplicate submission is restart-safe;
 any changed dataset, measurement, covariance, calibration, ephemeris selection,
 algorithm, or configuration produces a different identity.
 
+There is no safe locator-relocation port in the current object audit,
+reconciliation, or garbage-collection boundary. The filesystem CAS also
+requires its digest-derived locator. Operational relocation is explicitly
+deferred until maintenance can verify destination bytes, fence the exact digest
+against publication and GC, atomically switch catalog metadata, and safely
+retire the source. Until then, publishing an existing digest with a different
+locator fails closed as an object collision; exact identity lookup ignores a
+request-supplied locator and returns the catalog's current reference.
+
+Migration 0016 adds five authority `UNIQUE` constraints transactionally. The
+current migration runner cannot build and attach concurrent indexes outside its
+transaction, so applying 0016 requires a maintenance window with writers to
+dataset, feature, hardware-link, and ephemeris-link authority stopped and no
+long-lived transactions. The measured fixture and operator checks are recorded
+in `docs/operations/tracking-input-catalog.md`.
+
 The PostgreSQL migration must extend the exhaustive live-reference inventory,
 install the live-object trigger, and preserve least-privilege roles. Tests must
-cover relocation, substitution, noncanonical and oversized bytes, catalog
+cover request locator independence, substitution, noncanonical and oversized
+bytes, catalog
 projection disagreement, idempotency and concurrency conflicts, retention/GC
 races, strict payload decoding, and deterministic job identity.
-
