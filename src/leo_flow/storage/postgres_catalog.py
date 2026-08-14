@@ -75,7 +75,6 @@ class PostgresRecordingCatalog:
                     FROM recording
                     WHERE recording_id = %(recording_id)s
                        OR idempotency_key = %(idempotency_key)s
-                    FOR UPDATE
                     """,
                     {
                         "recording_id": str(recording.recording_id),

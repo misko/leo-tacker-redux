@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "process": "capture",
+  "runtime": {
+    "instance_id": "station-leo-v5-canary-1",
+    "poll_interval_s": 1.0,
+    "shutdown_timeout_s": 10.0,
+    "secret_refs": [
+      {"provider": "systemd-credential", "name": "catalog-dsn"}
+    ]
+  },
+  "adapters": {
+    "plan_source_ref": "plans.v5-canary-2026-08-13-v1",
+    "radio_ref": "radio.pluto-v5-192-168-1-15-v1",
+    "preflight_ref": "capture.host-guard-v1",
+    "recording_writer_ref": "recording.sigmf-pair-v1",
+    "spool_ref": "spool.sqlite-v1",
+    "recording_publisher_ref": "recording.fs-cas-postgres-projection-v1"
+  }
+}

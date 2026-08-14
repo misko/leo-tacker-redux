@@ -1,0 +1,36 @@
+[Unit]
+Description=LEO Flow one-shot V5 passive receive canary
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+DynamicUser=yes
+StateDirectory=leo-flow-v5-canary
+RuntimeDirectory=leo-flow-v5-canary
+StateDirectoryMode=0700
+RuntimeDirectoryMode=0700
+LoadCredential=catalog-dsn:/etc/leo-flow/secrets/capture-catalog-dsn
+ExecStart=/opt/leo-v5/bin/runtime-entrypoint /usr/bin/python3 -m leo_flow.services --config /etc/leo-flow/v5-canary-capture.json --plugin leo_flow.deployments.v5_canary:PLUGIN --once
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=12s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

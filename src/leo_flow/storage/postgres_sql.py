@@ -14,7 +14,6 @@ SELECT byte_count, media_type, format_id, locator
 FROM object_blob
 WHERE digest_algorithm = %(digest_algorithm)s
   AND digest_value = %(digest_value)s
-FOR SHARE
 """
 
 # The caller must execute this after both object registrations in the same

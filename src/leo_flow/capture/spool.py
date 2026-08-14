@@ -226,6 +226,21 @@ class SQLiteLocalSpool:
             ).fetchall()
         return tuple(decode_completed(row["payload"]) for row in rows)
 
+    def has_durable_recording(self, plan_id: PlanId) -> bool:
+        """Return whether a plan already produced bytes that must not be recaptured."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM recordings
+                 WHERE plan_id = ?
+                   AND state IN ('complete', 'acknowledged', 'cleaned')
+                 LIMIT 1
+                """,
+                (str(plan_id),),
+            ).fetchone()
+        return row is not None
+
     def note_publish_attempt(
         self, recording_id: RecordingId, idempotency_key: str, error: str | None
     ) -> None:

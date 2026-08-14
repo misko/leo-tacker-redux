@@ -25,9 +25,10 @@ def test_postgres_claim_uses_skip_locked_and_all_mutations_are_fenced() -> None:
         assert "lease_expires_utc > clock_timestamp()" in statement
 
 
-def test_postgres_recording_read_requires_both_object_joins() -> None:
+def test_postgres_recording_read_joins_both_objects_without_update_lock() -> None:
     from leo_flow.storage import postgres_sql
 
     assert "JOIN object_blob AS data" in postgres_sql.GET_RECORDING_SQL
     assert "JOIN object_blob AS metadata" in postgres_sql.GET_RECORDING_SQL
-    assert "FOR SHARE" in postgres_sql.VERIFY_OBJECT_SQL
+    assert "ON CONFLICT DO NOTHING" in postgres_sql.REGISTER_OBJECT_SQL
+    assert "FOR SHARE" not in postgres_sql.VERIFY_OBJECT_SQL

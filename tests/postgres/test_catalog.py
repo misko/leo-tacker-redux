@@ -68,6 +68,20 @@ def test_completed_local_pair_uploads_then_registers_atomically(
 
 
 @pytest.mark.integration
+def test_capture_role_can_publish_without_update_privilege(postgres_dsn: str) -> None:
+    def connect():
+        connection = psycopg.connect(postgres_dsn, row_factory=psycopg.rows.dict_row)
+        connection.execute("SET ROLE leo_capture")
+        return connection
+
+    catalog = PostgresRecordingCatalog(connect)
+    recording = recording_object_ref()
+    first = catalog.publish(recording, idempotency_key="capture-role")
+    assert first.recording_object == recording
+    assert catalog.publish(recording, idempotency_key="capture-role") == first
+
+
+@pytest.mark.integration
 def test_object_collision_rolls_back_first_object_and_recording(
     postgres_dsn: str,
 ) -> None:
