@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from contextlib import nullcontext
 from dataclasses import replace
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,10 @@ from leo_flow.contracts.hardware import HardwareMetadataSnapshotRef
 from leo_flow.contracts.storage import ObjectRef
 
 FIXTURE = Path(__file__).with_name("fixtures") / "rf_association_synthetic_v1.json"
+REQUIRES_SGP4 = pytest.mark.skipif(
+    find_spec("sgp4") is None,
+    reason="RF association validation requires the optional orbit extra",
+)
 
 
 class _View:
@@ -292,6 +297,7 @@ def _cases() -> tuple[
     return experiment_ref, tuple(cases), adapter
 
 
+@REQUIRES_SGP4
 def test_real_sgp4_and_rf_association_have_deterministic_confusion_output() -> None:
     experiment_ref, cases, adapter = _cases()
 
@@ -315,6 +321,7 @@ def test_real_sgp4_and_rf_association_have_deterministic_confusion_output() -> N
     )
 
 
+@REQUIRES_SGP4
 def test_injection_is_counter_based_and_rejects_cross_paired_truth() -> None:
     _, cases, adapter = _cases()
     request = cases[0].request
