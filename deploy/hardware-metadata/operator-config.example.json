@@ -1,0 +1,42 @@
+{
+  "schema": "org.leo-flow.hardware-operator-config",
+  "version": "0.1",
+  "snapshot": {
+    "schema": "org.leo-flow.hardware-metadata-snapshot",
+    "version": "0.1",
+    "snapshot_id": "hw_example_do_not_publish",
+    "station_id": "station_example",
+    "radio_ids": [
+      "radio_v5_example"
+    ],
+    "receiver_chains": [
+      {
+        "receiver_chain_id": "rx_example_0",
+        "radio_id": "radio_v5_example",
+        "radio_channel": 0,
+        "lnb_id": "lnb_example_not_authoritative",
+        "polarization": "linear-h",
+        "cable_id": "cable_example_a",
+        "valid_from_utc_ns": 1786579200000000000,
+        "valid_until_utc_ns": 1786665600000000000
+      },
+      {
+        "receiver_chain_id": "rx_example_0",
+        "radio_id": "radio_v5_example",
+        "radio_channel": 0,
+        "lnb_id": "lnb_example_not_authoritative",
+        "polarization": "linear-v",
+        "cable_id": "cable_example_b",
+        "valid_from_utc_ns": 1786665600000000000,
+        "valid_until_utc_ns": null
+      }
+    ]
+  },
+  "publication": {
+    "cas_root": "/var/lib/leo-flow/objects",
+    "database_dsn": {
+      "provider": "systemd-credential",
+      "name": "hardware-catalog-dsn"
+    }
+  }
+}

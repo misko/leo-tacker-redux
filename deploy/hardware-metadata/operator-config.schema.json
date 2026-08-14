@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.local/schemas/hardware-operator-config-v0.1.json",
+  "additionalProperties": false,
+  "properties": {
+    "publication": {
+      "additionalProperties": false,
+      "properties": {
+        "cas_root": {"minLength": 1, "pattern": "^/", "type": "string"},
+        "database_dsn": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {"minLength": 1, "type": "string"},
+            "provider": {"const": "systemd-credential"}
+          },
+          "required": ["provider", "name"],
+          "type": "object"
+        }
+      },
+      "required": ["cas_root", "database_dsn"],
+      "type": "object"
+    },
+    "schema": {"const": "org.leo-flow.hardware-operator-config"},
+    "snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "radio_ids": {
+          "items": {"pattern": "^radio_[A-Za-z0-9._-]+$", "type": "string"},
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "receiver_chains": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cable_id": {"minLength": 1, "type": ["string", "null"]},
+              "lnb_id": {"minLength": 1, "type": "string"},
+              "polarization": {"minLength": 1, "type": ["string", "null"]},
+              "radio_channel": {"minimum": 0, "type": "integer"},
+              "radio_id": {"pattern": "^radio_[A-Za-z0-9._-]+$", "type": "string"},
+              "receiver_chain_id": {"pattern": "^rx_[A-Za-z0-9._-]+$", "type": "string"},
+              "valid_from_utc_ns": {"minimum": 0, "type": "integer"},
+              "valid_until_utc_ns": {"minimum": 0, "type": ["integer", "null"]}
+            },
+            "required": [
+              "receiver_chain_id",
+              "radio_id",
+              "radio_channel",
+              "lnb_id",
+              "polarization",
+              "cable_id",
+              "valid_from_utc_ns",
+              "valid_until_utc_ns"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "schema": {"const": "org.leo-flow.hardware-metadata-snapshot"},
+        "snapshot_id": {"pattern": "^hw_[A-Za-z0-9._-]+$", "type": "string"},
+        "station_id": {"pattern": "^station_[A-Za-z0-9._-]+$", "type": "string"},
+        "version": {"const": "0.1"}
+      },
+      "required": [
+        "schema",
+        "version",
+        "snapshot_id",
+        "station_id",
+        "radio_ids",
+        "receiver_chains"
+      ],
+      "type": "object"
+    },
+    "version": {"const": "0.1"}
+  },
+  "required": ["schema", "version", "snapshot", "publication"],
+  "type": "object"
+}
