@@ -1,0 +1,26 @@
+{
+  "source": "Vallado et al. SGP4 verification distribution: SGP4-VER.TLE and tcppver.out",
+  "reference_satellite": {
+    "line1": "1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+    "line2": "2 00005  34.2682 348.7242 1859667 331.7664  19.3264 10.82419157413667",
+    "states": [
+      {
+        "minutes_since_epoch": 0,
+        "position_km": [7022.46529266, -1400.08296755, 0.03995155],
+        "velocity_km_s": [1.893841015, 6.405893759, 4.534807250]
+      },
+      {
+        "minutes_since_epoch": 360,
+        "position_km": [-7154.03120202, -3783.17682504, -3536.19412294],
+        "velocity_km_s": [4.741887409, -4.151817765, -2.093935425]
+      }
+    ]
+  },
+  "error_satellite": {
+    "source_note": "Vallado SGP4 verification case 33333 as published; its legacy checksums are intentionally preserved and are not accepted by the normalized archive parser",
+    "line1": "1 33333U 05037B   05333.02012661  .25992681  00000-0  24476-3 0  1534",
+    "line2": "2 33333  96.4736 157.9986 9950000 244.0492 110.6523  4.00004038 10708",
+    "minutes_since_epoch": 25,
+    "error_code": 4
+  }
+}

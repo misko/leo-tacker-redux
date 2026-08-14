@@ -17,6 +17,13 @@ from .association import (
     StationGeometrySnapshot,
     associate_rf_measurement,
 )
+from .sgp4_adapter import (
+    Sgp4DependencyError,
+    Sgp4InputError,
+    Sgp4OrbitPropagator,
+    TemeState,
+    sgp4_vallado_wgs72_specification,
+)
 
 __all__ = [
     "AssociationCandidate",
@@ -32,6 +39,11 @@ __all__ = [
     "RfAssociationRequest",
     "RfMeasurement",
     "SatelliteCarrierHypothesis",
+    "Sgp4DependencyError",
+    "Sgp4InputError",
+    "Sgp4OrbitPropagator",
     "StationGeometrySnapshot",
+    "TemeState",
     "associate_rf_measurement",
+    "sgp4_vallado_wgs72_specification",
 ]
