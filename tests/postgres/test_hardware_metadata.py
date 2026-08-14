@@ -10,7 +10,7 @@ from leo_flow.adapters.hardware_postgres_catalog import (
     PostgresHardwareSnapshotCatalog,
     connection_factory,
 )
-from leo_flow.contracts.core import Digest
+from leo_flow.contracts.core import Digest, HardwareSnapshotId
 from leo_flow.contracts.hardware import HardwareMetadataSnapshotRef
 from leo_flow.hardware import (
     DurableHardwareMetadataRepository,
@@ -79,10 +79,13 @@ def test_hardware_reader_requires_exact_ref_and_projection(
 ) -> None:
     repository = _repository(postgres_dsn, tmp_path / "cas")
     ref = repository.publish(_snapshot(), idempotency_key="hardware:exact")
+    assert repository.resolve_ref(ref.snapshot_id) == ref
     wrong = HardwareMetadataSnapshotRef(ref.snapshot_id, Digest.sha256(b"wrong"))
 
     with pytest.raises(HardwareSnapshotNotFoundError, match="exactly"):
         repository.get(wrong)
+    with pytest.raises(HardwareSnapshotNotFoundError, match="requested ID"):
+        repository.resolve_ref(HardwareSnapshotId("hw_missing"))
 
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute("UPDATE hardware_receiver_chain SET lnb_id = 'tampered'")

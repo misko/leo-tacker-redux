@@ -17,7 +17,14 @@ from .capture import (
     SegmentRequest,
 )
 from .continuity import CaptureProvenance, ContinuityPolicy, RefillMetadata
-from .core import ArtifactRef, PlanId, RadioId, RecordingId, UtcNs
+from .core import (
+    ArtifactRef,
+    HardwareSnapshotId,
+    PlanId,
+    RadioId,
+    RecordingId,
+    UtcNs,
+)
 from .dashboard import (
     ActivitySummary,
     FeatureView,
@@ -157,6 +164,14 @@ class EphemerisReader(Protocol):
 
 class HardwareMetadataReader(Protocol):
     def get(self, ref: HardwareMetadataSnapshotRef) -> HardwareMetadataSnapshot: ...
+
+
+class HardwareMetadataRefResolver(Protocol):
+    """Resolve an immutable snapshot ID; never chooses a mutable latest value."""
+
+    def resolve_ref(
+        self, snapshot_id: HardwareSnapshotId
+    ) -> HardwareMetadataSnapshotRef: ...
 
 
 class HardwareMetadataPublisher(Protocol):

@@ -96,6 +96,18 @@ class PostgresHardwareSnapshotCatalog:
             row = cursor.fetchone()
             return None if row is None else _cataloged(cursor, row)
 
+    def resolve(
+        self, snapshot_id: HardwareSnapshotId
+    ) -> CatalogedHardwareSnapshot | None:
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(sql.GET_BY_ID_SQL, {"snapshot_id": str(snapshot_id)})
+            row = cursor.fetchone()
+            return None if row is None else _cataloged(cursor, row)
+
 
 def connection_factory(dsn: str) -> ConnectionFactory:
     return lambda: psycopg.connect(dsn, row_factory=dict_row)

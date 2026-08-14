@@ -8,6 +8,11 @@ from .codec import (
     decode_hardware_snapshot,
     encode_hardware_snapshot,
 )
+from .linkage import (
+    RecordingHardwareAuthorityError,
+    RecordingHardwareLinker,
+    require_recording_hardware_link,
+)
 from .persistence import (
     DurableHardwareMetadataRepository,
     HardwareSnapshotIntegrityError,
@@ -22,6 +27,9 @@ __all__ = [
     "HardwareSnapshotIntegrityError",
     "HardwareSnapshotNotFoundError",
     "MalformedHardwareSnapshotError",
+    "RecordingHardwareAuthorityError",
+    "RecordingHardwareLinker",
     "decode_hardware_snapshot",
     "encode_hardware_snapshot",
+    "require_recording_hardware_link",
 ]

@@ -88,3 +88,16 @@ hardware catalog port. It reads the result back by the exact ID/digest pair
 before reporting success. Repeating the same command is idempotent. Diagnostics
 never include configuration, credential names, DSNs, paths, or exception text;
 failure is a single `hardware_operator_failed` JSON event on stderr.
+
+## Link published recordings before hardware-dependent analysis
+
+Hardware publication alone does not authorize an ID-only RecordingManifest for
+model fitting. The analysis-owned recording hardware linker must read the exact
+published recording, resolve its snapshot ID to the exact digest, verify the
+bundle, and append `recording_hardware_link`. Capture does not perform this step.
+
+Existing recordings are intentionally unlinked after migration 0011. Schedule
+them for explicit linkage/backfill after their referenced hardware snapshot has
+been authoritatively published. A missing link is not permission to use a
+current or latest snapshot: hardware-dependent analysis must call the required
+link reader and fail closed.

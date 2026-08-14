@@ -99,6 +99,13 @@ class _Catalog(HardwareSnapshotCatalog):
             return None
         return self.entry
 
+    def resolve(
+        self, snapshot_id: HardwareSnapshotId
+    ) -> CatalogedHardwareSnapshot | None:
+        if self.entry is None or self.entry.projection.ref.snapshot_id != snapshot_id:
+            return None
+        return self.entry
+
 
 def test_codec_is_deterministic_and_round_trips_effective_dated_metadata() -> None:
     snapshot = _snapshot()
@@ -152,6 +159,7 @@ def test_repository_is_cas_first_idempotent_and_reads_exact_snapshot(tmp_path) -
 
     ref = repository.publish(snapshot, idempotency_key="hardware:v5")
     assert repository.publish(snapshot, idempotency_key="hardware:v5") == ref
+    assert repository.resolve_ref(snapshot.snapshot_id) == ref
     assert repository.get(ref) == snapshot
     assert catalog.calls == 2
     assert len(tuple((tmp_path / "cas" / "sha256").glob("*/*"))) == 1
@@ -159,6 +167,8 @@ def test_repository_is_cas_first_idempotent_and_reads_exact_snapshot(tmp_path) -
     wrong = HardwareMetadataSnapshotRef(ref.snapshot_id, Digest.sha256(b"wrong"))
     with pytest.raises(HardwareSnapshotNotFoundError, match="exactly"):
         repository.get(wrong)
+    with pytest.raises(HardwareSnapshotNotFoundError, match="requested ID"):
+        repository.resolve_ref(HardwareSnapshotId("hw_missing"))
 
 
 def test_reader_rejects_catalog_projection_disagreement(tmp_path) -> None:

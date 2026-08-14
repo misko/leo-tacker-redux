@@ -22,8 +22,8 @@ do not import PostgreSQL, CAS, or publication adapters.
 
 ## Consequences
 
-- A recording can retain the exact hardware snapshot ID already present in its
-  manifest while downstream jobs carry the exact ID/digest reference.
+- A recording retains the hardware snapshot ID already present in its manifest;
+  ADR 0022 defines the required analysis-owned exact ID/digest linkage.
 - LNB swaps and wiring changes are historical facts rather than mutable current
   state.
 - Retry keys are stable and conflicting identity, bytes, or projection data fail

@@ -6,7 +6,7 @@ import io
 from dataclasses import dataclass
 from typing import Protocol
 
-from leo_flow.contracts.core import Digest
+from leo_flow.contracts.core import Digest, HardwareSnapshotId
 from leo_flow.contracts.hardware import (
     HardwareMetadataSnapshot,
     HardwareMetadataSnapshotRef,
@@ -73,6 +73,10 @@ class HardwareSnapshotCatalog(Protocol):
 
     def get(
         self, ref: HardwareMetadataSnapshotRef
+    ) -> CatalogedHardwareSnapshot | None: ...
+
+    def resolve(
+        self, snapshot_id: HardwareSnapshotId
     ) -> CatalogedHardwareSnapshot | None: ...
 
 
@@ -144,6 +148,20 @@ class DurableHardwareMetadataRepository:
                 "hardware bundle disagrees with catalog projection"
             )
         return snapshot
+
+    def resolve_ref(
+        self, snapshot_id: HardwareSnapshotId
+    ) -> HardwareMetadataSnapshotRef:
+        cataloged = self._catalog.resolve(snapshot_id)
+        if cataloged is None:
+            raise HardwareSnapshotNotFoundError(
+                "no authoritative hardware snapshot has the requested ID"
+            )
+        ref = cataloged.projection.ref
+        # Resolving an ID becomes authoritative only after exact bytes and the
+        # normalized projection pass the same checks as an exact read.
+        self.get(ref)
+        return ref
 
 
 def hardware_snapshot_projection(

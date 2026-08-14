@@ -12,6 +12,7 @@ from .core import (
     HardwareSnapshotId,
     RadioId,
     ReceiverChainId,
+    RecordingId,
     SchemaRef,
     StationId,
     UtcNs,
@@ -83,3 +84,30 @@ class HardwareMetadataSnapshot:
 class HardwareMetadataSnapshotRef:
     snapshot_id: HardwareSnapshotId
     digest: Digest
+
+
+@dataclass(frozen=True)
+class RecordingHardwareLink:
+    """Immutable authority joining one recording identity to one hardware ref."""
+
+    link_id: str
+    recording_id: RecordingId
+    recording_identity_digest: Digest
+    hardware_snapshot_ref: HardwareMetadataSnapshotRef
+    link_digest: Digest
+
+    def __post_init__(self) -> None:
+        if not self.link_id.startswith("hwlink_") or len(self.link_id) != 39:
+            raise ValueError("hardware link ID must be hwlink_ plus 32 hex characters")
+        try:
+            int(self.link_id[7:], 16)
+        except ValueError as error:
+            raise ValueError("hardware link ID suffix must be lowercase hex") from error
+        if self.link_id[7:] != self.link_id[7:].lower():
+            raise ValueError("hardware link ID suffix must be lowercase hex")
+        if self.recording_identity_digest.algorithm.value != "sha256":
+            raise ValueError("recording identity digest must use sha256")
+        if self.link_digest.algorithm.value != "sha256":
+            raise ValueError("hardware link digest must use sha256")
+        if self.link_id != f"hwlink_{self.link_digest.value[:32]}":
+            raise ValueError("hardware link ID must derive from link digest")

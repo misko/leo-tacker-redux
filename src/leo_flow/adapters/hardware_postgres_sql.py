@@ -60,6 +60,13 @@ WHERE h.snapshot_id = %(snapshot_id)s
 """
 )
 
+GET_BY_ID_SQL = (
+    SNAPSHOT_SELECT
+    + """
+WHERE h.snapshot_id = %(snapshot_id)s
+"""
+)
+
 GET_CONFLICTS_SQL = (
     SNAPSHOT_SELECT
     + """
