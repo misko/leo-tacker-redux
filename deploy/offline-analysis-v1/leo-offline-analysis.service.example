@@ -1,0 +1,31 @@
+[Unit]
+Description=LEO Flow offline analysis v1 (requires approved station plugin)
+Documentation=file:/opt/leo-flow/docs/operations/offline-analysis-v1.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+LoadCredential=catalog-dsn:/etc/leo-flow/secrets/analysis-catalog-dsn
+# leo_station.analysis_v1 is an operator-owned, reviewed package. Installation
+# must fail until it exports the exact approved PLUGIN built by
+# build_station_plugin; there is no checked-in scientific fallback.
+ExecStart=/opt/leo-flow/bin/python -m leo_flow.services --config /etc/leo-flow/analysis.json --plugin leo_station.analysis_v1:PLUGIN --forever
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=17s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+# Deliberately no [Install] section: the operator must materialize and review a
+# station unit only after installing the approved plugin and shared CAS path.

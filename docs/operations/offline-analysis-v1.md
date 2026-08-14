@@ -16,7 +16,8 @@ capabilities.
 ## Scientific plugin seam
 
 There is deliberately no repository-wide default detector or fitter. A station
-deployment constructs `OfflineAnalysisComponents` and supplies:
+deployment constructs `StationScientificFactories` and calls
+`build_station_plugin(...)` with:
 
 - durable job, recording, dataset, FeatureSet, ephemeris, hardware, CAS and
   catalog adapters;
@@ -31,18 +32,55 @@ scan, filename convention, or fallback algorithm. The model lane receives only
 the durable dataset reference named by its payload and opens only the exact
 ordered artifact references in that snapshot.
 
+The builder supplies the durable PostgreSQL/CAS adapters and the two atomic
+committers. It requires an absolute CAS root, one systemd `catalog-dsn`
+credential, and complete non-empty exact registries for both lanes. The DSN
+login must be a member of `leo_analysis` and able to read migration receipts;
+all operational queries execute after `SET ROLE leo_analysis`. Readiness proves
+the required migration receipts, role privileges, and a write/fsync/unlink probe
+inside the configured CAS temporary directory. Connections are scoped to each
+operation and close on every exit; the filesystem adapter owns no background
+resource.
+
 The checked-in [example configuration](../../config/offline-analysis-v1.example.json)
-uses the stable process configuration schema. Its adapter names are selections
-that a station-owned deployment plugin must register; they are not ambient
-discovery aliases. The repository does not yet export a ready-to-run global
-plugin because production detector and fitter factories have not been approved.
+uses the stable process configuration schema. Adapter names are exact selections,
+not ambient discovery aliases. There is no production `PLUGIN` because no
+detector/fitter pair has passed the locked scientific promotion gate.
+
+## Safe station materialization
+
+There is intentionally no runnable checked-in rehearsal plugin. Even a
+refusal-only worker would claim and mutate the first matching durable job before
+it learned that the science was unapproved. Pointing such a rehearsal at the
+production DSN would damage queue state.
+
+The checked config, schema, and non-installable systemd template live under
+`deploy/offline-analysis-v1/`. The template names the deliberately absent
+operator module `leo_station.analysis_v1:PLUGIN` and has no `[Install]` section,
+so this repository alone cannot start an analysis worker or claim a job.
+
+Production installation still requires exactly one operator-owned, importable
+module, for example `leo_station.analysis_v1:PLUGIN`, containing:
+
+1. the complete algorithm and config `ArtifactRef` for every approved recording
+   analyzer and its constructed factory;
+2. the complete algorithm and model-config `ArtifactRef` for every approved
+   model fitter and its dataset-scoped builder;
+3. the authoritative shared CAS root used by capture publication; and
+4. a call to `build_station_plugin`, exported under the exact attribute named by
+   the station systemd unit.
+
+The materialized unit must grant the dynamic user access to exactly that shared
+CAS root (for example with a station-owned group/ACL and `ReadWritePaths`) and
+must retain systemd credential loading. Promotion installs the recorded station
+artifact only after the held-out scientific gate; configuration never selects
+an algorithm by a mutable database row.
 
 ## Assembly and rehearsal
 
-Construct the service with `build_offline_analysis_service(config, components,
-lease_ttl_s=...)`, then run it through the common `ServiceLoop`. Preflight must
-verify database connectivity, migrations/roles, and CAS accessibility before
-readiness. Shutdown must close only resources owned by the injected deployment.
+Low-level tests may construct the service with
+`build_offline_analysis_service(config, components, lease_ttl_s=...)`. A real
+station process runs the common service CLI with its explicit plugin module.
 
 The deterministic component rehearsal covers exact routing, restart-safe
 idempotency, exclusion of ephemeris jobs, unknown algorithm failure, and model

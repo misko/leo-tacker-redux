@@ -1,12 +1,32 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
 import pytest
 
-from leo_flow.contracts.core import ArtifactRef, JobId, SchemaRef, UtcNs
+from leo_flow.analysis.ephemeris.catalog import (
+    ArchivedEphemerisSnapshot,
+    InMemoryEphemerisSnapshotCatalog,
+)
+from leo_flow.contracts.core import (
+    V0_1,
+    ArtifactRef,
+    Digest,
+    EphemerisRetrievalId,
+    EphemerisSnapshotId,
+    JobId,
+    SchemaRef,
+    UtcNs,
+)
+from leo_flow.contracts.ephemeris import (
+    EphemerisSnapshot,
+    EphemerisSnapshotRef,
+    EphemerisSource,
+    ValidationResult,
+)
 from leo_flow.contracts.features import RecordingAnalysisRequest
 from leo_flow.contracts.model import FeatureDatasetSnapshot, ModelAnalysisRequest
 from leo_flow.contracts.ports import (
@@ -17,17 +37,31 @@ from leo_flow.contracts.ports import (
     RecordingAnalyzer,
 )
 from leo_flow.deployments.offline_analysis_v1 import (
+    FEATURE_PUBLISHER_REF,
+    JOB_REPOSITORY_REF,
+    MODEL_PUBLISHER_REF,
+    RECORDING_READER_REF,
     AlgorithmKey,
     ExactModelFitterRegistry,
     ExactRecordingAnalyzerRegistry,
     FencedModelAnalysisExecutor,
     OfflineAnalysisCompositionError,
     OfflineAnalysisCycle,
+    StationScientificFactories,
+    build_station_plugin,
 )
 from leo_flow.jobs import InMemoryJobLeaseRepository, JobPayload, JobType
 from leo_flow.jobs.contracts import JobLease
 from leo_flow.jobs.memory import JobState
+from leo_flow.services import (
+    Capability,
+    Process,
+    RuntimeConfig,
+    SecretRef,
+    assemble_service,
+)
 from leo_flow.services.config import AnalysisServiceConfig, load_service_config
+from leo_flow.storage.filesystem import FileSystemBlobStore
 from leo_flow.storage.ports import RecordingView
 from testkit import digest
 
@@ -260,3 +294,157 @@ def test_deployment_module_has_no_capture_radio_or_network_tle_imports() -> None
         "sgp4",
     )
     assert not [name for name in forbidden if name in source]
+
+
+class _Diagnostics:
+    def emit(self, event: object) -> None:
+        del event
+
+
+def _station_config() -> AnalysisServiceConfig:
+    return AnalysisServiceConfig(
+        1,
+        "analysis",
+        RuntimeConfig(
+            "offline-analysis-test",
+            0.01,
+            0.1,
+            (SecretRef("systemd-credential", "catalog-dsn"),),
+        ),
+        JOB_REPOSITORY_REF,
+        RECORDING_READER_REF,
+        FEATURE_PUBLISHER_REF,
+        MODEL_PUBLISHER_REF,
+    )
+
+
+def _scientific_factories() -> StationScientificFactories:
+    recording_algorithm = _artifact("recording-science-v1")
+    recording_config = _artifact("recording-science-config-v1")
+    model_algorithm = _artifact("model-science-v1")
+    model_config = _artifact("model-science-config-v1")
+    return StationScientificFactories(
+        recording_analyzers={
+            AlgorithmKey(recording_algorithm, recording_config): cast(
+                RecordingAnalyzer, _Analyzer(object())
+            )
+        },
+        model_fitters={
+            AlgorithmKey(model_algorithm, model_config): lambda dataset: cast(
+                ModelFitter, _Fitter(dataset)
+            )
+        },
+    )
+
+
+def test_station_plugin_is_exact_analysis_only_and_assembly_has_no_io(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    credential_dir = tmp_path / "credentials"
+    credential_dir.mkdir()
+    (credential_dir / "catalog-dsn").write_text(
+        "postgresql://must-not-connect.invalid/catalog", encoding="utf-8"
+    )
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credential_dir))
+    cas_root = tmp_path / "cas"
+    plugin = build_station_plugin(_scientific_factories(), cas_root=cas_root)
+
+    assert set(plugin.builders) == {Process.ANALYSIS}
+    assert set(plugin.secret_providers) == {"systemd-credential"}
+    for capability, reference in (
+        (Capability.JOB_REPOSITORY, JOB_REPOSITORY_REF),
+        (Capability.RECORDING_READER, RECORDING_READER_REF),
+        (Capability.FEATURE_PUBLISHER, FEATURE_PUBLISHER_REF),
+        (Capability.MODEL_PUBLISHER, MODEL_PUBLISHER_REF),
+    ):
+        assert callable(
+            plugin.manifest.factory(Process.ANALYSIS, capability, reference)
+        )
+
+    service = assemble_service(_station_config(), plugin, diagnostics=_Diagnostics())
+    assert service.health().state.value == "stopped"
+    assert not cas_root.exists()
+
+
+def test_station_plugin_requires_both_exact_registries_and_absolute_cas(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="both exact"):
+        StationScientificFactories({}, {})
+    with pytest.raises(ValueError, match="absolute CAS"):
+        build_station_plugin(_scientific_factories(), cas_root=Path("relative"))
+
+
+def test_checked_unit_template_cannot_run_without_operator_station_plugin() -> None:
+    from leo_flow.deployments import offline_analysis_v1
+
+    assert not hasattr(offline_analysis_v1, "PLUGIN")
+    root = Path(__file__).parents[2] / "deploy" / "offline-analysis-v1"
+    config = load_service_config(root / "analysis.json")
+    assert isinstance(config, AnalysisServiceConfig)
+    unit = (root / "leo-offline-analysis.service.example").read_text(encoding="utf-8")
+    assert "leo_station.analysis_v1:PLUGIN" in unit
+    assert "LoadCredential=catalog-dsn:" in unit
+    assert not any(line.strip() == "[Install]" for line in unit.splitlines())
+
+
+def test_archived_ephemeris_reader_requires_exact_catalog_and_cas_identity(
+    tmp_path: Path,
+) -> None:
+    from leo_flow.deployments import offline_analysis_v1
+
+    payload = b'{"schema":"normalized-rehearsal-fixture"}'
+    blobs = FileSystemBlobStore(tmp_path / "cas")
+    normalized = blobs.put(
+        io.BytesIO(payload),
+        expected_digest=Digest.sha256(payload),
+        expected_bytes=len(payload),
+        media_type="application/json",
+        format_id="tle-normalized-v1",
+        idempotency_key="normalized-fixture",
+    )
+    raw = type(normalized)(digest("raw"), 3, "text/plain", "tle-raw-v1", "fixture:raw")
+    provenance = type(normalized)(
+        digest("provenance"),
+        10,
+        "application/json",
+        "ephemeris-provenance-v1",
+        "fixture:provenance",
+    )
+    snapshot = EphemerisSnapshot(
+        SchemaRef(EphemerisSnapshot.SCHEMA_ID, V0_1),
+        EphemerisSnapshotId("eph_offline_reader"),
+        EphemerisRetrievalId("ephret_offline_reader"),
+        EphemerisSource.HUGGING_FACE,
+        "starlink",
+        UtcNs(10),
+        raw,
+        normalized,
+        _artifact("parser-v1"),
+        1,
+        digest("norad-set"),
+        UtcNs(1),
+        UtcNs(2),
+        ValidationResult(True, _artifact("policy-v1")),
+        "fixture attribution",
+    )
+    archived = ArchivedEphemerisSnapshot(snapshot, provenance, digest("request").value)
+    catalog = InMemoryEphemerisSnapshotCatalog()
+    catalog.publish(archived)
+    reader = offline_analysis_v1._ExactArchivedEphemerisReader(catalog, blobs)
+
+    expected = archived.snapshot_ref()
+    with reader.open(expected) as view:
+        assert view.ref == expected
+        assert view.normalized_bytes() == payload
+    substituted = EphemerisSnapshotRef(
+        expected.snapshot_id,
+        expected.source,
+        expected.raw_digest,
+        digest("substituted-normalized"),
+    )
+    with (
+        pytest.raises(OfflineAnalysisCompositionError, match="exactly matches"),
+        reader.open(substituted),
+    ):
+        pass

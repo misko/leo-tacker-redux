@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schema/offline-analysis-v1.json",
+  "title": "LEO Flow offline analysis v1 service configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "process", "runtime", "adapters"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "process": {"const": "analysis"},
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instance_id", "poll_interval_s", "shutdown_timeout_s", "secret_refs"],
+      "properties": {
+        "instance_id": {"type": "string", "minLength": 1},
+        "poll_interval_s": {"type": "number", "exclusiveMinimum": 0},
+        "shutdown_timeout_s": {"type": "number", "exclusiveMinimum": 0},
+        "secret_refs": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "name"],
+              "properties": {
+                "provider": {"const": "systemd-credential"},
+                "name": {"const": "catalog-dsn"}
+              }
+            }
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 1
+        }
+      }
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_repository_ref", "recording_reader_ref", "feature_publisher_ref", "model_publisher_ref"],
+      "properties": {
+        "job_repository_ref": {"const": "jobs.postgres-v1"},
+        "recording_reader_ref": {"const": "recordings.sigmf-cas-v1"},
+        "feature_publisher_ref": {"const": "features.atomic-postgres-cas-v1"},
+        "model_publisher_ref": {"const": "models.atomic-postgres-cas-v1"}
+      }
+    }
+  }
+}
