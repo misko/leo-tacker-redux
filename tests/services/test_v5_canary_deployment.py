@@ -81,33 +81,38 @@ class _PublicationProvider:
 class _ClosableRadio:
     def __init__(self) -> None:
         request = v5_canary.CANARY_PLAN.activities[0].segments[0]
-        metadata = RefillMetadata(
-            refill_index=0,
-            segment_sample_offset=0,
-            sample_count=request.sample_count or 0,
-            stream_id=1,
-            buffer_sequence=1,
-            first_sample_sequence=1,
-            monotonic_start_ns=1,
-            monotonic_end_ns=2,
-            utc_start_ns=1_700_000_000_000_000_000,
-            utc_end_ns=1_700_000_000_000_000_001,
-            time_uncertainty_ns=1,
-            gain_db_start=(1.0, 1.0),
-            gain_db_end=(1.0, 1.0),
-            rssi_db_start=(-1.0, -1.0),
-            rssi_db_end=(-1.0, -1.0),
+        target_samples = request.sample_count or 0
+        block_samples = v5_canary.RADIO_CONFIG.block_samples
+        payload = bytes(block_samples * 8)
+        refills = tuple(
+            V5Refill(
+                payload,
+                RefillMetadata(
+                    refill_index=index,
+                    segment_sample_offset=index * block_samples,
+                    sample_count=block_samples,
+                    stream_id=1,
+                    buffer_sequence=index + 1,
+                    first_sample_sequence=1 + index * block_samples,
+                    monotonic_start_ns=1 + index * 125_829_181,
+                    monotonic_end_ns=2 + index * 125_829_181,
+                    utc_start_ns=1_700_000_000_000_000_000 + index * 125_829_181,
+                    utc_end_ns=1_700_000_000_000_000_001 + index * 125_829_181,
+                    time_uncertainty_ns=1,
+                    gain_db_start=(1.0, 1.0),
+                    gain_db_end=(1.0, 1.0),
+                    rssi_db_start=(-1.0, -1.0),
+                    rssi_db_end=(-1.0, -1.0),
+                ),
+            )
+            for index in range(target_samples // block_samples)
         )
         self._inner = FakeV5PairedRadio(
             v5_canary.RADIO_ID,
             v5_canary.RECEIVER_CHAINS,
-            {
-                request.segment_id: (
-                    V5Refill(bytes(metadata.sample_count * 8), metadata),
-                )
-            },
+            {request.segment_id: refills},
             CaptureProvenance("v5", "commit", "0.25", "v3", "metadata=1"),
-            continuity_policy=ContinuityPolicy.ALLOW_VERIFIED_GAPPED,
+            continuity_policy=ContinuityPolicy.REQUIRE_CONTIGUOUS,
         )
         self.closed = 0
 
@@ -171,16 +176,20 @@ def _cycle(tmp_path: Path, radio_provider, publisher: _FakePublisher):
     )
 
 
-def test_exact_plan_is_passive_test_with_verified_gapped_policy() -> None:
+def test_exact_plan_is_passive_multirefill_contiguous_test() -> None:
     assert str(v5_canary.CANARY_PLAN_DIGEST) == (
-        "sha256:302ae9dd1daecd1963dee663eddd822b4007e878b2fe4ea78640976d471bdd91"
+        "sha256:823f00e447bb1c1a2e68f81b07461e1e21c5c783831080c40399bf9850f2cdae"
     )
     assert [item.kind for item in v5_canary.CANARY_PLAN.activities] == [
         ActivityKind.TEST
     ]
     assert v5_canary.RADIO_CONFIG.continuity_policy is (
-        ContinuityPolicy.ALLOW_VERIFIED_GAPPED
+        ContinuityPolicy.REQUIRE_CONTIGUOUS
     )
+    assert v5_canary.CANARY_PLAN.activities[0].segments[0].sample_count == (
+        30 * v5_canary.RADIO_CONFIG.block_samples
+    )
+    assert v5_canary.RADIO_CONFIG.frequency_tolerance_hz == 2.0
     assert all(
         key != "tx" or value == "prohibited"
         for activity in v5_canary.CANARY_PLAN.activities
@@ -366,6 +375,24 @@ def test_plugin_assembly_resolves_only_credential_without_runtime_io(
     assert "adi" not in sys.modules
 
 
+def test_v5_device_factory_selects_dual_rx_ad9361(monkeypatch) -> None:
+    opened: list[str] = []
+    device = object()
+
+    def ad9361(*, uri: str):
+        opened.append(uri)
+        return device
+
+    module = SimpleNamespace(
+        ad9361=ad9361,
+        Pluto=lambda **_kwargs: pytest.fail("single-RX Pluto class must not be used"),
+    )
+    monkeypatch.setattr(v5_canary.importlib, "import_module", lambda name: module)
+
+    assert v5_canary._open_pyadi_ad9361("ip:192.168.1.15") is device
+    assert opened == ["ip:192.168.1.15"]
+
+
 def test_plugin_import_does_not_load_hardware_database_or_touch_network() -> None:
     script = """
 import json, socket, sys
@@ -423,7 +450,7 @@ def test_hardware_free_dry_run_rehearses_capture_and_restart(tmp_path) -> None:
     assert result == {
         "activity_kind": "test",
         "capture_admissions": 1,
-        "continuity_policy": "allow_verified_gapped",
+        "continuity_policy": "require_verified",
         "event": "v5_canary_dry_run",
         "plan_digest": str(v5_canary.CANARY_PLAN_DIGEST),
         "publications": 1,

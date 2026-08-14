@@ -2,7 +2,7 @@
   "schema_version": 1,
   "process": "capture",
   "runtime": {
-    "instance_id": "station-leo-v5-canary-1",
+    "instance_id": "station-leo-v5-canary-2",
     "poll_interval_s": 1.0,
     "shutdown_timeout_s": 10.0,
     "secret_refs": [
@@ -10,7 +10,7 @@
     ]
   },
   "adapters": {
-    "plan_source_ref": "plans.v5-canary-2026-08-13-v1",
+    "plan_source_ref": "plans.v5-canary-2026-08-14-v2",
     "radio_ref": "radio.pluto-v5-192-168-1-15-v1",
     "preflight_ref": "capture.host-guard-v1",
     "recording_writer_ref": "recording.sigmf-pair-v1",

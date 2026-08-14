@@ -42,8 +42,9 @@ and key-management design.
 
 No candidate is promoted by this ADR. Current production evidence is absent:
 
-- the V5 radio is a functional canary, but the tested IP path dropped source
-  frames and has no qualifying 8–24-hour continuous hardware soak;
+- the V5 radio and corrected 1 Gb/s IP path pass a bounded 30-refill contiguous
+  canary at 2.083332 MS/s, but have no qualifying 8–24-hour continuous hardware
+  soak or paired 10 MS/s qualification;
 - no archived live provider-canary receipt is bound to a release candidate;
 - the locked scientific promotion set remains deliberately unopened/pending
   stronger ground truth;

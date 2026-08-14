@@ -2,10 +2,10 @@
 
 This deployment runs one exact, passive receive-only `ActivityKind.TEST` plan
 against the qualified V5 radio at `192.168.1.15`. It contains no scheduler,
-inbox, NFS marker, analysis import, or transmit operation. The plan is one
-262,144-sample paired RX refill at 2.083332 MS/s and uses
-`ALLOW_VERIFIED_GAPPED`; it therefore preserves any V5 sequence-gap evidence
-instead of claiming contiguous IQ.
+inbox, NFS marker, analysis import, or transmit operation. The immutable v2
+plan is 30 paired RX refills (7,864,320 samples per receiver) at 2.083332 MS/s
+and requires verified contiguous V5 metadata. Any buffer/sample sequence gap,
+stream change, overlap, or missing metadata fails capture before publication.
 
 The service is intentionally `--once`. A clean first run captures, finalizes a
 root-confined SigMF pair, uploads both objects to the local filesystem CAS,
@@ -143,7 +143,7 @@ Do not start the host unit or live container until every item is satisfied:
 - The state and runtime directories are real local directories, not NFS or
   symlinks; at least 1 GiB is free; no canary process/container is running.
 - The credential file is single-line, root-readable only, and names a principal
-  that can `SET ROLE leo_capture`; migrations through `0008` are applied.
+  that can `SET ROLE leo_capture`; migrations through `0018` are applied.
 - The operator has recorded the pre-run state directory listing and journal
   cursor and has a stop/rollback path that preserves SQLite, quarantine, and CAS
   contents for diagnosis.

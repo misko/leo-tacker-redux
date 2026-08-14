@@ -85,7 +85,7 @@ from leo_flow.storage.local_recording import (
 )
 from leo_flow.storage.recording_codec import SigMFRecordingWriter
 
-PLAN_SOURCE_REF = "plans.v5-canary-2026-08-13-v1"
+PLAN_SOURCE_REF = "plans.v5-canary-2026-08-14-v2"
 RADIO_REF = "radio.pluto-v5-192-168-1-15-v1"
 PREFLIGHT_REF = "capture.host-guard-v1"
 RECORDING_WRITER_REF = "recording.sigmf-pair-v1"
@@ -105,7 +105,7 @@ POSTGRES_TIMEOUT_S = 5
 
 RADIO_ID = RadioId("radio_pluto_v5_canary_15")
 RECEIVER_CHAINS = (ReceiverChainId("rx_v5_1"), ReceiverChainId("rx_v5_2"))
-PLAN_ID = PlanId("plan_v5_canary_20260813_v1")
+PLAN_ID = PlanId("plan_v5_canary_20260814_v2")
 
 CANARY_PLAN = CapturePlan(
     schema=SchemaRef(CapturePlan.SCHEMA_ID),
@@ -114,30 +114,33 @@ CANARY_PLAN = CapturePlan(
     receiver_chain_ids=RECEIVER_CHAINS,
     activities=(
         ActivityRequest(
-            ActivityId("act_v5_canary_20260813_v1"),
+            ActivityId("act_v5_canary_20260814_v2"),
             ActivityKind.TEST,
             (
                 SegmentRequest.create(
-                    segment_id=SegmentId("seg_v5_canary_20260813_v1"),
+                    segment_id=SegmentId("seg_v5_canary_20260814_v2"),
                     center_frequency_hz=1_825_117_187.5,
                     sample_rate_hz=2_083_332.0,
                     bandwidth_hz=2_000_000.0,
                     receiver_chain_ids=RECEIVER_CHAINS,
                     gain=GainSetting(GainMode.AGC),
-                    sample_count=262_144,
-                    tags={"purpose": "passive-v5-rx-canary", "tx": "prohibited"},
+                    sample_count=7_864_320,
+                    tags={
+                        "purpose": "passive-v5-rx-contiguous-canary",
+                        "tx": "prohibited",
+                    },
                 ),
             ),
         ),
     ),
     experiment_tags=(
         ("fixture", "rx1-rx2-to-tx2-sma-tee-no-lnb"),
-        ("purpose", "v5-runtime-capture-canary"),
+        ("purpose", "v5-runtime-contiguous-capture-canary"),
     ),
 )
 CANARY_PLAN_DIGEST = Digest(
     DigestAlgorithm.SHA256,
-    "302ae9dd1daecd1963dee663eddd822b4007e878b2fe4ea78640976d471bdd91",
+    "823f00e447bb1c1a2e68f81b07461e1e21c5c783831080c40399bf9850f2cdae",
 )
 if canonical_digest(CANARY_PLAN) != CANARY_PLAN_DIGEST:
     raise RuntimeError("embedded V5 canary plan differs from its immutable digest")
@@ -170,15 +173,16 @@ RADIO_CONFIG = PlutoRadioConfig(
     radio_id=RADIO_ID,
     receiver_chain_ids=RECEIVER_CHAINS,
     block_samples=262_144,
-    continuity_policy=ContinuityPolicy.ALLOW_VERIFIED_GAPPED,
+    frequency_tolerance_hz=2.0,
+    continuity_policy=ContinuityPolicy.REQUIRE_CONTIGUOUS,
     io_timeout_ms=5_000,
 )
 CAPTURE_IDENTITY = CaptureIdentity(
     StationId("station_leo_primary"),
     EXPECTED_RADIO.serial,
     "system-realtime-v5-metadata",
-    HardwareSnapshotId("hw_v5_canary_20260813_v1"),
-    "leo-flow-v5-canary-v1",
+    HardwareSnapshotId("hw_v5_canary_20260814_v2"),
+    "leo-flow-v5-canary-v2",
 )
 
 
@@ -355,7 +359,7 @@ class _V5RadioProvider:
             expected_radio=EXPECTED_RADIO,
             observe_runtime=lambda: observe_current_v5_runtime(RUNTIME_MANIFEST),
             observe_radio=observe_v5_radio,
-            device_factory=_open_pyadi_pluto,
+            device_factory=_open_pyadi_ad9361,
             metadata_reader=metadata,
         )
 
@@ -558,9 +562,9 @@ class OneShotV5CanaryCycle:
             )
 
 
-def _open_pyadi_pluto(uri: str) -> PlutoDevice:
+def _open_pyadi_ad9361(uri: str) -> PlutoDevice:
     module = importlib.import_module("adi")
-    device_type = module.Pluto
+    device_type = module.ad9361
     return cast(PlutoDevice, device_type(uri=uri))
 
 

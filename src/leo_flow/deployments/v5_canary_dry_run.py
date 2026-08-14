@@ -169,30 +169,40 @@ def _cycle(
 
 def _radio() -> FakeV5PairedRadio:
     request = v5_canary.CANARY_PLAN.activities[0].segments[0]
-    sample_count = request.sample_count
-    if sample_count is None:
+    target_samples = request.sample_count
+    if target_samples is None:
         raise RuntimeError("dry-run plan must have an exact sample count")
-    metadata = RefillMetadata(
-        refill_index=0,
-        segment_sample_offset=0,
-        sample_count=sample_count,
-        stream_id=1,
-        buffer_sequence=1,
-        first_sample_sequence=1,
-        monotonic_start_ns=1,
-        monotonic_end_ns=2,
-        utc_start_ns=1_700_000_000_000_000_000,
-        utc_end_ns=1_700_000_000_000_000_001,
-        time_uncertainty_ns=1,
-        gain_db_start=(0.0, 0.0),
-        gain_db_end=(0.0, 0.0),
-        rssi_db_start=(-1.0, -1.0),
-        rssi_db_end=(-1.0, -1.0),
+    block_samples = v5_canary.RADIO_CONFIG.block_samples
+    if target_samples % block_samples:
+        raise RuntimeError("dry-run plan must contain whole V5 refills")
+    payload = bytes(block_samples * 8)
+    refills = tuple(
+        V5Refill(
+            payload,
+            RefillMetadata(
+                refill_index=index,
+                segment_sample_offset=index * block_samples,
+                sample_count=block_samples,
+                stream_id=1,
+                buffer_sequence=index + 1,
+                first_sample_sequence=1 + index * block_samples,
+                monotonic_start_ns=1 + index * 125_829_181,
+                monotonic_end_ns=2 + index * 125_829_181,
+                utc_start_ns=1_700_000_000_000_000_000 + index * 125_829_181,
+                utc_end_ns=1_700_000_000_000_000_001 + index * 125_829_181,
+                time_uncertainty_ns=1,
+                gain_db_start=(0.0, 0.0),
+                gain_db_end=(0.0, 0.0),
+                rssi_db_start=(-1.0, -1.0),
+                rssi_db_end=(-1.0, -1.0),
+            ),
+        )
+        for index in range(target_samples // block_samples)
     )
     return FakeV5PairedRadio(
         v5_canary.RADIO_ID,
         v5_canary.RECEIVER_CHAINS,
-        {request.segment_id: (V5Refill(bytes(sample_count * 8), metadata),)},
+        {request.segment_id: refills},
         CaptureProvenance(
             "dry-run-v5", "dry-run", "0.25", "spf-radio-metadata-v3", "metadata=1"
         ),
