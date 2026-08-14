@@ -1,0 +1,89 @@
+{
+  "experiment_id": "rf-association-synthetic-v1",
+  "source": "Vallado et al. SGP4 verification distribution, SGP4-VER.TLE",
+  "truth_scope": "Exact digital injection for software validation; TLE association is not observational ground truth.",
+  "station_position_m": [6378135.0, 0.0, 0.0],
+  "injection": {
+    "seed": 20260813,
+    "frequency_noise_span_hz": 0.25,
+    "drift_noise_span_hz_s": 0.002,
+    "speed_of_light_m_s": 299792458.0
+  },
+  "calibration": {
+    "frequency_bias_hz": 1250.0,
+    "frequency_drift_hz_s": -0.15,
+    "frequency_variance_hz2": 4.0,
+    "drift_variance_hz2_s2": 0.0004
+  },
+  "carrier_hz": 1000000000.0,
+  "tle": [
+    {
+      "norad_id": 6251,
+      "line1": "1 06251U 62025E   06176.82412014  .00008885  00000-0  12808-3 0  3985",
+      "line2": "2 06251  58.0579  54.0425 0030035 139.1568 221.1854 15.56387291  6774"
+    },
+    {
+      "norad_id": 8195,
+      "line1": "1 08195U 75081A   06176.33215444  .00000099  00000-0  11873-3 0   813",
+      "line2": "2 08195  64.1586 279.0717 6877146 264.7651  20.2257  2.00491383225656"
+    },
+    {
+      "norad_id": 33333,
+      "source_note": "Published error case with only its two legacy checksum digits corrected for strict archive parsing.",
+      "line1": "1 33333U 05037B   05333.02012661  .25992681  00000-0  24476-3 0  1532",
+      "line2": "2 33333  96.4736 157.9986 9950000 244.0492 110.6523  4.00004038 10700"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "match_early",
+      "anchor_norad_id": 6251,
+      "minutes_from_anchor_epoch": -650,
+      "candidate_norad_ids": [6251, 8195],
+      "minimum_elevation_deg": 5.0,
+      "expected": "match"
+    },
+    {
+      "case_id": "match_late",
+      "anchor_norad_id": 6251,
+      "minutes_from_anchor_epoch": 140,
+      "candidate_norad_ids": [6251, 8195],
+      "minimum_elevation_deg": 0.0,
+      "expected": "match"
+    },
+    {
+      "case_id": "ambiguous_policy",
+      "anchor_norad_id": 6251,
+      "minutes_from_anchor_epoch": 140,
+      "candidate_norad_ids": [6251, 8195],
+      "minimum_elevation_deg": 0.0,
+      "ambiguity_delta": 100000000.0,
+      "expected": "ambiguous"
+    },
+    {
+      "case_id": "residual_no_match",
+      "anchor_norad_id": 6251,
+      "minutes_from_anchor_epoch": 45,
+      "candidate_norad_ids": [6251, 8195],
+      "minimum_elevation_deg": 0.0,
+      "frequency_offset_hz": 50000.0,
+      "expected": "no_match"
+    },
+    {
+      "case_id": "below_elevation",
+      "anchor_norad_id": 6251,
+      "minutes_from_anchor_epoch": 0,
+      "candidate_norad_ids": [6251, 8195],
+      "minimum_elevation_deg": 5.0,
+      "expected": "below_elevation"
+    },
+    {
+      "case_id": "propagation_error",
+      "anchor_norad_id": 33333,
+      "minutes_from_anchor_epoch": 25,
+      "candidate_norad_ids": [33333],
+      "minimum_elevation_deg": -90.0,
+      "expected": "propagation_error"
+    }
+  ]
+}
