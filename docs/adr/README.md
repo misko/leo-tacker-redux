@@ -39,3 +39,4 @@ golden fixtures that change.
 - [0034: Same-process operator dashboard UI](0034-same-process-operator-dashboard-ui.md)
 - [0035: Capability-derived routing and terminal job parking](0035-capability-derived-routing-and-terminal-job-parking.md)
 - [0036: Dataset-scoped tracking input evidence](0036-dataset-scoped-tracking-input-evidence.md)
+- [0037: Durable tracking-input publication and jobs](0037-durable-tracking-input-publication-and-jobs.md)
