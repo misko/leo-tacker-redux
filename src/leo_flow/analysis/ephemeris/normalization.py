@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import BinaryIO, Protocol
 
+from leo_flow.contracts._validation import require_utc_ns
 from leo_flow.contracts.core import ArtifactRef, Digest, UtcNs, canonical_json_bytes
 from leo_flow.contracts.ephemeris import (
     EphemerisSnapshotCandidate,
@@ -19,6 +20,10 @@ from leo_flow.contracts.storage import ObjectRef
 
 class TLEFormatError(ValueError):
     pass
+
+
+_MAX_RELATIVE_EPOCH_BOUND_S = 10 * 366 * 24 * 60 * 60
+_NS_PER_SECOND = 1_000_000_000
 
 
 class ObjectReader(Protocol):
@@ -34,14 +39,24 @@ class TLEValidationPolicy:
     policy_ref: ArtifactRef
     minimum_satellites: int
     maximum_satellites: int
-    earliest_epoch_utc_ns: UtcNs
-    latest_epoch_utc_ns: UtcNs
+    maximum_epoch_age_s: int
+    maximum_future_skew_s: int
 
     def __post_init__(self) -> None:
+        if self.policy_ref.schema is None:
+            raise ValueError("TLE validation policy reference requires a schema")
         if not 0 < self.minimum_satellites <= self.maximum_satellites:
             raise ValueError("satellite bounds are invalid")
-        if self.latest_epoch_utc_ns < self.earliest_epoch_utc_ns:
-            raise ValueError("epoch bounds are inverted")
+        _relative_seconds(
+            self.maximum_epoch_age_s,
+            "maximum_epoch_age_s",
+            allow_zero=False,
+        )
+        _relative_seconds(
+            self.maximum_future_skew_s,
+            "maximum_future_skew_s",
+            allow_zero=True,
+        )
 
 
 @dataclass(frozen=True)
@@ -126,8 +141,13 @@ class TLEValidator:
             raise ValueError("validation policy references must be unique")
 
     def validate(
-        self, candidate: EphemerisSnapshotCandidate, policy_ref: ArtifactRef
+        self,
+        candidate: EphemerisSnapshotCandidate,
+        policy_ref: ArtifactRef,
+        *,
+        retrieval_completed_utc_ns: UtcNs,
     ) -> ValidationResult:
+        require_utc_ns(retrieval_completed_utc_ns, "retrieval_completed_utc_ns")
         try:
             policy = self._policies[policy_ref]
         except KeyError as error:
@@ -137,11 +157,30 @@ class TLEValidator:
             reasons.append("satellite_count_below_minimum")
         if candidate.satellite_count > policy.maximum_satellites:
             reasons.append("satellite_count_above_maximum")
-        if candidate.element_epoch_min_utc_ns < policy.earliest_epoch_utc_ns:
+        if (
+            int(retrieval_completed_utc_ns) - int(candidate.element_epoch_min_utc_ns)
+            > policy.maximum_epoch_age_s * _NS_PER_SECOND
+        ):
             reasons.append("element_epoch_too_old")
-        if candidate.element_epoch_max_utc_ns > policy.latest_epoch_utc_ns:
+        if (
+            int(candidate.element_epoch_max_utc_ns) - int(retrieval_completed_utc_ns)
+            > policy.maximum_future_skew_s * _NS_PER_SECOND
+        ):
             reasons.append("element_epoch_too_new")
         return ValidationResult(not reasons, policy_ref, tuple(reasons))
+
+
+def _relative_seconds(value: object, field: str, *, allow_zero: bool) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{field} must be an integer")
+    minimum = 0 if allow_zero else 1
+    if not minimum <= value <= _MAX_RELATIVE_EPOCH_BOUND_S:
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValueError(
+            f"{field} must be {qualifier} and at most "
+            f"{_MAX_RELATIVE_EPOCH_BOUND_S} seconds"
+        )
+    return value
 
 
 def parse_tle_catalog(raw: bytes) -> tuple[NormalizedTLE, ...]:

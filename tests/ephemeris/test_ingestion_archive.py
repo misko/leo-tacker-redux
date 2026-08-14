@@ -23,6 +23,7 @@ from leo_flow.analysis.ephemeris.normalization import (
     TLECatalogNormalizer,
     TLEValidationPolicy,
     TLEValidator,
+    parse_tle_catalog,
 )
 from leo_flow.analysis.ephemeris.providers import (
     HttpResponse,
@@ -32,6 +33,7 @@ from leo_flow.contracts.core import (
     ArtifactRef,
     EphemerisRetrievalId,
     RecordingId,
+    SchemaRef,
     UtcNs,
 )
 from leo_flow.contracts.ephemeris import (
@@ -47,8 +49,8 @@ from ._fixtures import tle
 
 
 class Clock:
-    def __init__(self) -> None:
-        self.value = 1_721_177_000_000_000_000
+    def __init__(self, initial_utc_ns: int = 1_721_177_000_000_000_000) -> None:
+        self.value = initial_utc_ns
 
     def __call__(self) -> int:
         self.value += 1
@@ -70,7 +72,13 @@ class Transport:
         )
 
 
-def make_service(tmp_path, body: bytes, *, minimum_satellites: int = 1):
+def make_service(
+    tmp_path,
+    body: bytes,
+    *,
+    minimum_satellites: int = 1,
+    clock_start_utc_ns: int = 1_721_177_000_000_000_000,
+):
     blobs = FileSystemBlobStore(tmp_path / "cas")
     raw_archive = CasRawEphemerisArchive(blobs)
     normalized_archive = CasNormalizedEphemerisArchive(blobs)
@@ -78,9 +86,13 @@ def make_service(tmp_path, body: bytes, *, minimum_satellites: int = 1):
     transport = Transport(body)
     catalog = InMemoryEphemerisSnapshotCatalog()
     parser = ArtifactRef("tle-parser-v1", digest("parser"))
-    validation = ArtifactRef("tle-validation-v1", digest("validation"))
+    validation = ArtifactRef(
+        "tle-validation-v1",
+        digest("validation"),
+        SchemaRef("org.leo-flow.tle-validation-policy"),
+    )
     service = EphemerisIngestionService(
-        HuggingFaceRetriever(transport, raw_archive, Clock()),
+        HuggingFaceRetriever(transport, raw_archive, Clock(clock_start_utc_ns)),
         TLECatalogNormalizer(
             blobs,
             normalized_archive,
@@ -94,8 +106,8 @@ def make_service(tmp_path, body: bytes, *, minimum_satellites: int = 1):
                     validation,
                     minimum_satellites,
                     100_000,
-                    UtcNs(1_600_000_000_000_000_000),
-                    UtcNs(2_000_000_000_000_000_000),
+                    31 * 24 * 60 * 60,
+                    31 * 24 * 60 * 60,
                 ),
             )
         ),
@@ -152,6 +164,38 @@ def test_retrieval_id_is_idempotent_without_second_network_call(tmp_path) -> Non
     with pytest.raises(ValueError, match="different request"):
         service.acquire(changed)
     assert transport.calls == 1
+
+
+def test_relative_policy_remains_valid_across_widely_separated_retrievals(
+    tmp_path,
+) -> None:
+    for index, epoch in enumerate(("24200.50000000", "25200.50000000")):
+        body = tle(epoch=epoch)
+        element_epoch = int(parse_tle_catalog(body)[0].epoch_utc_ns)
+        service, _, _, _ = make_service(
+            tmp_path / str(index),
+            body,
+            clock_start_utc_ns=element_epoch - 2,
+        )
+        archived = service.acquire(request(f"ephret_long_running_{index}"))
+        assert int(archived.snapshot.retrieved_at_utc_ns) == element_epoch
+        assert archived.snapshot.validation.valid
+
+
+def test_retrieval_relative_provenance_is_deterministic(tmp_path) -> None:
+    first_service, _, first_blobs, _ = make_service(tmp_path / "first", tle())
+    second_service, _, second_blobs, _ = make_service(tmp_path / "second", tle())
+
+    first = first_service.acquire(request("ephret_deterministic"))
+    second = second_service.acquire(request("ephret_deterministic"))
+
+    assert first.snapshot == second.snapshot
+    assert first.provenance_object_ref.digest == second.provenance_object_ref.digest
+    with first_blobs.open(first.provenance_object_ref) as first_stream:
+        first_bytes = first_stream.read()
+    with second_blobs.open(second.provenance_object_ref) as second_stream:
+        second_bytes = second_stream.read()
+    assert first_bytes == second_bytes
 
 
 def test_invalid_candidate_preserves_raw_but_is_not_published(tmp_path) -> None:

@@ -101,7 +101,9 @@ class EphemerisIngestionService:
                 "normalized candidate differs from requested provider/scope"
             )
         validation = self._validator.validate(
-            candidate, self._config.validation_policy_ref
+            candidate,
+            self._config.validation_policy_ref,
+            retrieval_completed_utc_ns=retrieval.completed_utc_ns,
         )
         if not validation.valid:
             raise InvalidEphemerisCandidateError(validation.reason_codes)
