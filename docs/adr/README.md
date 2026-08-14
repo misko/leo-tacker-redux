@@ -33,3 +33,4 @@ golden fixtures that change.
 - [0028: Queryable retention and fenced garbage collection](0028-queryable-retention-and-fenced-gc.md)
 - [0029: Explicit read-in-place legacy recording registration](0029-legacy-recording-reader.md)
 - [0030: Operator storage-capacity qualification](0030-operator-storage-capacity-qualification.md)
+- [0033: Fail-closed release qualification evidence](0033-fail-closed-release-qualification-evidence.md)
