@@ -155,6 +155,8 @@ def _evaluation_payload(
             {
                 "method_id": method.method_id,
                 "split": method.split,
+                "threshold": method.threshold,
+                "score_semantics": method.score_semantics,
                 "coverage": {
                     "feature_set_count": method.feature_set_count,
                     "feature_set_present_count": method.feature_set_present_count,

@@ -72,6 +72,8 @@ def test_evaluation_route_has_stable_bounded_schema_for_both_identities() -> Non
             {
                 "method_id": "energy@1",
                 "split": split,
+                "threshold": 2.5,
+                "score_semantics": "power",
                 "coverage": {
                     "feature_set_count": 2,
                     "feature_set_present_count": 2,

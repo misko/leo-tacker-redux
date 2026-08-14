@@ -76,7 +76,8 @@ def test_dashboard_source_has_no_filesystem_scan_or_scientific_thresholding() ->
         "rglob(",
         "glob(",
         "/mnt/",
-        "threshold",
+        "apply_threshold_rule",
+        "evaluate_detectors",
         "false_alarm",
         "tle",
     )

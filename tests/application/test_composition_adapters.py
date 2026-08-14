@@ -31,18 +31,22 @@ from leo_flow.application import (
 )
 from leo_flow.contracts.capture import ActivityKind
 from leo_flow.contracts.core import (
+    DetectorEvaluationId,
     Digest,
+    EvaluationRunId,
     ModelRunId,
     ModelSnapshotId,
     UtcNs,
     canonical_json_bytes,
 )
+from leo_flow.contracts.evaluation import DetectorEvaluationRef, DetectorEvaluationView
 from leo_flow.contracts.model import (
     ModelApproval,
     ModelSnapshotRef,
 )
 from leo_flow.contracts.ports import ModelPublisher, ModelReleasePublisher
 from leo_flow.contracts.storage import ObjectRef
+from leo_flow.dashboard import JsonRequest
 
 APPLICATION = Path(__file__).resolve().parents[2] / "src" / "leo_flow" / "application"
 
@@ -63,6 +67,36 @@ def fitted_model():
         HardwareReader(hardware_ref, hardware_snapshot),
     )
     return request, bundle, dwell, first[1]
+
+
+def detector_evaluation() -> DetectorEvaluationView:
+    digest = Digest.sha256(b"application-evaluation")
+    report = ObjectRef(
+        digest,
+        32,
+        "application/json",
+        "detector-evaluation-report-v0.1",
+        f"cas:sha256:{digest.value}",
+    )
+    return DetectorEvaluationView(
+        DetectorEvaluationRef(
+            DetectorEvaluationId(f"eval_{digest.value}"),
+            EvaluationRunId("erun_application"),
+            digest,
+            report,
+        ),
+        "dataset_application",
+        Digest.sha256(b"dataset"),
+        Digest.sha256(b"membership"),
+        "rule_application",
+        Digest.sha256(b"rule"),
+        "dataset_train",
+        "train",
+        0,
+        0,
+        (),
+        (),
+    )
 
 
 def test_model_adapter_structurally_satisfies_both_frozen_publication_ports() -> None:
@@ -219,6 +253,51 @@ def test_projection_rejects_orphans_and_release_before_draft_publication() -> No
         )
     projections.project_model(bundle, model_ref, release=release)
     assert projections.repository().model_snapshot("current").parameter_count == 1
+
+
+def test_projection_retains_evaluation_for_exact_id_and_run_queries() -> None:
+    projections = DashboardProjectionStore()
+    view = detector_evaluation()
+
+    projections.project_evaluation(view)
+    projections.project_evaluation(view)
+
+    repository = projections.repository()
+    assert repository.detector_evaluation(str(view.ref.evaluation_id)) == view
+    assert repository.detector_evaluation(str(view.ref.run_id)) == view
+    response = projections.json_application().handle(
+        JsonRequest("GET", f"/api/evaluations/{view.ref.evaluation_id}", {})
+    )
+    assert response.status == 200
+    assert str(view.ref.evaluation_id).encode() in response.body
+
+
+def test_projection_rejects_conflicting_evaluation_and_run_identities() -> None:
+    projections = DashboardProjectionStore()
+    view = detector_evaluation()
+    projections.project_evaluation(view)
+
+    changed = replace(view, warnings=("changed",))
+    with pytest.raises(ProjectionInputError, match="evaluation ID"):
+        projections.project_evaluation(changed)
+
+    other_digest = Digest.sha256(b"other-application-evaluation")
+    other_object = replace(
+        view.ref.report_object,
+        digest=other_digest,
+        locator=f"cas:sha256:{other_digest.value}",
+    )
+    same_run = replace(
+        view,
+        ref=replace(
+            view.ref,
+            evaluation_id=DetectorEvaluationId(f"eval_{other_digest.value}"),
+            report_digest=other_digest,
+            report_object=other_object,
+        ),
+    )
+    with pytest.raises(ProjectionInputError, match="run ID"):
+        projections.project_evaluation(same_run)
 
 
 def imported_modules(path: Path) -> set[str]:

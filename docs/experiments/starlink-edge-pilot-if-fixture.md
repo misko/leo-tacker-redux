@@ -2,6 +2,52 @@
 
 Status: offline generator qualified; conducted TX adapter not yet implemented
 
+## Closed-loop software E2E
+
+`tests/integration/test_starlink_closed_loop_e2e.py` now composes the real
+module boundaries into one deterministic, hardware-free experiment:
+
+| Stage | Evidence exercised |
+|---|---|
+| Generate | Three frozen backgrounds; one null and −12/−3/+9 dB nominal RX1 positives per background; both edges, inner/full pilot sets, three seeds, CFO, and paired-RX gain/phase/delay/noise; achieved SNR for both receivers is reported from fixture truth |
+| Scan | The production eight-tuning center/order/rate/bandwidth geometry through `PlanCaptureEngine` and the metadata-aware V5 fake; 4,096 samples per segment are explicitly a fast test arm, not the production 262,144-sample duration |
+| Store | SigMF local pair, verified V5 continuity, restart-safe spool publication, exact segment hashes, recording CAS objects, and a separate canonical truth object |
+| Analyze | Typed recording-analysis job plus all three `IndependentDetectorSuite` methods; truth is absent from analysis dependencies |
+| Carve | Byte-level background lineage is verified before related null/injections enter one split group; three groups are assigned, in time order, to TRAIN, VALIDATION, and LOCKED_TEST |
+| Calibrate | Per-recording maxima from TRAIN only; balanced-accuracy selection with a deterministic higher-threshold tie break; rule identity binds exact training FeatureSets, labels, groups, methods, and policy |
+| Evaluate | Durable recording-level confusion, segment-level false-alarm/miss denominators at the unchanged recording-calibrated rule, per-SNR target detection, firing covariance/phi, and coded-pilot frequency-support error; held-out +9 dB paired coherence must materially exceed its exact matched null |
+| Report | Canonical evaluation and E2E summary objects in CAS, compact evaluation projection, and a successful `/api/evaluations/{eval_id}` dashboard response |
+
+The whole pipeline runs twice and must reproduce the dataset digest, threshold
+rule, evaluation digest/reference, summary bytes, and dashboard bytes exactly.
+Run it with:
+
+```text
+.venv/bin/python -m pytest \
+  tests/integration/test_starlink_closed_loop_e2e.py -q
+```
+
+The test deliberately reports detector failures as measurements rather than
+requiring every method to look good. It asserts provenance, denominators,
+frequency-support bounds, persistence, and reproducibility—not a desired
+accuracy number. The 12 scans contain only three independent background groups,
+and their 96 segment windows are not independent statistical trials.
+
+Plan and recording IDs are opaque case numbers. Truth, signal presence, and
+SNR remain only in the separately stored truth/control map and never become
+analyzer dependencies or manifest identifiers.
+
+The test reconstructs the filesystem CAS adapter and reopens recording, truth,
+evaluation, and summary objects from their exact references. Its catalogs are
+in-memory semantic fakes; PostgreSQL catalog durability, atomicity, and
+read-only dashboard roles are covered by the separate PostgreSQL adapter
+integration suite rather than hidden behind this hardware-free test.
+
+The coded coefficients change every OFDM symbol. Therefore the rectangular
+whole-segment coarse FFT is checked against the occupied support around the
+nearest injected pilot center (half a 234,375 Hz subcarrier plus one FFT bin),
+not misrepresented as a one-bin tone-center or CFO estimate.
+
 ## Purpose and boundary
 
 This fixture gives detector development known digital truth while preserving

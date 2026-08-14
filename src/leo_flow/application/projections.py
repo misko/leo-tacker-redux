@@ -9,6 +9,7 @@ from leo_flow.contracts.dashboard import (
     RecordingSummary,
     StorageHealth,
 )
+from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.features import FeatureSetBundle
 from leo_flow.contracts.model import ModelRelease, ModelSnapshotBundle, ModelSnapshotRef
 from leo_flow.dashboard import (
@@ -33,6 +34,8 @@ class DashboardProjectionStore:
         self._activities: list[ActivityProjection] = []
         self._features: list[FeatureProjection] = []
         self._models: list[ModelProjection] = []
+        self._evaluations: dict[str, DetectorEvaluationView] = {}
+        self._evaluation_runs: dict[str, str] = {}
         self._recording_ids: set[str] = set()
         self._published_models: dict[str, ModelSnapshotRef] = {}
         self._next_sequence = 0
@@ -139,6 +142,27 @@ class DashboardProjectionStore:
             )
         )
 
+    def project_evaluation(self, view: DetectorEvaluationView) -> None:
+        """Retain one immutable evaluation under both of its exact identities."""
+
+        evaluation_id = str(view.ref.evaluation_id)
+        run_id = str(view.ref.run_id)
+        existing = self._evaluations.get(evaluation_id)
+        if existing is not None and existing != view:
+            raise ProjectionInputError(
+                "evaluation ID already identifies another published view"
+            )
+        existing_evaluation_id = self._evaluation_runs.get(run_id)
+        if (
+            existing_evaluation_id is not None
+            and existing_evaluation_id != evaluation_id
+        ):
+            raise ProjectionInputError(
+                "evaluation run ID already identifies another published view"
+            )
+        self._evaluations[evaluation_id] = view
+        self._evaluation_runs[run_id] = evaluation_id
+
     def repository(
         self,
         *,
@@ -150,6 +174,7 @@ class DashboardProjectionStore:
             activities=self._activities,
             features=self._features,
             models=self._models,
+            evaluations=tuple(self._evaluations.values()),
             storage_health=storage_health or StorageHealth(False, None, None),
             page_size=page_size,
         )
