@@ -19,3 +19,4 @@ golden fixtures that change.
 - [0014: Authoritative FeatureSet publication](0014-authoritative-feature-set-publication.md)
 - [0015: Atomic fenced recording-analysis publication](0015-atomic-fenced-recording-analysis.md)
 - [0016: Authoritative ModelSnapshot publication and release history](0016-authoritative-model-snapshot-publication.md)
+- [0017: Typed analysis job routing](0017-typed-analysis-job-routing.md)

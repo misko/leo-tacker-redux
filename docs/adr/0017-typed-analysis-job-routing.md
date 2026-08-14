@@ -1,4 +1,4 @@
-# ADR 0016: Typed analysis job routing
+# ADR 0017: Typed analysis job routing
 
 Status: accepted
 
