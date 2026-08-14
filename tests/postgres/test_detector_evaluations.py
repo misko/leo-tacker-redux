@@ -237,13 +237,11 @@ def test_direct_analysis_role_cannot_commit_an_incomplete_summary(
         connection.execute("SET ROLE leo_analysis")
         connection.execute(
             """
-                INSERT INTO object_blob
-                    (digest_algorithm, digest_value, byte_count, media_type,
-                     format_id, locator)
-                VALUES ('sha256', %s, 17, 'application/json',
-                        'detector-evaluation-report-v0.1', 'fixture://incomplete')
-                """,
-            (digest.value,),
+            SELECT register_live_object_blob(
+                'sha256', %s, 17, 'application/json',
+                'detector-evaluation-report-v0.1', %s)
+            """,
+            (digest.value, f"cas:sha256:{digest.value}"),
         )
         connection.execute(
             """

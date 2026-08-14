@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from .object_gc import GarbageCollectionError
+from .orphan_reconciliation import OrphanReconciliationError
 from .postgres_backup import BackupError, create_backup, restore_backup, verify_backup
 
 
@@ -32,6 +33,18 @@ def main(argv: list[str] | None = None) -> int:
     gc.add_argument("--limit", type=int, default=100)
     gc.add_argument("--claim-ttl-seconds", type=int, default=300)
     _connection_arguments(gc)
+    orphan = commands.add_parser("reconcile-orphans")
+    orphan.add_argument("--blob-root", required=True, type=Path)
+    orphan.add_argument("--after")
+    orphan.add_argument("--limit", type=int, default=100)
+    orphan.add_argument("--scan-budget", type=int, default=100_000)
+    orphan.add_argument("--minimum-age-seconds", type=int, default=86_400)
+    orphan.add_argument(
+        "--delete",
+        action="store_true",
+        help="enable fenced deletion; default is report-only",
+    )
+    _connection_arguments(orphan)
     args = parser.parse_args(argv)
     payload: dict[str, object]
     try:
@@ -85,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
                 )
                 return 4
-        else:
+        elif args.command == "gc-objects":
             from leo_flow.maintenance.filesystem_gc import (
                 MaintenanceFileSystemBlobDeleter,
             )
@@ -115,7 +128,55 @@ def main(argv: list[str] | None = None) -> int:
                     for result in results
                 ],
             }
-    except (BackupError, GarbageCollectionError):
+        else:
+            from leo_flow.maintenance.filesystem_orphans import (
+                FileSystemCasInventory,
+                MaintenanceOrphanFileDeleter,
+            )
+            from leo_flow.maintenance.orphan_reconciliation import (
+                reconcile_unregistered_objects,
+            )
+            from leo_flow.maintenance.postgres_objects import (
+                service_connection_factory,
+            )
+            from leo_flow.maintenance.postgres_orphans import (
+                PostgresOrphanReconciliationCatalog,
+            )
+
+            try:
+                with FileSystemCasInventory(
+                    args.blob_root, scan_budget=args.scan_budget
+                ) as inventory:
+                    orphan_report = reconcile_unregistered_objects(
+                        inventory,
+                        PostgresOrphanReconciliationCatalog(
+                            service_connection_factory(args.service, args.service_file)
+                        ),
+                        after=args.after,
+                        limit=args.limit,
+                        minimum_age_seconds=args.minimum_age_seconds,
+                        deleter=(
+                            MaintenanceOrphanFileDeleter(inventory)
+                            if args.delete
+                            else None
+                        ),
+                    )
+            except Exception as error:
+                raise OrphanReconciliationError from error
+            payload = {
+                "event": "orphan_reconciliation_complete",
+                "report_only": orphan_report.report_only,
+                "next_cursor": orphan_report.next_cursor,
+                "results": [
+                    {
+                        "key": result.key,
+                        "category": result.category.value,
+                        "outcome": result.outcome,
+                    }
+                    for result in orphan_report.results
+                ],
+            }
+    except (BackupError, GarbageCollectionError, OrphanReconciliationError):
         sys.stderr.write('{"event":"maintenance_failed"}\n')
         return 3
     sys.stdout.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")

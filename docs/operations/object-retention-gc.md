@@ -50,3 +50,33 @@ maintenance logs for infrastructure diagnostics.
 - Unregistered leftover bytes are acceptable and remain visible to a separate
   storage reconciliation process; missing bytes behind a live reference are
   never acceptable.
+
+## Unregistered CAS leaves
+
+Catalog GC cannot see a writer that crashed after durable CAS publication but
+before `object_blob` registration. Reconcile those leaves only through the
+maintenance command; capture, analysis, and dashboard must never inventory the
+CAS root.
+
+Run one bounded report-only page first:
+
+```console
+leo-flow-maintenance reconcile-orphans \
+  --blob-root /srv/leo/cas \
+  --service leo_maintenance \
+  --service-file /run/secrets/pg_service.conf \
+  --limit 100 \
+  --scan-budget 100000 \
+  --minimum-age-seconds 86400
+```
+
+Pass the returned `next_cursor` as `--after` for the next deterministic page.
+The database records first observation using its own clock; therefore the first
+run reports new leaves but cannot delete them. Re-run after the full grace
+period. Add `--delete` only after reviewing the classifications. Without that
+flag no deletion adapter is constructed.
+
+`corrupt_name` is audit-only. `in_flight` is either catalog GC or a durable
+orphan claim. Interrupted orphan claims are resumed before new inventory and
+remain registration-fenced until exact deletion completes. Do not edit claim
+rows, infer policy from paths or mtimes, or manually unlink claimed objects.

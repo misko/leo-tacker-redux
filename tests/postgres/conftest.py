@@ -99,6 +99,7 @@ def postgres_dsn() -> str:
             "0011_recording_hardware_link.sql",
             "0012_detector_evaluation_catalog.sql",
             "0013_object_retention_gc.sql",
+            "0014_unregistered_object_reconciliation.sql",
         )
         yield dsn
     finally:
@@ -116,7 +117,8 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE object_gc_attempt, object_retention_assignment,
+            TRUNCATE object_orphan_event, object_orphan_observation,
+                     object_gc_attempt, object_retention_assignment,
                      object_retention_policy,
                      detector_evaluation_method_summary,
                      detector_evaluation_report,
