@@ -22,7 +22,7 @@ from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import JobLeaseRepository
 
 from .catalog import ArchivedEphemerisSnapshot
-from .scheduling import EphemerisRetryPolicy
+from .scheduling import EphemerisRetryPolicy, FailureDisposition
 
 
 class EphemerisPreparer(Protocol):
@@ -69,14 +69,26 @@ class EphemerisRetrievalWorker:
                 now_utc_ns=UtcNs(self._now()),
             )
             # Store only a bounded policy reason code, never exception text or
-            # provider credentials.
-            self._jobs.fail(
-                lease.job_id,
-                lease.lease_token,
-                lease.lease_generation,
-                decision.reason_code,
-                decision.retry_at_utc_ns,
-            )
+            # provider credentials. Terminal dispositions are parked rather
+            # than assigned an artificial retry timestamp.
+            if decision.disposition is FailureDisposition.RETRY:
+                retry_at_utc_ns = decision.retry_at_utc_ns
+                if retry_at_utc_ns is None:
+                    raise RuntimeError("retry decision requires an exact retry time")
+                self._jobs.fail(
+                    lease.job_id,
+                    lease.lease_token,
+                    lease.lease_generation,
+                    decision.reason_code,
+                    retry_at_utc_ns,
+                )
+            else:
+                self._jobs.park(
+                    lease.job_id,
+                    lease.lease_token,
+                    lease.lease_generation,
+                    decision.reason_code,
+                )
             raise
         result_ref = ArtifactRef(
             str(archived.snapshot.snapshot_id),
