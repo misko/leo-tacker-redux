@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schemas/storage-capacity-v1.json",
+  "title": "LEO Flow storage capacity maintenance configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "fail_on", "thresholds", "roots"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "fail_on": {"enum": ["warn", "critical"]},
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warn_free_bytes", "critical_free_bytes", "warn_free_fraction", "critical_free_fraction"],
+      "properties": {
+        "warn_free_bytes": {"type": "integer", "minimum": 0},
+        "critical_free_bytes": {"type": "integer", "minimum": 0},
+        "warn_free_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "critical_free_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "warn_seconds_to_full": {"type": "number", "minimum": 0},
+        "critical_seconds_to_full": {"type": "number", "minimum": 0}
+      }
+    },
+    "roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "pattern": "^/"},
+          "estimated_bytes_per_second": {"type": "number", "minimum": 0}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=LEO Flow operator storage-capacity check
+
+[Service]
+Type=oneshot
+ExecStart=/opt/leo-flow/bin/python -m leo_flow.maintenance.capacity --config /etc/leo-flow/storage-capacity.json
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes

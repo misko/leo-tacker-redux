@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "fail_on": "warn",
+  "thresholds": {
+    "warn_free_bytes": 107374182400,
+    "critical_free_bytes": 53687091200,
+    "warn_free_fraction": 0.2,
+    "critical_free_fraction": 0.1,
+    "warn_seconds_to_full": 86400,
+    "critical_seconds_to_full": 21600
+  },
+  "roots": [
+    {
+      "name": "capture-spool-example",
+      "path": "/srv/leo-flow/capture-spool",
+      "estimated_bytes_per_second": 1048576
+    },
+    {
+      "name": "capture-state-example",
+      "path": "/srv/leo-flow/capture-state"
+    },
+    {
+      "name": "cas-example",
+      "path": "/srv/leo-flow/cas"
+    },
+    {
+      "name": "backup-example",
+      "path": "/srv/leo-flow/backups"
+    }
+  ]
+}
