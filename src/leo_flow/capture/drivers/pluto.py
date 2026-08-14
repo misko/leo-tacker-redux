@@ -54,6 +54,7 @@ HealthReader: TypeAlias = Callable[[PlutoDevice], Mapping[str, int | bool]]
 MetadataReader: TypeAlias = Callable[
     [PlutoDevice, int, int], tuple[object, RefillMetadata]
 ]
+TimeoutSetter: TypeAlias = Callable[[PlutoDevice, int], None]
 
 V5_FIRMWARE_RELEASE = "v0.38-plutoplus-spf-libiio-metadata-v5"
 V5_FIRMWARE_COMMIT = "d7c87a9a28094ee6f0b23cb47df9ff737b5a69d8"
@@ -78,6 +79,7 @@ class PlutoRadioConfig:
     firmware_commit: str = V5_FIRMWARE_COMMIT
     metadata_protocol: str = "spf-radio-metadata-v3"
     metadata_capability: str = "iio,buffer-metadata=1"
+    io_timeout_ms: int = 5_000
 
     def __post_init__(self) -> None:
         if not self.uri or not self.expected_serial:
@@ -89,6 +91,8 @@ class PlutoRadioConfig:
             raise ValueError("Pluto capture requires two distinct receiver channels")
         if self.block_samples <= 0:
             raise ValueError("block_samples must be positive")
+        if self.io_timeout_ms <= 0:
+            raise ValueError("io_timeout_ms must be positive")
         if not self.agc_mode:
             raise ValueError("agc_mode cannot be empty")
         if not all(
@@ -123,6 +127,7 @@ class PlutoPairedRadio:
         serial_reader: SerialReader | None = None,
         health_reader: HealthReader | None = None,
         metadata_reader: MetadataReader | None = None,
+        timeout_setter: TimeoutSetter | None = None,
         attested_provenance: CaptureProvenance | None = None,
         clock: CaptureClock | None = None,
     ) -> None:
@@ -132,9 +137,11 @@ class PlutoPairedRadio:
         self._serial_reader = serial_reader or _default_serial_reader
         self._health_reader = health_reader or _default_health_reader
         self._metadata_reader = metadata_reader
+        self._timeout_setter = timeout_setter or set_libiio_timeout
         self._attested_provenance = attested_provenance
         self._clock = clock or SystemCaptureClock()
         self._device: PlutoDevice | None = None
+        self._closed = False
 
     @property
     def radio_id(self) -> RadioId:
@@ -160,6 +167,28 @@ class PlutoPairedRadio:
             metadata_protocol=self.config.metadata_protocol,
             capability=capability,
         )
+
+    def close(self) -> None:
+        """Release metadata and receive buffers once; subsequent use is rejected."""
+
+        if self._closed:
+            return
+        self._closed = True
+        device, self._device = self._device, None
+        failures: list[BaseException] = []
+        try:
+            self._close_metadata_reader()
+        except BaseException as error:  # noqa: BLE001 - close every owned resource
+            failures.append(error)
+        if device is not None:
+            try:
+                _destroy_receive_buffer(device)
+            except BaseException as error:  # noqa: BLE001 - preserve first close failure
+                failures.append(error)
+        if failures:
+            raise RadioDisconnectedError(
+                f"Pluto shutdown failed: {type(failures[0]).__name__}"
+            ) from failures[0]
 
     def acquire_segment_with_metadata(
         self,
@@ -355,6 +384,8 @@ class PlutoPairedRadio:
         )
 
     def _connect(self) -> PlutoDevice:
+        if self._closed:
+            raise RadioDisconnectedError("closed Pluto radio cannot acquire samples")
         if self._device is None:
             try:
                 device = self._device_factory(self.config.uri)
@@ -362,15 +393,26 @@ class PlutoPairedRadio:
                 raise RadioDisconnectedError(
                     f"cannot connect to Pluto at {self.config.uri}: {error}"
                 ) from error
-            serial = self._serial_reader(device)
-            if serial != self.config.expected_serial:
-                raise RadioConfigurationError(
-                    f"Pluto serial mismatch: expected {self.config.expected_serial}, got {serial}"
-                )
-            if not callable(getattr(device, "_rx_buffered_data", None)):
-                raise RadioConfigurationError(
-                    "pyadi device lacks native paired CI16 refill capability"
-                )
+            try:
+                self._timeout_setter(device, self.config.io_timeout_ms)
+                serial = self._serial_reader(device)
+                if serial != self.config.expected_serial:
+                    raise RadioConfigurationError(
+                        "Pluto serial mismatch: expected "
+                        f"{self.config.expected_serial}, got {serial}"
+                    )
+                if not callable(getattr(device, "_rx_buffered_data", None)):
+                    raise RadioConfigurationError(
+                        "pyadi device lacks native paired CI16 refill capability"
+                    )
+            except RadioConfigurationError:
+                _destroy_receive_buffer(device)
+                raise
+            except (OSError, RuntimeError) as error:
+                _destroy_receive_buffer(device)
+                raise RadioDisconnectedError(
+                    f"Pluto I/O timeout configuration failed: {error}"
+                ) from error
             self._device = device
         return self._device
 
@@ -381,9 +423,8 @@ class PlutoPairedRadio:
             )
 
     def _configure(self, device: PlutoDevice, request: SegmentRequest) -> None:
-        destroy_buffer = getattr(device, "rx_destroy_buffer", None)
-        if callable(destroy_buffer):
-            destroy_buffer()
+        self._close_metadata_reader()
+        _destroy_receive_buffer(device)
         device.rx_enabled_channels = list(self.config.physical_rx_channels)
         device.rx_buffer_size = self.config.block_samples
         if hasattr(device, "rx_output_type"):
@@ -401,6 +442,11 @@ class PlutoPairedRadio:
             else:
                 setattr(device, gain_mode_name, self.config.agc_mode)
         self._validate_readback(device, request)
+
+    def _close_metadata_reader(self) -> None:
+        close = getattr(self._metadata_reader, "close", None)
+        if callable(close):
+            close()
 
     def _validate_readback(self, device: PlutoDevice, request: SegmentRequest) -> None:
         _within(
@@ -515,6 +561,26 @@ def _lazy_pluto_factory(uri: str) -> PlutoDevice:
             "pyadi-iio does not provide the AD9361 device adapter"
         ) from error
     return cast(PlutoDevice, device_type(uri=uri))
+
+
+def set_libiio_timeout(device: PlutoDevice, timeout_ms: int) -> None:
+    """Install the finite timeout used by every subsequent context operation."""
+
+    for name in ("ctx", "_ctx"):
+        context = getattr(device, name, None)
+        setter = getattr(context, "set_timeout", None)
+        if callable(setter):
+            setter(timeout_ms)
+            return
+    raise RadioConfigurationError(
+        "Pluto device does not expose a libiio context timeout"
+    )
+
+
+def _destroy_receive_buffer(device: PlutoDevice) -> None:
+    destroy = getattr(device, "rx_destroy_buffer", None)
+    if callable(destroy):
+        destroy()
 
 
 def _lazy_numpy_interleaver(refill: object, expected_channels: int) -> bytes:

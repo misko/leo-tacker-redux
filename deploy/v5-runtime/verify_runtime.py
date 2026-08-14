@@ -38,7 +38,15 @@ def load_manifest(path: pathlib.Path) -> Mapping[str, Any]:
     manifest = _mapping(value, "manifest")
     if manifest.get("schema") != "leo-flow.v5-runtime/v1":
         raise VerificationError("unsupported runtime manifest schema")
-    for key in ("runtime_id", "firmware", "libiio", "pyadi", "numpy", "spf"):
+    for key in (
+        "runtime_id",
+        "firmware",
+        "libiio",
+        "pyadi",
+        "numpy",
+        "psycopg",
+        "spf",
+    ):
         if key not in manifest:
             raise VerificationError(f"manifest lacks {key}")
     libiio = _mapping(manifest["libiio"], "libiio")
@@ -141,7 +149,8 @@ def verify_runtime(manifest: Mapping[str, Any]) -> Mapping[str, Any]:
             f"libiio backends are incomplete: observed {sorted(observed_backends)!r}, "
             f"required {sorted(required_backends)!r}"
         )
-    for dependency in (pyadi, numpy):
+    psycopg = _mapping(manifest["psycopg"], "psycopg")
+    for dependency in (pyadi, numpy, psycopg):
         name = _string(dependency["distribution"], "distribution")
         expected = _string(dependency["version"], f"{name} version")
         observed = _distribution_version(name)
@@ -149,6 +158,7 @@ def verify_runtime(manifest: Mapping[str, Any]) -> Mapping[str, Any]:
             raise VerificationError(
                 f"{name} version mismatch: observed {observed}, expected {expected}"
             )
+    importlib.import_module("psycopg")
     # The generated binding is installed as pylibiio by the libiio build.
     _distribution_version(
         _string(libiio["python_distribution"], "binding distribution")

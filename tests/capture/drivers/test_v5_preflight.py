@@ -172,8 +172,19 @@ class FakeDevice:
     rx_buffer_size = 0
     rx_output_type = "raw"
 
+    def __init__(self) -> None:
+        self.timeout_calls: list[int] = []
+        self.destroy_calls = 0
+        self._ctx = self
+
+    def set_timeout(self, timeout_ms: int) -> None:
+        self.timeout_calls.append(timeout_ms)
+
     def _rx_buffered_data(self) -> object:
         raise AssertionError("preflight test must not capture")
+
+    def rx_destroy_buffer(self) -> None:
+        self.destroy_calls += 1
 
 
 def config(uri: str = "ip:192.0.2.1") -> PlutoRadioConfig:
@@ -203,6 +214,7 @@ def test_composition_attests_before_returning_radio_and_uses_observed_provenance
 
     def observe_device(seen: object) -> ObservedV5Radio:
         assert seen is device
+        assert device.timeout_calls == [5_000]
         return observed_radio()
 
     caller_claims = replace(
@@ -221,6 +233,7 @@ def test_composition_attests_before_returning_radio_and_uses_observed_provenance
         metadata_reader=unused_metadata_reader,
     )
     assert factory_calls == ["ip:192.0.2.1"]
+    assert device.timeout_calls == [5_000]
     assert radio.capture_provenance.firmware_release == FIRMWARE
     assert radio.capture_provenance.firmware_commit == FIRMWARE_COMMIT
     assert radio.capture_provenance.host_libiio_version == "0.25.c26258b"
@@ -247,3 +260,23 @@ def test_composition_does_not_open_device_when_host_fails() -> None:
             metadata_reader=unused_metadata_reader,
         )
     assert opened is False
+
+
+def test_composition_releases_selected_device_when_radio_observation_fails() -> None:
+    device = FakeDevice()
+
+    def observe_device(_device: object) -> ObservedV5Radio:
+        assert device.timeout_calls == [5_000]
+        raise RuntimeError("radio unavailable")
+
+    with pytest.raises(RuntimeError, match="radio unavailable"):
+        create_attested_v5_radio(
+            config(),
+            expected_runtime=expected_runtime(),
+            expected_radio=expected_radio(),
+            observe_runtime=observed_runtime,
+            observe_radio=observe_device,
+            device_factory=lambda _uri: device,
+            metadata_reader=unused_metadata_reader,
+        )
+    assert device.destroy_calls == 1

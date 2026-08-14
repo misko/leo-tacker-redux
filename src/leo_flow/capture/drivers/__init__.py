@@ -6,6 +6,7 @@ from .spf_v3 import (
     normalize_spf_v3_metadata,
     spf_iio_session_factory,
 )
+from .v5_observers import observe_current_v5_runtime, observe_v5_radio
 from .v5_preflight import (
     ExpectedV5Radio,
     ExpectedV5Runtime,
@@ -30,5 +31,7 @@ __all__ = [
     "attest_v5",
     "create_attested_v5_radio",
     "normalize_spf_v3_metadata",
+    "observe_current_v5_runtime",
+    "observe_v5_radio",
     "spf_iio_session_factory",
 ]

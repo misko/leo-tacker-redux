@@ -25,6 +25,10 @@
     "distribution": "numpy",
     "version": "2.4.6"
   },
+  "psycopg": {
+    "distribution": "psycopg",
+    "version": "3.3.4"
+  },
   "spf": {
     "repository": "https://github.com/misko/spf.git",
     "commit": "c40ee4116546889effd72056115adaaa1bc3fd40",

@@ -42,6 +42,7 @@ class FakePluto:
         self.gain_control_mode_chan1 = "unset"
         self.rx_hardwaregain_chan0 = 0.0
         self.rx_hardwaregain_chan1 = 0.0
+        self._ctx = FakeContext()
 
     def rx_destroy_buffer(self) -> None:
         self.destroy_calls += 1
@@ -54,6 +55,14 @@ class FakePluto:
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class FakeContext:
+    def __init__(self) -> None:
+        self.timeout_calls: list[int] = []
+
+    def set_timeout(self, timeout_ms: int) -> None:
+        self.timeout_calls.append(timeout_ms)
 
 
 class DeviceFactory:
@@ -169,6 +178,52 @@ def test_one_context_and_one_paired_refill_preserve_exact_native_order() -> None
     assert device.rx_enabled_channels == [0, 1]
     assert device.rx_buffer_size == 3
     assert device.rx_output_type == "raw"
+    assert device._ctx.timeout_calls == [5_000]
+
+
+def test_io_timeout_and_shutdown_are_bounded_owned_and_idempotent() -> None:
+    class MetadataReader:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def __call__(self, *_args):  # type: ignore[no-untyped-def]
+            raise AssertionError("metadata capture is not needed")
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    device = FakePluto([refill(0, 3)])
+    metadata_reader = MetadataReader()
+    radio = PlutoPairedRadio(
+        config(io_timeout_ms=731),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=metadata_reader,
+    )
+    radio.acquire_segment(request(2), lambda _data: None)
+    assert device._ctx.timeout_calls == [731]
+    assert metadata_reader.close_calls == 1
+    assert device.destroy_calls == 1
+
+    radio.close()
+    radio.close()
+    assert metadata_reader.close_calls == 2
+    assert device.destroy_calls == 2
+    with pytest.raises(RadioDisconnectedError, match="closed Pluto"):
+        radio.acquire_segment(request(2), lambda _data: None)
+
+
+def test_missing_timeout_capability_fails_closed_and_releases_device() -> None:
+    device = FakePluto([refill(0, 3)])
+    del device._ctx
+    radio = PlutoPairedRadio(
+        config(),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+    )
+    with pytest.raises(RadioConfigurationError, match="context timeout"):
+        radio.acquire_segment(request(2), lambda _data: None)
+    assert device.destroy_calls == 1
 
 
 def test_v5_path_keeps_iq_and_normalized_metadata_associated() -> None:

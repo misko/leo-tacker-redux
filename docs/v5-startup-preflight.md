@@ -4,18 +4,20 @@ Production V5 capture is composed through
 `leo_flow.capture.drivers.create_attested_v5_radio`.  It takes a qualified
 runtime expectation, an expected radio identity, injected host/radio
 observers, a standard libiio device factory, and the SPF V3 metadata reader.
+The packaged production observers are `observe_current_v5_runtime` and
+`observe_v5_radio`. The runtime observer imports and verifies libiio, pyadi,
+SPF, NumPy, and psycopg in the capture process itself and reads that process's
+`/proc/self/maps`. The radio observer reads identity attributes and indexed
+scan elements from the one selected pyadi/libiio context.
 
 The runtime builder owns `deploy/v5-runtime/manifest.json`, schema
 `leo-flow.v5-runtime/v1`.  Capture mirrors its qualified facts into
 `ExpectedV5Runtime`; it does not construct paths or import deployment code.
 The runtime observation provider must report the module and native library
 that the current process actually loaded, not merely files present on disk.
-The runtime verifier's `--json` result maps directly to `ObservedV5Runtime`:
-`manifest_schema` becomes `schema`, `libiio_binding_path` becomes
-`iio_module_path`, `libiio_native_paths` becomes an immutable tuple, and the
-source-commit, backend, pyadi, and SPF fields retain their meanings.  A
-successful verifier result establishes `metadata_buffer_present=True`; a
-failed verifier must never be converted into observations.
+The image verifier remains a build and operator diagnostic. Its subprocess
+result must not be converted into `ObservedV5Runtime`, because its loaded
+libraries are not proof about another process.
 
 Startup order is fail-closed:
 
@@ -25,6 +27,12 @@ Startup order is fail-closed:
 4. Attest V5 firmware, metadata capability, serial, scan mask, paired channel
    count, and native CI16 component order.
 5. Construct the adapter with provenance derived from accepted observations.
+
+After context construction, the adapter installs the configured finite libiio
+I/O timeout before reading identity or tuning. Segment reconfiguration closes
+the prior SPF metadata session before destroying its receive buffer. Shutdown
+closes the SPF session and pyadi receive buffer exactly once; capture after
+shutdown is rejected.
 
 The low-level `PlutoPairedRadio` constructor remains injectable for tests.  It
 is not the production startup boundary.

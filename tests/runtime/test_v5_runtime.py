@@ -37,6 +37,10 @@ def test_manifest_has_the_qualified_immutable_sources() -> None:
         "python_symbol": "iio.MetadataBuffer",
     }
     assert manifest["pyadi"]["version"] == "0.0.21"
+    assert manifest["psycopg"] == {
+        "distribution": "psycopg",
+        "version": "3.3.4",
+    }
     assert manifest["spf"]["commit"] == "c40ee4116546889effd72056115adaaa1bc3fd40"
     assert manifest["supported_transports"] == ["ip", "usb"]
     assert manifest["unsupported_transports"] == ["direct-ip", "direct-usb"]
@@ -83,6 +87,8 @@ def test_image_installs_generated_binding_after_pyadi_without_dependencies() -> 
     assert "LD_LIBRARY_PATH" not in dockerfile
     assert "PYTHONPATH" not in dockerfile
     assert "pip check" in dockerfile
+    assert '"psycopg[binary]==${PSYCOPG_VERSION}"' in dockerfile
+    assert "import psycopg" in dockerfile
     assert "FROM runtime AS dependency-refresh-test" in dockerfile
     assert "--force-reinstall pylibiio==0.25" in dockerfile
     assert "ordinary PyPI pylibiio escaped runtime verification" in dockerfile

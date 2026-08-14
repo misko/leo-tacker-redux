@@ -7,6 +7,10 @@ pyadi-iio 0.0.21, and only the three SPF modules needed to parse metadata and
 fit sample time. None are loaded from `/tmp`, a checkout, `PYTHONPATH`, or the
 host linker search path.
 
+The image also pins psycopg 3.3.4 so capture publication can register an
+atomic recording pair in PostgreSQL. Verification imports psycopg and checks
+its installed distribution version without opening a database connection.
+
 The reviewed inputs and installed paths are recorded in
 `deploy/v5-runtime/manifest.json`. `verify_runtime.py` checks the binding
 version and `MetadataBuffer`, the native library's loaded path, Python package

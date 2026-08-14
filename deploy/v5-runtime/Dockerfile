@@ -49,6 +49,7 @@ RUN mkdir -p /minimal/spf/direct_radio && \
 FROM ${DEBIAN_IMAGE} AS runtime
 ARG PYADI_VERSION=0.0.21
 ARG NUMPY_VERSION=2.4.6
+ARG PSYCOPG_VERSION=3.3.4
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates libaio1 libusb-1.0-0 libxml2 python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
@@ -62,7 +63,7 @@ COPY . /src/leo-tracker-redux
 RUN printf '%s\n' /opt/leo-v5/lib /opt/leo-v5/lib64 \
       > /etc/ld.so.conf.d/leo-v5.conf && ldconfig && \
     python3 -m pip install --no-cache-dir --break-system-packages \
-      "numpy==${NUMPY_VERSION}" && \
+      "numpy==${NUMPY_VERSION}" "psycopg[binary]==${PSYCOPG_VERSION}" && \
     python3 -m pip install --no-cache-dir --break-system-packages --no-deps \
       "pyadi-iio==${PYADI_VERSION}" && \
     python3 -m pip install --no-cache-dir --break-system-packages --no-deps \
@@ -72,6 +73,7 @@ RUN printf '%s\n' /opt/leo-v5/lib /opt/leo-v5/lib64 \
     chmod 0555 /opt/leo-v5/bin/verify-runtime \
       /opt/leo-v5/bin/runtime-entrypoint && \
     /opt/leo-v5/bin/verify-runtime && \
+    python3 -c 'import psycopg; assert psycopg.__version__ == "3.3.4"' && \
     python3 -m pip check
 
 FROM runtime AS dependency-refresh-test

@@ -187,3 +187,26 @@ def test_reader_rejects_nonintegral_or_out_of_range_iq() -> None:
     )
     with pytest.raises(RefillError, match="represented exactly"):
         reader(Device(), 0, 0)
+
+
+def test_reader_close_is_idempotent_even_when_session_close_fails() -> None:
+    class Session:
+        close_calls = 0
+
+        def open(self) -> None:
+            pass
+
+        def capture(self):  # type: ignore[no-untyped-def]
+            raise AssertionError
+
+        def close(self) -> None:
+            self.close_calls += 1
+            raise OSError("simulated close failure")
+
+    reader = SpfV3MetadataReader(lambda _device, **_kwargs: Session())  # type: ignore[arg-type]
+    reader._session = Session()  # type: ignore[attr-defined]
+    session = reader._session  # type: ignore[attr-defined]
+    with pytest.raises(OSError, match="close failure"):
+        reader.close()
+    reader.close()
+    assert session.close_calls == 1

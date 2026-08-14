@@ -22,6 +22,8 @@ from .pluto import (
     PlutoDevice,
     PlutoPairedRadio,
     PlutoRadioConfig,
+    TimeoutSetter,
+    set_libiio_timeout,
 )
 
 
@@ -309,6 +311,7 @@ def create_attested_v5_radio(
     metadata_reader: MetadataReader,
     interleaver: Interleaver | None = None,
     health_reader: HealthReader | None = None,
+    timeout_setter: TimeoutSetter | None = None,
 ) -> PlutoPairedRadio:
     """Run all startup gates before exposing a production capture device."""
 
@@ -326,16 +329,26 @@ def create_attested_v5_radio(
         raise RadioConfigurationError(
             f"V5 radio observation failed: {error}"
         ) from error
-    observed_radio = observe_radio(device)
-    attestation = attest_v5(
-        uri=config.uri,
-        expected_runtime=expected_runtime,
-        observed_runtime=observed_runtime,
-        expected_radio=expected_radio,
-        observed_radio=observed_radio,
-    )
-    if config.expected_serial != observed_radio.serial:
-        raise RadioConfigurationError("Pluto config serial differs from attested radio")
+    selected_timeout_setter = timeout_setter or set_libiio_timeout
+    try:
+        selected_timeout_setter(device, config.io_timeout_ms)
+        observed_radio = observe_radio(device)
+        attestation = attest_v5(
+            uri=config.uri,
+            expected_runtime=expected_runtime,
+            observed_runtime=observed_runtime,
+            expected_radio=expected_radio,
+            observed_radio=observed_radio,
+        )
+        if config.expected_serial != observed_radio.serial:
+            raise RadioConfigurationError(
+                "Pluto config serial differs from attested radio"
+            )
+    except Exception:
+        destroy = getattr(device, "rx_destroy_buffer", None)
+        if callable(destroy):
+            destroy()
+        raise
     used = False
 
     def attested_device_factory(uri: str) -> PlutoDevice:
@@ -345,12 +358,17 @@ def create_attested_v5_radio(
         used = True
         return device
 
+    def attested_timeout_setter(seen: PlutoDevice, timeout_ms: int) -> None:
+        if seen is not device or timeout_ms != config.io_timeout_ms:
+            raise RadioConfigurationError("attested V5 timeout identity changed")
+
     return PlutoPairedRadio(
         config,
         device_factory=attested_device_factory,
         interleaver=interleaver,
         health_reader=health_reader,
         metadata_reader=metadata_reader,
+        timeout_setter=attested_timeout_setter,
         attested_provenance=attestation.provenance,
     )
 
