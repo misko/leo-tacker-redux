@@ -1,18 +1,16 @@
 """PostgreSQL statements for detector evaluation publication."""
 
 REGISTER_OBJECT_SQL = """
-INSERT INTO object_blob
-    (digest_algorithm, digest_value, byte_count, media_type, format_id, locator)
-VALUES
-    (%(report_digest_algorithm)s, %(report_digest_value)s, %(report_byte_count)s,
+SELECT register_live_object_blob(
+    %(report_digest_algorithm)s, %(report_digest_value)s, %(report_byte_count)s,
      %(report_media_type)s, %(report_format_id)s, %(report_locator)s)
-ON CONFLICT (digest_algorithm, digest_value) DO NOTHING
 """
 
 VERIFY_OBJECT_SQL = """
 SELECT byte_count, media_type, format_id, locator FROM object_blob
 WHERE digest_algorithm = %(report_digest_algorithm)s
   AND digest_value = %(report_digest_value)s
+  AND lifecycle_state = 'live'
 """
 
 VERIFY_DATASET_SQL = """

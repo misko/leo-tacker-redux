@@ -1,12 +1,9 @@
 """PostgreSQL statements for atomic immutable dataset publication."""
 
 REGISTER_OBJECT_SQL = """
-INSERT INTO object_blob
-    (digest_algorithm, digest_value, byte_count, media_type, format_id, locator)
-VALUES
-    (%(digest_algorithm)s, %(digest_value)s, %(byte_count)s,
+SELECT register_live_object_blob(
+    %(digest_algorithm)s, %(digest_value)s, %(byte_count)s,
      %(media_type)s, %(format_id)s, %(locator)s)
-ON CONFLICT DO NOTHING
 """
 
 VERIFY_OBJECT_SQL = """
@@ -14,6 +11,7 @@ SELECT byte_count, media_type, format_id, locator
 FROM object_blob
 WHERE digest_algorithm = %(digest_algorithm)s
   AND digest_value = %(digest_value)s
+  AND lifecycle_state = 'live'
 """
 
 PUBLISH_SNAPSHOT_SQL = """

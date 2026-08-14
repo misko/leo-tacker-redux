@@ -1,12 +1,9 @@
 """SQL for immutable authoritative model snapshots and release history."""
 
 REGISTER_OBJECT_SQL = """
-INSERT INTO object_blob
-    (digest_algorithm, digest_value, byte_count, media_type, format_id, locator)
-VALUES
-    (%(bundle_digest_algorithm)s, %(bundle_digest_value)s, %(bundle_byte_count)s,
+SELECT register_live_object_blob(
+    %(bundle_digest_algorithm)s, %(bundle_digest_value)s, %(bundle_byte_count)s,
      %(bundle_media_type)s, %(bundle_format_id)s, %(bundle_locator)s)
-ON CONFLICT (digest_algorithm, digest_value) DO NOTHING
 """
 
 VERIFY_OBJECT_SQL = """
@@ -14,6 +11,7 @@ SELECT byte_count, media_type, format_id, locator
 FROM object_blob
 WHERE digest_algorithm = %(bundle_digest_algorithm)s
   AND digest_value = %(bundle_digest_value)s
+  AND lifecycle_state = 'live'
 FOR UPDATE
 """
 

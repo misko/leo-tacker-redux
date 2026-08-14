@@ -30,5 +30,6 @@ def test_postgres_recording_read_joins_both_objects_without_update_lock() -> Non
 
     assert "JOIN object_blob AS data" in postgres_sql.GET_RECORDING_SQL
     assert "JOIN object_blob AS metadata" in postgres_sql.GET_RECORDING_SQL
-    assert "ON CONFLICT DO NOTHING" in postgres_sql.REGISTER_OBJECT_SQL
+    assert "register_live_object_blob" in postgres_sql.REGISTER_OBJECT_SQL
+    assert "lifecycle_state = 'live'" in postgres_sql.VERIFY_OBJECT_SQL
     assert "FOR SHARE" not in postgres_sql.VERIFY_OBJECT_SQL

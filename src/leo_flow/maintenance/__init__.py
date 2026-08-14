@@ -5,6 +5,11 @@ from .object_audit import (
     ObjectAuditReport,
     audit_objects,
 )
+from .object_gc import (
+    GarbageCollectionError,
+    GarbageCollectionResult,
+    collect_objects,
+)
 from .postgres_backup import (
     BackupError,
     BackupManifest,
@@ -16,9 +21,12 @@ from .postgres_backup import (
 __all__ = [
     "BackupError",
     "BackupManifest",
+    "GarbageCollectionError",
+    "GarbageCollectionResult",
     "ObjectAuditFailure",
     "ObjectAuditReport",
     "audit_objects",
+    "collect_objects",
     "create_backup",
     "restore_backup",
     "verify_backup",

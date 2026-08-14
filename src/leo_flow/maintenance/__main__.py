@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+from .object_gc import GarbageCollectionError
 from .postgres_backup import BackupError, create_backup, restore_backup, verify_backup
 
 
@@ -26,6 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     audit = commands.add_parser("audit-objects")
     audit.add_argument("--blob-root", required=True, type=Path)
     _connection_arguments(audit)
+    gc = commands.add_parser("gc-objects")
+    gc.add_argument("--blob-root", required=True, type=Path)
+    gc.add_argument("--limit", type=int, default=100)
+    gc.add_argument("--claim-ttl-seconds", type=int, default=300)
+    _connection_arguments(gc)
     args = parser.parse_args(argv)
     payload: dict[str, object]
     try:
@@ -48,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
                 service_file=args.service_file,
             )
             payload = {"event": "restore_verified", "backup_id": manifest.backup_id}
-        else:
+        elif args.command == "audit-objects":
             from leo_flow.maintenance.object_audit import audit_objects
             from leo_flow.maintenance.postgres_objects import (
                 PostgresObjectInventory,
@@ -79,7 +85,37 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
                 )
                 return 4
-    except BackupError:
+        else:
+            from leo_flow.maintenance.filesystem_gc import (
+                MaintenanceFileSystemBlobDeleter,
+            )
+            from leo_flow.maintenance.object_gc import collect_objects
+            from leo_flow.maintenance.postgres_gc import (
+                PostgresGarbageCollectionCatalog,
+            )
+            from leo_flow.maintenance.postgres_objects import (
+                service_connection_factory,
+            )
+
+            results = collect_objects(
+                PostgresGarbageCollectionCatalog(
+                    service_connection_factory(args.service, args.service_file)
+                ),
+                MaintenanceFileSystemBlobDeleter(args.blob_root),
+                limit=args.limit,
+                claim_ttl_seconds=args.claim_ttl_seconds,
+            )
+            payload = {
+                "event": "object_gc_complete",
+                "results": [
+                    {
+                        "object_digest": result.object_digest,
+                        "outcome": result.outcome,
+                    }
+                    for result in results
+                ],
+            }
+    except (BackupError, GarbageCollectionError):
         sys.stderr.write('{"event":"maintenance_failed"}\n')
         return 3
     sys.stdout.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")

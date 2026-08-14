@@ -27,6 +27,7 @@ class PostgresObjectInventory:
                 SELECT digest_algorithm, digest_value, byte_count,
                        media_type, format_id, locator
                 FROM object_blob
+                WHERE lifecycle_state <> 'gc_deleted'
                 ORDER BY digest_algorithm, digest_value
                 """
             ).fetchall()
