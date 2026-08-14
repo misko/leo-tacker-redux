@@ -102,6 +102,7 @@ def test_unimplemented_backfill_fails_closed_with_bounded_reason() -> None:
     snapshot = jobs.snapshot(JobId("job_backfill"))
     assert snapshot.state is JobState.FAILED
     assert snapshot.last_error == EphemerisLinkBackfillUnavailable.REASON
+    assert not router.process_one_job()
     assert not unused_recording.calls
     assert not unused_model.calls
     assert not unused_ephemeris.calls

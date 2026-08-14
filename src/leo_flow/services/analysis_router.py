@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import Protocol
 
+from leo_flow.contracts.core import UtcNs
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import JobLeaseRepository
 
@@ -24,6 +25,9 @@ class EphemerisLinkBackfillUnavailable:
     """Fail one claimed backfill lease with a stable, non-secret reason code."""
 
     REASON = "ephemeris-link-backfill-not-implemented"
+    # PostgreSQL's maximum finite timestamp, so an unavailable capability does
+    # not hot-loop. Enabling it requires an explicit operator requeue.
+    RETRY_AT_UTC_NS = UtcNs(253_402_300_799_000_000_000)
 
     def __init__(self, jobs: JobLeaseRepository) -> None:
         self._jobs = jobs
@@ -38,7 +42,7 @@ class EphemerisLinkBackfillUnavailable:
             lease.lease_token,
             lease.lease_generation,
             self.REASON,
-            None,
+            self.RETRY_AT_UTC_NS,
         )
         raise UnsupportedAnalysisJobError(self.REASON)
 
