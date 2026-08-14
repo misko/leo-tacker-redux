@@ -1,0 +1,14 @@
+{
+  "schema": "org.leo-flow.experimental-tracking-validation",
+  "version": "1.0",
+  "seed": 7319,
+  "sample_count": 18,
+  "sample_period_s": 5.0,
+  "initial_frequency_residual_hz": 18.0,
+  "initial_drift_residual_hz_s": -0.35,
+  "drift_acceleration_hz_s2": 0.003,
+  "frequency_noise_span_hz": 0.8,
+  "drift_noise_span_hz_s": 0.04,
+  "maximum_smoothed_frequency_error_hz": 1.0,
+  "maximum_smoothed_drift_error_hz_s": 0.08
+}
