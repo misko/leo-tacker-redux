@@ -40,6 +40,7 @@ from leo_flow.contracts.core import (
 from leo_flow.contracts.features import FeatureSetBundle, RecordingAnalysisRequest
 from leo_flow.storage import (
     FileSystemBlobStore,
+    RootedSigMFRecordingStore,
     SigMFRecordingObjectReader,
     SigMFRecordingWriter,
 )
@@ -104,9 +105,9 @@ def test_capture_publish_read_and_independently_analyze_one_recording(tmp_path) 
 
     blobs = FileSystemBlobStore(tmp_path / "blobs")
     catalog = InMemoryRecordingCatalog()
-    published = RecordingPublisherAdapter(blobs, catalog).publish(
-        completed, idempotency_key="vertical-recording"
-    )
+    published = RecordingPublisherAdapter(
+        RootedSigMFRecordingStore(tmp_path / "spool"), blobs, catalog
+    ).publish(completed, idempotency_key="vertical-recording")
     assert catalog.get(str(recording_id)) == published
 
     config = QualityPsdConfig(psd_window_samples=256)

@@ -114,7 +114,7 @@ class SQLiteLocalSpool:
         payload = encode_completed(recording)
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT state, payload FROM recordings WHERE recording_id = ?",
+                "SELECT state, payload, plan_id FROM recordings WHERE recording_id = ?",
                 (str(recording.recording_id),),
             ).fetchone()
             if row is None:
@@ -123,6 +123,8 @@ class SQLiteLocalSpool:
                 return
             if row["state"] != SpoolState.ALLOCATED:
                 raise RuntimeError(f"cannot complete recording in state {row['state']}")
+            if row["plan_id"] != str(recording.manifest.plan_id):
+                raise RuntimeError("completed recording belongs to a different plan")
             connection.execute(
                 """
                 UPDATE recordings
@@ -158,6 +160,12 @@ class SQLiteLocalSpool:
     def fail_incomplete_allocations(
         self, reason: str = "capture process restarted"
     ) -> int:
+        """Fail every allocation without inspecting local objects.
+
+        Production restart code should first call ``incomplete_allocations``
+        and attempt codec-owned recovery. This bulk transition remains useful
+        for explicit administrative abandonment and compatibility tests.
+        """
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -168,6 +176,23 @@ class SQLiteLocalSpool:
                 (reason, self._now_ns()),
             )
             return cursor.rowcount
+
+    def incomplete_allocations(self, limit: int = 100) -> tuple[SpoolEntry, ...]:
+        """Return bounded recovery work without interpreting storage paths."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM recordings
+                 WHERE state = 'allocated'
+                 ORDER BY created_utc_ns, recording_id
+                 LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return tuple(_entry_from_row(row) for row in rows)
 
     def pending_publication(
         self, limit: int = 100
@@ -289,17 +314,21 @@ class SQLiteLocalSpool:
             ).fetchone()
         if row is None:
             raise KeyError(recording_id)
-        payload = row["payload"]
-        return SpoolEntry(
-            recording_id=RecordingId(row["recording_id"]),
-            plan_id=PlanId(row["plan_id"]),
-            destination=row["destination"],
-            state=SpoolState(row["state"]),
-            recording=decode_completed(payload) if payload is not None else None,
-            publish_attempts=row["publish_attempts"],
-            last_error=row["last_error"],
-            idempotency_key=row["idempotency_key"],
-        )
+        return _entry_from_row(row)
+
+
+def _entry_from_row(row: sqlite3.Row) -> SpoolEntry:
+    payload = row["payload"]
+    return SpoolEntry(
+        recording_id=RecordingId(row["recording_id"]),
+        plan_id=PlanId(row["plan_id"]),
+        destination=row["destination"],
+        state=SpoolState(row["state"]),
+        recording=decode_completed(payload) if payload is not None else None,
+        publish_attempts=row["publish_attempts"],
+        last_error=row["last_error"],
+        idempotency_key=row["idempotency_key"],
+    )
 
 
 def _new_recording_id() -> RecordingId:

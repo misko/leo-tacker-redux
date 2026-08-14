@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, BinaryIO, Protocol, cast
 
 from leo_flow.contracts.capture import (
     ActivityKind,
@@ -53,7 +53,7 @@ from leo_flow.contracts.core import (
     canonical_digest,
     canonical_json_bytes,
 )
-from leo_flow.contracts.storage import RecordingObjectRef
+from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 
 
 class _BlobReader(Protocol):
@@ -96,6 +96,75 @@ class SigMFRecordingWriter:
         return RecordingWriteSession(
             recording_id, plan, hardware_metadata_snapshot_id, destination
         )
+
+
+def recover_completed_local_recording(
+    data_stream: BinaryIO,
+    metadata_stream: BinaryIO,
+    *,
+    data_locator: str,
+    metadata_locator: str,
+    expected_recording_id: RecordingId,
+    expected_plan_id: PlanId,
+) -> CompletedLocalRecording:
+    """Reconstruct and fully validate a finalized pair after a process crash.
+
+    This is deliberately a stream API. The caller owns path confinement and
+    opens both files without following links; this codec owns scientific and
+    format validation. A pair is recoverable only when the exact canonical
+    metadata and the complete data object agree with the allocated identities.
+    """
+
+    metadata_bytes = metadata_stream.read(_MAX_METADATA_BYTES + 1)
+    if len(metadata_bytes) > _MAX_METADATA_BYTES:
+        raise MalformedRecordingError("recording metadata exceeds size limit")
+    try:
+        raw_metadata = json.loads(metadata_bytes)
+        raw_manifest = _mapping(raw_metadata["manifest"], "manifest")
+        recording_id = RecordingId(
+            _string(raw_manifest["recording_id"], "recording_id")
+        )
+        declared_digest = _string(raw_metadata["manifest_digest"], "manifest_digest")
+        algorithm, separator, digest_value = declared_digest.partition(":")
+        if not separator:
+            raise ValueError("manifest digest lacks an algorithm")
+        manifest_digest = Digest(DigestAlgorithm(algorithm), digest_value)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise MalformedRecordingError("invalid recovery metadata envelope") from error
+    if recording_id != expected_recording_id:
+        raise MalformedRecordingError("recovered recording ID differs from allocation")
+
+    data_digest, data_bytes = _stream_digest(data_stream)
+    if data_bytes == 0:
+        raise MalformedRecordingError("recording data object cannot be empty")
+    metadata_digest = Digest.sha256(metadata_bytes)
+    data_ref = ObjectRef(
+        data_digest,
+        data_bytes,
+        "application/octet-stream",
+        "leo-recording-data-v1",
+        data_locator,
+    )
+    metadata_ref = ObjectRef(
+        metadata_digest,
+        len(metadata_bytes),
+        "application/json",
+        "leo-recording-metadata-v1",
+        metadata_locator,
+    )
+    parsed = _parse_metadata(
+        metadata_bytes,
+        RecordingObjectRef(recording_id, data_ref, metadata_ref, manifest_digest),
+    )
+    if parsed.manifest.plan_id != expected_plan_id:
+        raise MalformedRecordingError("recovered plan ID differs from allocation")
+    return CompletedLocalRecording(
+        recording_id,
+        LocalObjectRef(data_locator, data_digest, data_bytes),
+        LocalObjectRef(metadata_locator, metadata_digest, len(metadata_bytes)),
+        parsed.manifest,
+        manifest_digest,
+    )
 
 
 class RecordingWriteSession:
@@ -926,6 +995,15 @@ def _file_digest(path: Path) -> Digest:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             hasher.update(chunk)
     return Digest(DigestAlgorithm.SHA256, hasher.hexdigest())
+
+
+def _stream_digest(stream: BinaryIO) -> tuple[Digest, int]:
+    hasher = hashlib.sha256()
+    byte_count = 0
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        byte_count = _checked_add(byte_count, len(chunk))
+        hasher.update(chunk)
+    return Digest(DigestAlgorithm.SHA256, hasher.hexdigest()), byte_count
 
 
 def _fsync_directory(path: Path) -> None:

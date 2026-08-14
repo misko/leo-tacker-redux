@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import BinaryIO, Protocol
 
 import psycopg
@@ -18,6 +17,7 @@ from leo_flow.contracts.storage import (
 )
 
 from . import postgres_sql
+from .ports import LocalRecordingSource
 
 
 class PostgresCatalogError(RuntimeError):
@@ -141,29 +141,37 @@ class PostgresRecordingCatalog:
 class PostgresRecordingPublisher:
     """Upload both objects first; expose only their atomic catalog pair."""
 
-    def __init__(self, blobs: _BlobWriter, catalog: PostgresRecordingCatalog) -> None:
+    def __init__(
+        self,
+        local: LocalRecordingSource,
+        blobs: _BlobWriter,
+        catalog: PostgresRecordingCatalog,
+    ) -> None:
+        self._local = local
         self._blobs = blobs
         self._catalog = catalog
 
     def publish(
         self, recording: CompletedLocalRecording, *, idempotency_key: str
     ) -> PublishedRecordingRef:
-        data = self._upload(
-            recording.data_object.locator,
-            recording.data_object.digest,
-            recording.data_object.byte_count,
-            "application/octet-stream",
-            "leo-recording-data-v1",
-            f"{idempotency_key}:data",
-        )
-        metadata = self._upload(
-            recording.metadata_object.locator,
-            recording.metadata_object.digest,
-            recording.metadata_object.byte_count,
-            "application/json",
-            "leo-recording-metadata-v1",
-            f"{idempotency_key}:metadata",
-        )
+        with self._local.open_data(recording) as stream:
+            data = self._upload(
+                stream,
+                recording.data_object.digest,
+                recording.data_object.byte_count,
+                "application/octet-stream",
+                "leo-recording-data-v1",
+                f"{idempotency_key}:data",
+            )
+        with self._local.open_metadata(recording) as stream:
+            metadata = self._upload(
+                stream,
+                recording.metadata_object.digest,
+                recording.metadata_object.byte_count,
+                "application/json",
+                "leo-recording-metadata-v1",
+                f"{idempotency_key}:metadata",
+            )
         pair = RecordingObjectRef(
             recording.recording_id, data, metadata, recording.manifest_digest
         )
@@ -171,22 +179,21 @@ class PostgresRecordingPublisher:
 
     def _upload(
         self,
-        locator: str,
+        stream: BinaryIO,
         digest: Digest,
         byte_count: int,
         media_type: str,
         format_id: str,
         idempotency_key: str,
     ) -> ObjectRef:
-        with Path(locator).open("rb") as stream:
-            return self._blobs.put(
-                stream,
-                expected_digest=digest,
-                expected_bytes=byte_count,
-                media_type=media_type,
-                format_id=format_id,
-                idempotency_key=idempotency_key,
-            )
+        return self._blobs.put(
+            stream,
+            expected_digest=digest,
+            expected_bytes=byte_count,
+            media_type=media_type,
+            format_id=format_id,
+            idempotency_key=idempotency_key,
+        )
 
 
 def connection_factory(dsn: str) -> ConnectionFactory:

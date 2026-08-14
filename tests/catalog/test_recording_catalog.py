@@ -10,6 +10,7 @@ from leo_flow.storage.catalog import (
     RecordingPublisherAdapter,
 )
 from leo_flow.storage.filesystem import IdempotencyConflictError
+from leo_flow.storage.local_recording import RootedSigMFRecordingStore
 from testkit import completed_local_recording, object_ref, recording_object_ref
 
 
@@ -36,9 +37,11 @@ def test_publication_is_idempotent_and_conflicts_are_hard() -> None:
 
 def test_failed_second_blob_upload_exposes_no_recording(tmp_path) -> None:
     completed = completed_local_recording()
-    data_path = tmp_path / "data"
+    recording_directory = tmp_path / str(completed.recording_id)
+    recording_directory.mkdir()
+    data_path = recording_directory / "recording.data"
     data_path.write_bytes(b"data")
-    metadata_path = tmp_path / "metadata"
+    metadata_path = recording_directory / "recording.meta"
     metadata_path.write_bytes(b"metadata")
     from leo_flow.contracts.capture import LocalObjectRef
     from testkit import digest
@@ -60,7 +63,9 @@ def test_failed_second_blob_upload_exposes_no_recording(tmp_path) -> None:
             return object_ref("uploaded-data")
 
     catalog = InMemoryRecordingCatalog()
-    publisher = RecordingPublisherAdapter(FailSecondBlob(), catalog)
+    publisher = RecordingPublisherAdapter(
+        RootedSigMFRecordingStore(tmp_path), FailSecondBlob(), catalog
+    )
     with pytest.raises(OSError, match="outage"):
         publisher.publish(completed, idempotency_key="publish:failure")
     assert catalog.get(str(completed.recording_id)) is None

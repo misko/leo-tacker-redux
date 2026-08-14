@@ -84,6 +84,18 @@ class RecordingWriter(Protocol):
     ) -> RecordingWriteSession: ...
 
 
+class LocalRecordingSource(Protocol):
+    """Root-policy-owned streams for publishing a completed local pair."""
+
+    def open_data(
+        self, recording: CompletedLocalRecording
+    ) -> AbstractContextManager[BinaryIO]: ...
+
+    def open_metadata(
+        self, recording: CompletedLocalRecording
+    ) -> AbstractContextManager[BinaryIO]: ...
+
+
 class RecordingView(Protocol):
     @property
     def manifest(self) -> RecordingManifest: ...

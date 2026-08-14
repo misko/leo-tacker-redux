@@ -9,6 +9,7 @@ import pytest
 from leo_flow.contracts.capture import CompletedLocalRecording, LocalObjectRef
 from leo_flow.contracts.core import Digest, canonical_digest, canonical_json_bytes
 from leo_flow.storage.filesystem import FileSystemBlobStore
+from leo_flow.storage.local_recording import RootedSigMFRecordingStore
 from leo_flow.storage.postgres_catalog import (
     ObjectCollisionError,
     PostgresRecordingCatalog,
@@ -39,8 +40,11 @@ def test_completed_local_pair_uploads_then_registers_atomically(
     manifest = recording_manifest()
     data_bytes = bytes(range(64))
     metadata_bytes = canonical_json_bytes(manifest)
-    data_path = tmp_path / "local-data"
-    metadata_path = tmp_path / "local-metadata"
+    recording_root = tmp_path / "local"
+    recording_directory = recording_root / str(manifest.recording_id)
+    recording_directory.mkdir(parents=True)
+    data_path = recording_directory / "recording.data"
+    metadata_path = recording_directory / "recording.meta"
     data_path.write_bytes(data_bytes)
     metadata_path.write_bytes(metadata_bytes)
     completed = CompletedLocalRecording(
@@ -54,7 +58,9 @@ def test_completed_local_pair_uploads_then_registers_atomically(
     )
     catalog = PostgresRecordingCatalog(connection_factory(postgres_dsn))
     publisher = PostgresRecordingPublisher(
-        FileSystemBlobStore(tmp_path / "blobs"), catalog
+        RootedSigMFRecordingStore(recording_root),
+        FileSystemBlobStore(tmp_path / "blobs"),
+        catalog,
     )
     published = publisher.publish(completed, idempotency_key="local-pair")
     assert published.recording_id == completed.recording_id
