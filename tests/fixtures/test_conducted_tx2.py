@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -20,8 +21,11 @@ from leo_flow.fixtures.conducted_tx2 import (
     CONDUCTED_CONFIRMATION,
     CONDUCTED_TOPOLOGY,
     IO_TIMEOUT_MS,
+    MAXIMUM_AUTHORIZATION_WINDOW_NS,
     MAXIMUM_SAMPLE_COUNT,
+    TX_AUTHORIZATION,
     ConductedFixtureAttestation,
+    ConductedPathAttenuationEvidence,
     ConductedTx2Plan,
     FiniteTx2Waveform,
     PyadiTx2Device,
@@ -88,30 +92,52 @@ def waveform(level: int = 16, *, sample_count: int = 64) -> FiniteTx2Waveform:
     return FiniteTx2Waveform.from_ci16(data, declared_rms_counts=level)
 
 
-def topology() -> ConductedFixtureAttestation:
+def topology(*, verified_utc_ns: int | None = None) -> ConductedFixtureAttestation:
+    verified = time.time_ns() if verified_utc_ns is None else verified_utc_ns
     return ConductedFixtureAttestation(
         radio_serial=SERIAL,
         topology=CONDUCTED_TOPOLOGY,
         splitter_id="tee-bench-01",
-        tx2_to_rx1_attenuator_ids=("att-rx1-30db",),
-        tx2_to_rx2_attenuator_ids=("att-rx2-30db",),
-        tx2_to_rx1_attenuation_db=30.0,
-        tx2_to_rx2_attenuation_db=31.0,
+        path_evidence=(
+            ConductedPathAttenuationEvidence(
+                "RX1",
+                ("att-rx1-30db",),
+                30.0,
+                "reviewer-a",
+                "calibrated_vna",
+                verified,
+                "1" * 64,
+            ),
+            ConductedPathAttenuationEvidence(
+                "RX2",
+                ("att-rx2-30db",),
+                31.0,
+                "reviewer-b",
+                "calibrated_signal_generator_power_meter",
+                verified,
+                "2" * 64,
+            ),
+        ),
         confirmation=CONDUCTED_CONFIRMATION,
     )
 
 
 def plan(*steps: Tx2LadderStep) -> ConductedTx2Plan:
+    now = time.time_ns()
     return ConductedTx2Plan(
         uri=URI,
         expected_radio_serial=SERIAL,
         armed_radio_serial=SERIAL,
-        topology=topology(),
+        tx_operator_id="operator-a",
+        tx_authorization=TX_AUTHORIZATION,
+        topology=topology(verified_utc_ns=now),
         expected_runtime=EXPECTED_RUNTIME,
         expected_radio=EXPECTED_RADIO,
         tx_lo_hz=1_709_687_500,
         sample_rate_hz=1_250_000,
         steps=steps or (Tx2LadderStep(80, waveform()),),
+        authorization_issued_utc_ns=now - 1_000_000_000,
+        authorization_expires_utc_ns=now + 14 * 60 * 1_000_000_000,
     )
 
 
@@ -225,6 +251,9 @@ def test_success_uses_exact_uri_finite_prefix_ladder_and_finishes_muted() -> Non
     assert [step.tx_attenuation_db for step in result.steps] == [80, 70, 70]
     assert [step.waveform_rms_counts for step in result.steps] == [16, 16, 32]
     assert result.final_state_verified_muted
+    assert result.initial_mute.tx_buffer_destroyed
+    assert result.final_mute.tx_gain_readback_db == -80.0
+    assert all(step.pre_mute == step.post_mute for step in result.steps)
     assert device.gain == -80.0
     assert set(device.dds.values()) == {0.0}
     assert device.closed
@@ -244,6 +273,22 @@ def test_success_uses_exact_uri_finite_prefix_ladder_and_finishes_muted() -> Non
         (
             lambda value: replace(value, armed_radio_serial="other"),
             "explicitly armed",
+        ),
+        (
+            lambda value: replace(value, tx_operator_id=""),
+            "identified TX operator",
+        ),
+        (
+            lambda value: replace(value, tx_authorization="yes"),
+            "exact finite TX authorization",
+        ),
+        (
+            lambda value: replace(
+                value,
+                authorization_issued_utc_ns=1,
+                authorization_expires_utc_ns=MAXIMUM_AUTHORIZATION_WINDOW_NS + 2,
+            ),
+            "bounded issue/expiry window",
         ),
         (
             lambda value: replace(
@@ -286,15 +331,57 @@ def test_success_uses_exact_uri_finite_prefix_ladder_and_finishes_muted() -> Non
         (
             lambda value: replace(
                 value,
-                topology=replace(value.topology, tx2_to_rx1_attenuator_ids=()),
+                topology=replace(
+                    value.topology,
+                    path_evidence=(
+                        replace(value.topology.path_evidence[0], attenuator_ids=()),
+                        value.topology.path_evidence[1],
+                    ),
+                ),
             ),
             "identified attenuators",
         ),
         (
             lambda value: replace(
-                value, topology=replace(value.topology, tx2_to_rx2_attenuation_db=29)
+                value,
+                topology=replace(
+                    value.topology,
+                    path_evidence=(
+                        value.topology.path_evidence[0],
+                        replace(value.topology.path_evidence[1], attenuation_db=29),
+                    ),
+                ),
             ),
             "at least 30 dB",
+        ),
+        (
+            lambda value: replace(
+                value,
+                topology=replace(
+                    value.topology,
+                    path_evidence=(
+                        replace(
+                            value.topology.path_evidence[0],
+                            verified_by="OPERATOR-A",
+                        ),
+                        value.topology.path_evidence[1],
+                    ),
+                ),
+            ),
+            "independent identified verifier",
+        ),
+        (
+            lambda value: replace(
+                value,
+                topology=replace(
+                    value.topology,
+                    path_evidence=(
+                        replace(value.topology.path_evidence[0], evidence_sha256="bad"),
+                        value.topology.path_evidence[1],
+                    ),
+                ),
+            ),
+            "lowercase SHA-256",
         ),
         (lambda value: replace(value, tx_lo_hz=1), "LO lies outside"),
         (lambda value: replace(value, sample_rate_hz=999_999), "sample rate lies"),
@@ -353,6 +440,80 @@ def test_static_safety_gate_fails_before_opening_context(
 
     with pytest.raises(Tx2SafetyError, match=message):
         run_conducted_tx2_ladder(mutate(plan()), factory)
+    assert not opened
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    (
+        (
+            lambda value, now: replace(
+                value,
+                authorization_issued_utc_ns=now + 1,
+                authorization_expires_utc_ns=now + 1_000,
+            ),
+            "authorization is from the future",
+        ),
+        (
+            lambda value, now: replace(
+                value,
+                authorization_issued_utc_ns=now - 2_000,
+                authorization_expires_utc_ns=now - 1,
+            ),
+            "authorization is stale",
+        ),
+        (
+            lambda value, now: replace(
+                value,
+                topology=replace(
+                    value.topology,
+                    path_evidence=(
+                        replace(
+                            value.topology.path_evidence[0],
+                            verified_utc_ns=now + 1,
+                        ),
+                        value.topology.path_evidence[1],
+                    ),
+                ),
+            ),
+            "attenuation evidence is from the future",
+        ),
+        (
+            lambda value, now: replace(
+                value,
+                topology=replace(
+                    value.topology,
+                    path_evidence=tuple(
+                        replace(item, verified_utc_ns=now - 4 * 60 * 60 * 10**9 - 1)
+                        for item in value.topology.path_evidence
+                    ),
+                ),
+            ),
+            "attenuation evidence is stale",
+        ),
+    ),
+)
+def test_time_bounded_authorization_and_attenuation_fail_before_open(
+    mutate, message: str
+) -> None:
+    now = 1_800_000_000_000_000_000
+    requested = plan()
+    requested = replace(
+        requested,
+        authorization_issued_utc_ns=now - 1_000,
+        authorization_expires_utc_ns=now + 1_000,
+        topology=topology(verified_utc_ns=now - 1_000),
+    )
+    opened = False
+
+    def factory(uri: str) -> FakeTx2:
+        del uri
+        nonlocal opened
+        opened = True
+        return FakeTx2()
+
+    with pytest.raises(Tx2SafetyError, match=message):
+        run_conducted_tx2_ladder(mutate(requested, now), factory, now_utc_ns=now)
     assert not opened
 
 

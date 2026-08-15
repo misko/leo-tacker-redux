@@ -10,9 +10,10 @@ import hashlib
 import importlib
 import math
 import struct
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from leo_flow.capture.drivers.v5_observers import (
     observe_current_v5_runtime,
@@ -34,6 +35,7 @@ TX2_DDS_CHANNEL_IDS = (
 )
 CONDUCTED_TOPOLOGY = "TX2->ATTENUATORS->PASSIVE_SPLITTER->RX1+RX2"
 CONDUCTED_CONFIRMATION = "TX2_CONDUCTED_RX1_RX2_NO_ANTENNA"
+TX_AUTHORIZATION = "AUTHORIZE_ONE_FINITE_CONDUCTED_TX2_SEND"
 MUTED_TX2_GAIN_DB = -80.0
 ALLOWED_ATTENUATION_DB = (80, 70, 60, 50, 40)
 ALLOWED_WAVEFORM_RMS_COUNTS = (16, 32, 64, 128)
@@ -47,6 +49,8 @@ MINIMUM_LO_HZ = 325_000_000
 MAXIMUM_LO_HZ = 3_800_000_000
 FREQUENCY_READBACK_TOLERANCE_HZ = 2.0
 IO_TIMEOUT_MS = 5_000
+MAXIMUM_AUTHORIZATION_WINDOW_NS = 15 * 60 * 1_000_000_000
+MAXIMUM_ATTENUATION_EVIDENCE_AGE_NS = 4 * 60 * 60 * 1_000_000_000
 
 
 class Tx2SafetyError(RuntimeError):
@@ -96,16 +100,30 @@ Tx2DeviceFactory = Callable[[str], Tx2Device]
 
 
 @dataclass(frozen=True, slots=True)
+class ConductedPathAttenuationEvidence:
+    """Independent, digest-bound attenuation evidence for one energized path."""
+
+    receiver_path: Literal["RX1", "RX2"]
+    attenuator_ids: tuple[str, ...]
+    attenuation_db: float
+    verified_by: str
+    verification_method: Literal[
+        "calibrated_vna", "calibrated_signal_generator_power_meter"
+    ]
+    verified_utc_ns: int
+    evidence_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class ConductedFixtureAttestation:
-    """Operator evidence for the physical, antenna-free bench topology."""
+    """Independent evidence for the physical, antenna-free bench topology."""
 
     radio_serial: str
     topology: str
     splitter_id: str
-    tx2_to_rx1_attenuator_ids: tuple[str, ...]
-    tx2_to_rx2_attenuator_ids: tuple[str, ...]
-    tx2_to_rx1_attenuation_db: float
-    tx2_to_rx2_attenuation_db: float
+    path_evidence: tuple[
+        ConductedPathAttenuationEvidence, ConductedPathAttenuationEvidence
+    ]
     confirmation: str
 
 
@@ -145,6 +163,10 @@ class ConductedTx2Plan:
     tx_lo_hz: int
     sample_rate_hz: int
     steps: tuple[Tx2LadderStep, ...]
+    tx_operator_id: str = ""
+    tx_authorization: str = ""
+    authorization_issued_utc_ns: int = 0
+    authorization_expires_utc_ns: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +179,15 @@ class Tx2StepEvidence:
     sample_count: int
     tx_lo_readback_hz: float
     sample_rate_readback_hz: float
+    pre_mute: Tx2MuteEvidence
+    post_mute: Tx2MuteEvidence
+
+
+@dataclass(frozen=True, slots=True)
+class Tx2MuteEvidence:
+    tx_buffer_destroyed: bool
+    tx_gain_readback_db: float
+    tx2_dds_scale_readbacks: tuple[tuple[str, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +197,8 @@ class ConductedTx2Evidence:
     topology: str
     splitter_id: str
     steps: tuple[Tx2StepEvidence, ...]
+    initial_mute: Tx2MuteEvidence
+    final_mute: Tx2MuteEvidence
     final_state_verified_muted: bool
 
 
@@ -230,6 +263,8 @@ def preflight_conducted_tx2(
 def run_conducted_tx2_ladder(
     plan: ConductedTx2Plan,
     device_factory: Tx2DeviceFactory,
+    *,
+    now_utc_ns: int | None = None,
 ) -> ConductedTx2Evidence:
     """Run a bounded finite ladder and always return the verified radio to mute.
 
@@ -239,10 +274,15 @@ def run_conducted_tx2_ladder(
     """
 
     _validate_plan(plan)
+    _validate_execution_window(
+        plan, time.time_ns() if now_utc_ns is None else now_utc_ns
+    )
     device: Tx2Device | None = None
     identity_verified = False
     primary_error: Exception | None = None
     evidence: list[Tx2StepEvidence] = []
+    initial_mute: Tx2MuteEvidence | None = None
+    final_mute: Tx2MuteEvidence | None = None
     try:
         device = device_factory(plan.uri)
         device.attest_qualified_v5(
@@ -256,7 +296,7 @@ def run_conducted_tx2_ladder(
                 "selected radio serial does not match the exact armed V5 serial"
             )
         identity_verified = True
-        _mute_and_verify(device)
+        initial_mute = _mute_and_verify(device)
         device.set_tx2_lo_hz(plan.tx_lo_hz)
         _require_readback(
             "TX2 LO",
@@ -272,7 +312,7 @@ def run_conducted_tx2_ladder(
             FREQUENCY_READBACK_TOLERANCE_HZ,
         )
         for index, step in enumerate(plan.steps):
-            _mute_and_verify(device)
+            pre_mute = _mute_and_verify(device)
             lo_readback = device.read_tx2_lo_hz()
             rate_readback = device.read_sample_rate_hz()
             _require_readback(
@@ -288,26 +328,31 @@ def run_conducted_tx2_ladder(
                 FREQUENCY_READBACK_TOLERANCE_HZ,
             )
             requested_gain = -float(step.tx_attenuation_db)
+            post_mute: Tx2MuteEvidence | None = None
             try:
                 device.set_tx2_gain_db(requested_gain)
                 gain_readback = device.read_tx2_gain_db()
                 _require_readback("TX2 gain", gain_readback, requested_gain, 0.01)
                 _require_dds_muted(device)
                 device.transmit_tx2_finite_ci16(step.waveform.ci16_le)
-                evidence.append(
-                    Tx2StepEvidence(
-                        index=index,
-                        tx_attenuation_db=step.tx_attenuation_db,
-                        tx_gain_readback_db=gain_readback,
-                        waveform_rms_counts=step.waveform.declared_rms_counts,
-                        waveform_sha256=step.waveform.sha256,
-                        sample_count=len(step.waveform.ci16_le) // 4,
-                        tx_lo_readback_hz=lo_readback,
-                        sample_rate_readback_hz=rate_readback,
-                    )
-                )
             finally:
-                _mute_and_verify(device)
+                post_mute = _mute_and_verify(device)
+            assert post_mute is not None
+            evidence.append(
+                Tx2StepEvidence(
+                    index=index,
+                    tx_attenuation_db=step.tx_attenuation_db,
+                    tx_gain_readback_db=gain_readback,
+                    waveform_rms_counts=step.waveform.declared_rms_counts,
+                    waveform_sha256=step.waveform.sha256,
+                    sample_count=len(step.waveform.ci16_le) // 4,
+                    tx_lo_readback_hz=lo_readback,
+                    sample_rate_readback_hz=rate_readback,
+                    pre_mute=pre_mute,
+                    post_mute=post_mute,
+                )
+            )
+        final_mute = _mute_and_verify(device)
     except Exception as error:  # noqa: BLE001 - cleanup must follow every failure
         primary_error = error
     finally:
@@ -322,12 +367,16 @@ def run_conducted_tx2_ladder(
             ) from primary_error
     if primary_error is not None:
         raise primary_error
+    if initial_mute is None or final_mute is None:  # pragma: no cover - invariant
+        raise Tx2SafetyError("successful TX2 run lacks mute evidence")
     return ConductedTx2Evidence(
         radio_serial=plan.expected_radio_serial,
         uri=plan.uri,
         topology=plan.topology.topology,
         splitter_id=plan.topology.splitter_id,
         steps=tuple(evidence),
+        initial_mute=initial_mute,
+        final_mute=final_mute,
         final_state_verified_muted=True,
     )
 
@@ -342,6 +391,23 @@ def _validate_plan(plan: ConductedTx2Plan) -> None:
         plan.armed_radio_serial != plan.expected_radio_serial
     ):
         raise Tx2SafetyError("the exact expected V5 serial was not explicitly armed")
+    if not plan.tx_operator_id.strip():
+        raise Tx2SafetyError("an identified TX operator is required")
+    if plan.tx_authorization != TX_AUTHORIZATION:
+        raise Tx2SafetyError("the exact finite TX authorization was not provided")
+    if (
+        isinstance(plan.authorization_issued_utc_ns, bool)
+        or not isinstance(plan.authorization_issued_utc_ns, int)
+        or isinstance(plan.authorization_expires_utc_ns, bool)
+        or not isinstance(plan.authorization_expires_utc_ns, int)
+        or plan.authorization_issued_utc_ns <= 0
+        or plan.authorization_expires_utc_ns <= plan.authorization_issued_utc_ns
+        or plan.authorization_expires_utc_ns - plan.authorization_issued_utc_ns
+        > MAXIMUM_AUTHORIZATION_WINDOW_NS
+    ):
+        raise Tx2SafetyError(
+            "TX authorization needs a positive bounded issue/expiry window"
+        )
     if plan.expected_radio.serial != plan.expected_radio_serial:
         raise Tx2SafetyError("the V5 radio attestation names a different serial")
     if (
@@ -354,7 +420,11 @@ def _validate_plan(plan: ConductedTx2Plan) -> None:
         raise Tx2SafetyError(
             "the expected radio is not the qualified V5 2RX/2TX layout"
         )
-    _validate_topology(plan.topology, plan.expected_radio_serial)
+    _validate_topology(
+        plan.topology,
+        plan.expected_radio_serial,
+        tx_operator_id=plan.tx_operator_id,
+    )
     if not MINIMUM_LO_HZ <= plan.tx_lo_hz <= MAXIMUM_LO_HZ:
         raise Tx2SafetyError("TX2 LO lies outside the bounded conducted-fixture range")
     if not MINIMUM_SAMPLE_RATE_HZ <= plan.sample_rate_hz <= MAXIMUM_SAMPLE_RATE_HZ:
@@ -391,7 +461,10 @@ def _validate_plan(plan: ConductedTx2Plan) -> None:
 
 
 def _validate_topology(
-    topology: ConductedFixtureAttestation, expected_serial: str
+    topology: ConductedFixtureAttestation,
+    expected_serial: str,
+    *,
+    tx_operator_id: str,
 ) -> None:
     if topology.radio_serial != expected_serial:
         raise Tx2SafetyError("topology attestation names a different radio serial")
@@ -403,26 +476,71 @@ def _validate_topology(
         raise Tx2SafetyError("the antenna-free conducted topology was not confirmed")
     if not topology.splitter_id.strip():
         raise Tx2SafetyError("the passive splitter/tee identity is required")
-    paths = (
-        (
-            topology.tx2_to_rx1_attenuator_ids,
-            topology.tx2_to_rx1_attenuation_db,
-        ),
-        (
-            topology.tx2_to_rx2_attenuator_ids,
-            topology.tx2_to_rx2_attenuation_db,
-        ),
-    )
-    for attenuator_ids, attenuation_db in paths:
-        if not attenuator_ids or any(not value.strip() for value in attenuator_ids):
+    if tuple(item.receiver_path for item in topology.path_evidence) != ("RX1", "RX2"):
+        raise Tx2SafetyError(
+            "attenuation evidence must cover energized RX1 and RX2 paths in order"
+        )
+    all_attenuator_ids: list[str] = []
+    for item in topology.path_evidence:
+        if not item.attenuator_ids or any(
+            not value.strip() for value in item.attenuator_ids
+        ):
             raise Tx2SafetyError("each receiver path requires identified attenuators")
         if (
-            not math.isfinite(attenuation_db)
-            or attenuation_db < MINIMUM_PATH_ATTENUATION_DB
+            not math.isfinite(item.attenuation_db)
+            or item.attenuation_db < MINIMUM_PATH_ATTENUATION_DB
         ):
             raise Tx2SafetyError(
                 "each receiver path requires at least 30 dB attenuation"
             )
+        if not item.verified_by.strip() or (
+            item.verified_by.strip().casefold() == tx_operator_id.strip().casefold()
+        ):
+            raise Tx2SafetyError(
+                "each receiver path needs an independent identified verifier"
+            )
+        if item.verification_method not in (
+            "calibrated_vna",
+            "calibrated_signal_generator_power_meter",
+        ):
+            raise Tx2SafetyError(
+                "attenuation verification method is not independently calibrated"
+            )
+        if (
+            isinstance(item.verified_utc_ns, bool)
+            or not isinstance(item.verified_utc_ns, int)
+            or item.verified_utc_ns <= 0
+        ):
+            raise Tx2SafetyError("attenuation verification time is required")
+        if len(item.evidence_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in item.evidence_sha256
+        ):
+            raise Tx2SafetyError(
+                "attenuation verification evidence needs a lowercase SHA-256"
+            )
+        all_attenuator_ids.extend(item.attenuator_ids)
+    if len(set(all_attenuator_ids)) != len(all_attenuator_ids):
+        raise Tx2SafetyError(
+            "energized receiver paths require distinct attenuator identities"
+        )
+
+
+def _validate_execution_window(plan: ConductedTx2Plan, now_utc_ns: int) -> None:
+    if (
+        isinstance(now_utc_ns, bool)
+        or not isinstance(now_utc_ns, int)
+        or now_utc_ns <= 0
+    ):
+        raise Tx2SafetyError("execution time must be a positive UTC nanosecond value")
+    if plan.authorization_issued_utc_ns > now_utc_ns:
+        raise Tx2SafetyError("TX authorization is from the future")
+    if plan.authorization_expires_utc_ns < now_utc_ns:
+        raise Tx2SafetyError("TX authorization is stale")
+    for item in plan.topology.path_evidence:
+        if item.verified_utc_ns > now_utc_ns:
+            raise Tx2SafetyError("attenuation evidence is from the future")
+        if now_utc_ns - item.verified_utc_ns > MAXIMUM_ATTENUATION_EVIDENCE_AGE_NS:
+            raise Tx2SafetyError("attenuation evidence is stale")
 
 
 def _validate_waveform(waveform: FiniteTx2Waveform) -> None:
@@ -446,25 +564,28 @@ def _validate_waveform(waveform: FiniteTx2Waveform) -> None:
         raise Tx2SafetyError("waveform component peak exceeds the hard fixture bound")
 
 
-def _mute_and_verify(device: Tx2Device) -> None:
+def _mute_and_verify(device: Tx2Device) -> Tx2MuteEvidence:
     device.destroy_tx_buffer()
     device.disable_tx2_dds()
     device.set_tx2_gain_db(MUTED_TX2_GAIN_DB)
+    gain_readback = device.read_tx2_gain_db()
     _require_readback(
         "muted TX2 gain",
-        device.read_tx2_gain_db(),
+        gain_readback,
         MUTED_TX2_GAIN_DB,
         0.01,
     )
-    _require_dds_muted(device)
+    scales = _require_dds_muted(device)
+    return Tx2MuteEvidence(True, gain_readback, scales)
 
 
-def _require_dds_muted(device: Tx2Device) -> None:
+def _require_dds_muted(device: Tx2Device) -> tuple[tuple[str, float], ...]:
     scales = dict(device.read_tx2_dds_scales())
     if set(scales) != set(TX2_DDS_CHANNEL_IDS) or any(
         not math.isfinite(value) or value != 0.0 for value in scales.values()
     ):
         raise Tx2SafetyError("TX2 DDS mute readback is incomplete or nonzero")
+    return tuple(sorted(scales.items()))
 
 
 def _require_readback(
@@ -480,7 +601,7 @@ def _cleanup(
     if device is None:
         return []
     errors: list[tuple[str, Exception]] = []
-    operations: list[tuple[str, Callable[[], None]]] = []
+    operations: list[tuple[str, Callable[[], object]]] = []
     if identity_verified:
         operations.extend(
             (

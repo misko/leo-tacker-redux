@@ -17,13 +17,15 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, TextIO, cast
+from typing import Any, Literal, TextIO, cast
 
 from leo_flow.capture.drivers.v5_preflight import ExpectedV5Radio, ExpectedV5Runtime
 
 from .conducted_tx2 import (
     CONDUCTED_CONFIRMATION,
+    TX_AUTHORIZATION,
     ConductedFixtureAttestation,
+    ConductedPathAttenuationEvidence,
     ConductedTx2Plan,
     FiniteTx2Waveform,
     Tx2CleanupError,
@@ -36,8 +38,8 @@ from .conducted_tx2 import (
     validate_conducted_tx2_plan,
 )
 
-CONFIG_SCHEMA = "leo-flow.conducted-tx2-runner-config/v1"
-RECEIPT_SCHEMA = "leo-flow.conducted-tx2-runner-receipt/v1"
+CONFIG_SCHEMA = "leo-flow.conducted-tx2-runner-config/v2"
+RECEIPT_SCHEMA = "leo-flow.conducted-tx2-runner-receipt/v2"
 FIXTURE_ID = "lower-edge-inner-pilot-pair-unmodulated/v1"
 FIXTURE_SAMPLE_COUNT = 4_096
 FIXTURE_RMS_COUNTS = 16
@@ -168,6 +170,9 @@ def load_one_shot_config(path: Path) -> PreparedOneShot:
             root,
             {
                 "schema",
+                "tx_operator_id",
+                "authorization_issued_utc_ns",
+                "authorization_expires_utc_ns",
                 "topology",
                 "tx_lo_hz",
                 "sample_rate_hz",
@@ -183,6 +188,16 @@ def load_one_shot_config(path: Path) -> PreparedOneShot:
             uri=QUALIFIED_URI,
             expected_radio_serial=QUALIFIED_RADIO.serial,
             armed_radio_serial=QUALIFIED_RADIO.serial,
+            tx_operator_id=_string(root["tx_operator_id"], "tx_operator_id"),
+            tx_authorization=TX_AUTHORIZATION,
+            authorization_issued_utc_ns=_integer(
+                root["authorization_issued_utc_ns"],
+                "authorization_issued_utc_ns",
+            ),
+            authorization_expires_utc_ns=_integer(
+                root["authorization_expires_utc_ns"],
+                "authorization_expires_utc_ns",
+            ),
             topology=topology,
             expected_runtime=QUALIFIED_RUNTIME,
             expected_radio=QUALIFIED_RADIO,
@@ -306,9 +321,8 @@ def _run_armed(
                 "step_evidence": [asdict(step) for step in evidence.steps],
                 "cleanup": {
                     "status": "verified_muted",
-                    "tx_buffer_destroyed": True,
-                    "tx2_dds_disabled": True,
-                    "tx2_gain_db": -80.0,
+                    "initial_mute": asdict(evidence.initial_mute),
+                    "final_mute": asdict(evidence.final_mute),
                     "context_closed": True,
                 },
             }
@@ -320,6 +334,18 @@ def _run_armed(
 
 
 def _require_arm(args: argparse.Namespace, prepared: PreparedOneShot) -> None:
+    if args.authorize_tx != TX_AUTHORIZATION:
+        raise ConductedTx2RunnerError(
+            "armed run requires the exact one-shot TX authorization"
+        )
+    if (
+        not isinstance(args.confirm_operator_id, str)
+        or args.confirm_operator_id.strip().casefold()
+        != prepared.plan.tx_operator_id.strip().casefold()
+    ):
+        raise ConductedTx2RunnerError(
+            "armed run requires the exact identified operator confirmation"
+        )
     if args.confirm_radio_serial != prepared.plan.expected_radio_serial:
         raise ConductedTx2RunnerError(
             "armed run requires the exact expected radio serial confirmation"
@@ -382,6 +408,10 @@ def _plan_document(plan: ConductedTx2Plan) -> dict[str, Any]:
     return {
         "uri": plan.uri,
         "expected_radio_serial": plan.expected_radio_serial,
+        "tx_operator_id": plan.tx_operator_id,
+        "tx_authorization": plan.tx_authorization,
+        "authorization_issued_utc_ns": plan.authorization_issued_utc_ns,
+        "authorization_expires_utc_ns": plan.authorization_expires_utc_ns,
         "topology": asdict(plan.topology),
         "expected_runtime": runtime,
         "expected_radio": radio,
@@ -404,32 +434,66 @@ def _topology(value: Mapping[str, object]) -> ConductedFixtureAttestation:
         "radio_serial",
         "topology",
         "splitter_id",
-        "tx2_to_rx1_attenuator_ids",
-        "tx2_to_rx2_attenuator_ids",
-        "tx2_to_rx1_attenuation_db",
-        "tx2_to_rx2_attenuation_db",
+        "path_evidence",
         "confirmation",
     }
     _exact_keys(value, keys, "topology")
-    rx1_ids = _sequence(value["tx2_to_rx1_attenuator_ids"], "RX1 attenuators")
-    rx2_ids = _sequence(value["tx2_to_rx2_attenuator_ids"], "RX2 attenuators")
+    path_values = _sequence(value["path_evidence"], "path_evidence")
+    if len(path_values) != 2:
+        raise ValueError("path_evidence must contain exactly RX1 and RX2")
+    path_evidence = tuple(
+        _path_evidence(_mapping(item, f"path_evidence[{index}]"))
+        for index, item in enumerate(path_values)
+    )
     return ConductedFixtureAttestation(
         radio_serial=_string(value["radio_serial"], "topology radio serial"),
         topology=_string(value["topology"], "topology"),
         splitter_id=_string(value["splitter_id"], "splitter_id"),
-        tx2_to_rx1_attenuator_ids=tuple(
-            _string(item, "RX1 attenuator") for item in rx1_ids
-        ),
-        tx2_to_rx2_attenuator_ids=tuple(
-            _string(item, "RX2 attenuator") for item in rx2_ids
-        ),
-        tx2_to_rx1_attenuation_db=_number(
-            value["tx2_to_rx1_attenuation_db"], "RX1 attenuation"
-        ),
-        tx2_to_rx2_attenuation_db=_number(
-            value["tx2_to_rx2_attenuation_db"], "RX2 attenuation"
+        path_evidence=cast(
+            tuple[ConductedPathAttenuationEvidence, ConductedPathAttenuationEvidence],
+            path_evidence,
         ),
         confirmation=_string(value["confirmation"], "topology confirmation"),
+    )
+
+
+def _path_evidence(value: Mapping[str, object]) -> ConductedPathAttenuationEvidence:
+    _exact_keys(
+        value,
+        {
+            "receiver_path",
+            "attenuator_ids",
+            "attenuation_db",
+            "verified_by",
+            "verification_method",
+            "verified_utc_ns",
+            "evidence_sha256",
+        },
+        "path attenuation evidence",
+    )
+    receiver_path = _string(value["receiver_path"], "receiver_path")
+    method = _string(value["verification_method"], "verification_method")
+    if receiver_path not in ("RX1", "RX2"):
+        raise ValueError("receiver_path must be RX1 or RX2")
+    if method not in (
+        "calibrated_vna",
+        "calibrated_signal_generator_power_meter",
+    ):
+        raise ValueError("unsupported attenuation verification method")
+    return ConductedPathAttenuationEvidence(
+        receiver_path=cast(Literal["RX1", "RX2"], receiver_path),
+        attenuator_ids=tuple(
+            _string(item, "attenuator ID")
+            for item in _sequence(value["attenuator_ids"], "attenuator_ids")
+        ),
+        attenuation_db=_number(value["attenuation_db"], "attenuation_db"),
+        verified_by=_string(value["verified_by"], "verified_by"),
+        verification_method=cast(
+            Literal["calibrated_vna", "calibrated_signal_generator_power_meter"],
+            method,
+        ),
+        verified_utc_ns=_integer(value["verified_utc_ns"], "verified_utc_ns"),
+        evidence_sha256=_string(value["evidence_sha256"], "evidence_sha256"),
     )
 
 
@@ -452,6 +516,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--arm-from-dry-run", type=Path)
     parser.add_argument("--confirm-radio-serial")
     parser.add_argument("--confirm-conducted-topology")
+    parser.add_argument("--confirm-operator-id")
+    parser.add_argument("--authorize-tx")
     return parser
 
 

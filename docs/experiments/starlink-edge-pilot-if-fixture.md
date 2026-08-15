@@ -1,6 +1,6 @@
 # Starlink edge-pilot IF fixture
 
-Status: offline generator qualified; conducted TX adapter not yet implemented
+Status: offline campaign fixture qualified; conducted TX remains physically gated
 
 ## Closed-loop software E2E
 
@@ -89,6 +89,38 @@ payload, power loading from other subcarriers, transmitter impairments,
 satellite motion, propagation, LNB response, or the complete Starlink downlink.
 The truth record states that scope so a successful fixture test cannot be
 silently promoted into an over-air claim.
+
+## Versioned offline campaign
+
+`benchmark/specs/starlink-fixture-campaign-v1.json` freezes the first campaign
+axes: injection-null and five injection-to-background levels, both pilot edges
+and inner/full subsets, CFO, positive/negative frequency drift, paired-RX
+delay/gain/phase arms, and reject versus saturate-and-report clipping policies.
+It is explicitly `tx_eligible=false`; it cannot arm the conducted adapter.
+
+`FrozenPairedBackground` binds every paired-RX carve to a source recording ID,
+operator-declared parent recording-data SHA-256, exact start/count, and a
+segment SHA-256 verified against the exact supplied bounded bytes. The parent
+digest is provenance supplied by the campaign author; this fixture cannot
+verify it without the complete parent object. Recorded backgrounds must cover
+every scan segment exactly once. The injection-null output is byte-identical to
+its background when it fits the converter envelope, and every positive derived
+from it carries the same lineage. The background's RF signal status is always
+`unknown`: null means no fixture injection, not no sky signal.
+
+For recorded backgrounds, reported level is injected-signal/background power
+over coded-pilot samples before output quantization, not calibrated RF SNR.
+Frequency drift uses linear-chirp phase `2*pi*(cfo*t + drift*t^2/2)` and the
+finite waveform's start/end support must fit the configured bandwidth. Normal
+generation rejects clipping. A dedicated offline stress arm may saturate while
+reporting total, pre-existing-background, and injection-added clipped component
+counts.
+
+One immutable background and every null/injected derivative remain in one
+dataset split group. At least three independent source-recording groups are
+required to populate train, validation, and locked test without sharing
+background bytes. Exact digital injection is ground truth for fixture presence
+and its parameters; it is not truth for unrelated signals in the recording.
 
 The default random frame-phase mode deterministically changes the common phase
 between frames. A cyclic TX buffer repeats its finite phase sequence at the

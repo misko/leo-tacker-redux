@@ -1,0 +1,181 @@
+{
+  "schema_id": "org.leo-flow.site-readiness",
+  "schema_version": "0.1",
+  "site_id": "site_REPLACE_WITH_SITE_ID",
+  "inputs": {
+    "capture": {
+      "config": {
+        "source_path": "deploy/v5-scan/capture.json",
+        "destination_path": "/etc/leo-flow/v5-scan-capture.json",
+        "sha256": "sha256:4a5ca5bc20435674794e59269e438e5e5e65f8258710bb1aaf830ee22ebc6dc0"
+      },
+      "plan_source_ref": "plans.v5-edge-scan-2026-08-14-v1",
+      "plan_id": "plan_v5_scan_20260814_v1",
+      "plan_digest": "sha256:bf6947c46dbe06eaf9efcd2039785a1f432015610080c6e32965f1a58a560ab6",
+      "radio_ref": "radio.pluto-v5-192-168-1-15-v1",
+      "radio_id": "radio_pluto_v5_canary_15",
+      "radio_serial": "104000b29905000e17000800065934759d"
+    },
+    "analysis": {
+      "plugin_ref": "leo_station.analysis_v1:PLUGIN",
+      "workers": [
+        {
+          "instance": "worker-1",
+          "config": {
+            "source_path": "deploy/offline-analysis-v1/analysis.json",
+            "destination_path": "/etc/leo-flow/analysis-worker-1.json",
+            "sha256": "sha256:793a5437afbecb04dcb23b71e245817311853082f900476fb9296e4f0ad90715"
+          }
+        }
+      ]
+    },
+    "dashboard": {
+      "config": {
+        "source_path": "deploy/dashboard-v1/dashboard.json",
+        "destination_path": "/etc/leo-flow/dashboard.json",
+        "sha256": "sha256:7ac86f5ddbc0daf02ec3ba023755b45d15ebaf1adc355b0c61639db0ed5f0028"
+      }
+    },
+    "ephemeris": {
+      "config": {
+        "source_path": "deploy/ephemeris-provider-canary/huggingface-dry-run.example.json",
+        "destination_path": "/etc/leo-flow/ephemeris-provider-canary.json",
+        "sha256": "sha256:e465049e6b2a8783b828156fc1fe26fec95dc13d34d76f497b266d65a221a511"
+      },
+      "mode": "offline"
+    },
+    "storage": {
+      "capacity_config": {
+        "source_path": "deploy/storage-capacity/capacity.example.json",
+        "destination_path": "/etc/leo-flow/storage-capacity.json",
+        "sha256": "sha256:d8a2821867790cd998e344402277c66b484679a622a16837a0df3873885fbbf4"
+      },
+      "offhost_config": {
+        "source_path": "deploy/offhost-qualification/qualification.example.json",
+        "destination_path": "/etc/leo-flow/offhost-qualification.json",
+        "sha256": "sha256:95b3615b2aea4dca1db7762ae9ea07a5fa8da351a4e15c7cd6f63d396fec0da5"
+      }
+    },
+    "health": {
+      "config": {
+        "source_path": "deploy/operations-v1/health.example.json",
+        "destination_path": "/etc/leo-flow/systemd-health.json",
+        "sha256": "sha256:7d7616f4f9cab519c78b6640567bb7501696cfa6b6d8fafecbf74e74492c9467"
+      }
+    },
+    "units": [
+      {
+        "unit": "leo-flow.target",
+        "source_path": "deploy/operations-v1/leo-flow.target.example",
+        "destination_path": "/etc/systemd/system/leo-flow.target",
+        "sha256": "sha256:a42d44835d793352915182e01e5afcf01b545d441979c6d80148520906d671de"
+      },
+      {
+        "unit": "leo-flow-health.service",
+        "source_path": "deploy/operations-v1/leo-flow-health.service",
+        "destination_path": "/etc/systemd/system/leo-flow-health.service",
+        "sha256": "sha256:727838918b4487ac742352612347d07bc2ba9e72ff4ad3dbfd7589d6ed497e3f"
+      },
+      {
+        "unit": "leo-flow-health.timer",
+        "source_path": "deploy/operations-v1/leo-flow-health.timer",
+        "destination_path": "/etc/systemd/system/leo-flow-health.timer",
+        "sha256": "sha256:37d53769534946e030caf5d8163ed3f3ffec7ddee3b52c5cba2d3413ff4879cf"
+      },
+      {
+        "unit": "leo-v5-scan.service",
+        "source_path": "deploy/v5-scan/leo-v5-scan.service",
+        "destination_path": "/etc/systemd/system/leo-v5-scan.service",
+        "sha256": "sha256:a5e9f34c468c0aedd375476b9b781e6aaafa00d697767f8db2b04f5f930f156a"
+      },
+      {
+        "unit": "leo-offline-analysis@.service",
+        "source_path": "deploy/offline-analysis-v1/leo-offline-analysis@.service.example",
+        "destination_path": "/etc/systemd/system/leo-offline-analysis@.service",
+        "sha256": "sha256:6b4c2aa566a6a849e911bc4fb7bdb8fe11c96af9bffdf5ef71ea29b80aa85f05"
+      },
+      {
+        "unit": "leo-dashboard.service",
+        "source_path": "deploy/dashboard-v1/leo-dashboard.service",
+        "destination_path": "/etc/systemd/system/leo-dashboard.service",
+        "sha256": "sha256:84ea70efec799165a2d25a508928d95efa42b52fc2239fc769754ef485b11152"
+      },
+      {
+        "unit": "leo-storage-capacity.service",
+        "source_path": "deploy/storage-capacity/leo-storage-capacity.service",
+        "destination_path": "/etc/systemd/system/leo-storage-capacity.service",
+        "sha256": "sha256:e1b1c431e582f44dde45520aa3b2eaa57b16014a852b856d15998c72e616fb80"
+      },
+      {
+        "unit": "leo-storage-capacity.timer",
+        "source_path": "deploy/storage-capacity/leo-storage-capacity.timer",
+        "destination_path": "/etc/systemd/system/leo-storage-capacity.timer",
+        "sha256": "sha256:45d6126a3d9c13173f3229f98b1970f1ea1ba9b5a73c4f338206ab0919c6fac9"
+      },
+      {
+        "unit": "leo-ephemeris-provider-canary.service",
+        "source_path": "deploy/ephemeris-provider-canary/leo-ephemeris-provider-canary.service",
+        "destination_path": "/etc/systemd/system/leo-ephemeris-provider-canary.service",
+        "sha256": "sha256:ed7cf0973f19119d27f7c7a7c3f2bcffa35460c745cacadc61b5c242b744f1f0"
+      },
+      {
+        "unit": "leo-ephemeris-provider-canary.timer",
+        "source_path": "deploy/ephemeris-provider-canary/leo-ephemeris-provider-canary.timer",
+        "destination_path": "/etc/systemd/system/leo-ephemeris-provider-canary.timer",
+        "sha256": "sha256:6f58e15d4dca3832272a4fcdca3dd38d68fda067eca0ba9f3b74c43d8ef25cb6"
+      }
+    ]
+  },
+  "storage_policy": {
+    "cas_acl": {
+      "directory_mode": "2770",
+      "group_name": "leo-flow-cas",
+      "service_access": {
+        "capture": "rwx",
+        "analysis": "rwx",
+        "dashboard": "none"
+      }
+    }
+  },
+  "postgres": {
+    "endpoint": {
+      "host": "postgres.REPLACE_WITH_SITE_DOMAIN",
+      "port": 5432,
+      "database": "REPLACE_WITH_DATABASE_NAME",
+      "tls_mode": "verify-full"
+    },
+    "credentials": {
+      "leo_capture": {
+        "name": "capture-catalog-dsn",
+        "source_path": "/etc/leo-flow/secrets/capture-catalog-dsn"
+      },
+      "leo_analysis": {
+        "name": "analysis-catalog-dsn",
+        "source_path": "/etc/leo-flow/secrets/analysis-catalog-dsn"
+      },
+      "leo_dashboard": {
+        "name": "dashboard-catalog-dsn",
+        "source_path": "/etc/leo-flow/secrets/dashboard-catalog-dsn"
+      },
+      "postgres_audit": {
+        "name": "postgres-audit-dsn",
+        "source_path": "/etc/leo-flow/secrets/postgres-audit-dsn"
+      }
+    }
+  },
+  "dashboard_policy": {
+    "public_origin": "https://dashboard.example.invalid/",
+    "proxy_kind": "nginx",
+    "auth_policy_ref": "REPLACE_WITH_AUTH_POLICY_REF",
+    "tls_certificate_ref": "REPLACE_WITH_TLS_CERTIFICATE_REF",
+    "tls_private_key_ref": "REPLACE_WITH_TLS_PRIVATE_KEY_REF"
+  },
+  "operations": {
+    "ephemeris_receipt_retention_days": 90,
+    "health_receipt_retention_days": 90,
+    "offhost_receipt_retention_days": 365,
+    "health_receipt_path": "/var/lib/leo-flow/operations-health/latest.json",
+    "incident_receipt_directory": "/var/lib/leo-flow/operations-health/incidents",
+    "alert_route_ref": "REPLACE_WITH_ALERT_ROUTE_REF"
+  }
+}

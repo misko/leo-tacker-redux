@@ -19,10 +19,12 @@ import struct
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 SCHEMA = "leo-flow.starlink-edge-pilot-if-fixture/v1"
 GENERATOR_ID = "benchmark.starlink_pilot_if/v1"
+DRIFT_SCHEMA = "leo-flow.starlink-edge-pilot-if-fixture/v2"
+DRIFT_GENERATOR_ID = "benchmark.starlink_pilot_if/v2"
 PAPER_REFERENCE = "Qin-et-al-arXiv-2602.02627-appendix-a"
 
 FRAME_RATE_HZ = 750
@@ -75,6 +77,7 @@ class PilotIfSpecification:
     frame_phase: Literal["random", "coherent"] = "random"
     converter_min: int = -2048
     converter_max: int = 2047
+    frequency_drift_hz_s: float = 0.0
 
     def __post_init__(self) -> None:
         if self.sample_rate_hz <= 0 or self.sample_count <= 0:
@@ -100,6 +103,8 @@ class PilotIfSpecification:
             raise PilotIfSpecificationError("seed_u64 must lie in [1, 2**64)")
         if not math.isfinite(self.cfo_hz):
             raise PilotIfSpecificationError("CFO must be finite")
+        if not math.isfinite(self.frequency_drift_hz_s):
+            raise PilotIfSpecificationError("frequency drift must be finite")
         if self.if_center_hz is not None and (
             not math.isfinite(self.if_center_hz) or self.if_center_hz <= 0
         ):
@@ -111,10 +116,16 @@ class PilotIfSpecification:
         if self.converter_min >= self.converter_max:
             raise PilotIfSpecificationError("converter limits must be ordered")
         nyquist = self.sample_rate_hz / 2
+        duration_s = (self.sample_count - 1) / self.sample_rate_hz
+        carrier_offsets = (
+            self.cfo_hz,
+            self.cfo_hz + self.frequency_drift_hz_s * duration_s,
+        )
         outside = [
-            offset
+            offset + carrier_offset
             for offset in pilot_local_offsets_hz(self.edge, self.pilot_indices)
-            if abs(offset + self.cfo_hz) >= nyquist
+            for carrier_offset in carrier_offsets
+            if abs(offset + carrier_offset) >= nyquist
         ]
         if outside:
             raise PilotIfSpecificationError(
@@ -131,7 +142,7 @@ class PilotIfWaveform:
 
     @property
     def truth(self) -> dict[str, Any]:
-        return json.loads(self.truth_json)
+        return cast(dict[str, Any], json.loads(self.truth_json))
 
 
 def subcarrier_offset_hz(index: int) -> float:
@@ -239,8 +250,12 @@ def generate_pilot_if(specification: PilotIfSpecification) -> PilotIfWaveform:
     specification_doc = _specification_document(specification, offsets)
     specification_json = _canonical_json(specification_doc)
     truth = {
-        "schema": SCHEMA,
-        "generator": GENERATOR_ID,
+        "schema": (DRIFT_SCHEMA if specification.frequency_drift_hz_s != 0 else SCHEMA),
+        "generator": (
+            DRIFT_GENERATOR_ID
+            if specification.frequency_drift_hz_s != 0
+            else GENERATOR_ID
+        ),
         "paper_reference": PAPER_REFERENCE,
         "model_scope": (
             "published coded edge pilots only; not the complete Starlink downlink"
@@ -308,7 +323,14 @@ def _unscaled_signal(
             code = qpsk[pilot_symbol_state(subcarrier, symbol_index)]
             angle = 2 * math.pi * offset_hz * (symbol_time_s - CYCLIC_PREFIX_DURATION_S)
             value += code * complex(math.cos(angle), math.sin(angle))
-        cfo_angle = 2 * math.pi * specification.cfo_hz * time_s
+        cfo_angle = (
+            2
+            * math.pi
+            * (
+                specification.cfo_hz * time_s
+                + 0.5 * specification.frequency_drift_hz_s * time_s * time_s
+            )
+        )
         carrier = complex(math.cos(cfo_angle + phase), math.sin(cfo_angle + phase))
         output.append(value * carrier / pilot_count_scale)
     return output
@@ -352,7 +374,7 @@ def _round_ties_away_from_zero(value: float) -> int:
 def _specification_document(
     specification: PilotIfSpecification, offsets: tuple[float, ...]
 ) -> dict[str, Any]:
-    return {
+    document = {
         "sample_rate_hz": specification.sample_rate_hz,
         "sample_count": specification.sample_count,
         "edge": specification.edge,
@@ -376,6 +398,9 @@ def _specification_document(
         "converter_min": specification.converter_min,
         "converter_max": specification.converter_max,
     }
+    if specification.frequency_drift_hz_s != 0:
+        document["frequency_drift_hz_s"] = specification.frequency_drift_hz_s
+    return document
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -394,6 +419,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--noise-snr-db", type=float)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--cfo-hz", type=float, default=0.0)
+    parser.add_argument("--frequency-drift-hz-s", type=float, default=0.0)
     parser.add_argument("--if-center-hz", type=float)
     parser.add_argument(
         "--frame-phase", choices=("random", "coherent"), default="random"
@@ -413,6 +439,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 noise_snr_db=args.noise_snr_db,
                 seed_u64=args.seed,
                 cfo_hz=args.cfo_hz,
+                frequency_drift_hz_s=args.frequency_drift_hz_s,
                 if_center_hz=args.if_center_hz,
                 frame_phase=args.frame_phase,
             )

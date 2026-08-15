@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,82 @@ from benchmark.starlink_pilot_if import (
     pilot_local_offsets_hz,
     pilot_symbol_state,
 )
+from benchmark.starlink_scan_fixture import (
+    FrozenPairedBackground,
+    ReceiverPath,
+    StarlinkPilotScanCase,
+    StarlinkScanFixtureError,
+    generate_paired_starlink_scan_fixture,
+)
+from leo_flow.capture.scan_plan import (
+    StarlinkEdgeScanSpec,
+    build_starlink_edge_scan_plan,
+)
+from leo_flow.contracts.capture import GainMode, GainSetting
+from leo_flow.contracts.core import PlanId, RadioId, ReceiverChainId
+
+
+def _scan_plan():
+    return build_starlink_edge_scan_plan(
+        StarlinkEdgeScanSpec(
+            plan_id=PlanId("plan_recorded_background_fixture"),
+            radio_id=RadioId("radio_fixture"),
+            receiver_chain_ids=(
+                ReceiverChainId("rx_fixture_1"),
+                ReceiverChainId("rx_fixture_2"),
+            ),
+            gain=GainSetting(GainMode.AGC),
+            sample_rate_hz=2_500_000.0,
+            bandwidth_hz=2_000_000.0,
+            sample_count=5_000,
+            edge_order="L",
+            edge_order_draw_u32=0,
+        )
+    )
+
+
+def _recorded_backgrounds(plan, *, value: int = 23):
+    requests = tuple(
+        segment for activity in plan.activities for segment in activity.segments
+    )
+    result = []
+    for index, segment in enumerate(requests):
+        sample = struct.pack("<hhhh", value + index, -value, -value - index, value)
+        payload = sample * int(segment.sample_count or 0)
+        result.append(
+            FrozenPairedBackground(
+                segment_id=segment.segment_id,
+                paired_ci16_le=payload,
+                source_recording_id="rec_frozen_real_noise_01",
+                declared_source_recording_data_sha256="1" * 64,
+                source_start_sample=index * int(segment.sample_count or 0),
+                source_segment_sha256=hashlib.sha256(payload).hexdigest(),
+            )
+        )
+    return tuple(result)
+
+
+def _scan_case(backgrounds, **changes):
+    values = {
+        "signal_present": True,
+        "target_channels": (2,),
+        "edge": "lower",
+        "pilot_indices": tuple(range(528, 536)),
+        "seed_u64": 12345,
+        "receiver_paths": (
+            ReceiverPath(ambient_noise_rms_counts=0.0),
+            ReceiverPath(
+                integer_delay_samples=3,
+                gain_linear=0.7,
+                phase_offset_rad=0.25,
+                ambient_noise_rms_counts=0.0,
+            ),
+        ),
+        "source_signal_rms_counts": 64.0,
+        "recorded_backgrounds": backgrounds,
+    }
+    values.update(changes)
+    return StarlinkPilotScanCase(**values)
 
 
 def test_geometry_matches_published_and_legacy_oracle_values() -> None:
@@ -170,6 +247,78 @@ def test_generation_fails_closed_instead_of_clipping() -> None:
         generate_pilot_if(specification)
 
 
+def test_frequency_drift_is_deterministic_and_bound_in_truth() -> None:
+    baseline = PilotIfSpecification(
+        sample_rate_hz=2_500_000,
+        sample_count=10_000,
+        edge="lower",
+        pilot_indices=(531, 532),
+        signal_rms_counts=64.0,
+        cfo_hz=-20_000.0,
+        frequency_drift_hz_s=125_000.0,
+        frame_phase="coherent",
+    )
+    first = generate_pilot_if(baseline)
+    second = generate_pilot_if(baseline)
+    no_drift = generate_pilot_if(
+        PilotIfSpecification(**{**baseline.__dict__, "frequency_drift_hz_s": 0.0})
+    )
+
+    assert first == second
+    assert first.ci16_le != no_drift.ci16_le
+    assert first.truth["schema"] == "leo-flow.starlink-edge-pilot-if-fixture/v2"
+    assert first.truth["generator"] == "benchmark.starlink_pilot_if/v2"
+    assert first.truth["specification"]["frequency_drift_hz_s"] == 125_000.0
+    assert no_drift.truth["schema"] == "leo-flow.starlink-edge-pilot-if-fixture/v1"
+    assert "frequency_drift_hz_s" not in no_drift.truth["specification"]
+
+
+def test_frequency_drift_endpoint_must_remain_inside_nyquist() -> None:
+    with pytest.raises(PilotIfSpecificationError, match="do not fit"):
+        PilotIfSpecification(
+            sample_rate_hz=1_250_000,
+            sample_count=1_250_000,
+            edge="lower",
+            pilot_indices=(531, 532),
+            frequency_drift_hz_s=600_000.0,
+        )
+
+
+def test_new_drift_fields_preserve_prior_positional_construction() -> None:
+    pilot = PilotIfSpecification(
+        2_500_000,
+        10_000,
+        "lower",
+        (531, 532),
+        128.0,
+        None,
+        1,
+        0.0,
+        1_709_687_500.0,
+        "random",
+        -2048,
+        2047,
+    )
+    scan = StarlinkPilotScanCase(
+        True,
+        (2,),
+        "lower",
+        (531, 532),
+        1,
+        (ReceiverPath(), ReceiverPath()),
+        128.0,
+        0.0,
+        "random",
+        -2048,
+        2047,
+    )
+
+    assert pilot.if_center_hz == 1_709_687_500.0
+    assert pilot.frequency_drift_hz_s == 0.0
+    assert scan.frame_phase == "random"
+    assert scan.frequency_drift_hz_s == 0.0
+
+
 def test_cli_materializes_only_explicit_waveform_and_truth(tmp_path) -> None:
     output = tmp_path / "two-pilot.ci16"
     assert (
@@ -196,3 +345,128 @@ def test_cli_materializes_only_explicit_waveform_and_truth(tmp_path) -> None:
         "two-pilot.ci16",
         "two-pilot.ci16.truth.json",
     ]
+
+
+def test_recorded_background_null_is_exact_and_injection_binds_lineage() -> None:
+    plan = _scan_plan()
+    backgrounds = _recorded_backgrounds(plan)
+    null = generate_paired_starlink_scan_fixture(
+        plan,
+        _scan_case(backgrounds, signal_present=False),
+    )
+    positive = generate_paired_starlink_scan_fixture(
+        plan,
+        _scan_case(backgrounds, frequency_drift_hz_s=25_000.0),
+    )
+
+    assert tuple(item.paired_ci16_le for item in null.segments) == tuple(
+        item.paired_ci16_le for item in backgrounds
+    )
+    assert null.truth["case"]["background_kind"] == "recorded_receiver_background"
+    assert null.truth["schema"] == "leo-flow.paired-starlink-scan-fixture/v2"
+    target = next(
+        segment
+        for segment in positive.truth["segments"]
+        if segment["expected_signal_present"]
+    )
+    assert (
+        target["expected_pilot_ending_offsets_hz"]
+        != target["expected_pilot_local_offsets_hz"]
+    )
+    assert target["receivers"][1]["integer_delay_samples"] == 3
+    assert target["receivers"][1]["gain_linear"] == 0.7
+    for receiver in target["receivers"]:
+        lineage = receiver["recorded_background_lineage"]
+        assert lineage["schema"] == "leo-flow.recorded-paired-background/v1"
+        assert lineage["declared_source_recording_data_sha256"] == "1" * 64
+        assert lineage["source_signal_status"] == "unknown"
+        assert "not calibrated RF SNR" in receiver["snr_basis"]
+
+
+def test_recorded_background_clipping_is_rejected_or_saturated_and_reported() -> None:
+    plan = _scan_plan()
+    backgrounds = _recorded_backgrounds(plan, value=2_020)
+    with pytest.raises(StarlinkScanFixtureError, match="would clip"):
+        generate_paired_starlink_scan_fixture(plan, _scan_case(backgrounds))
+
+    fixture = generate_paired_starlink_scan_fixture(
+        plan,
+        _scan_case(backgrounds, clipping_policy="saturate_and_report"),
+    )
+    target = next(
+        segment
+        for segment in fixture.truth["segments"]
+        if segment["expected_signal_present"]
+    )
+    assert (
+        sum(
+            receiver["injection_added_clipped_component_count"]
+            for receiver in target["receivers"]
+        )
+        > 0
+    )
+
+
+def test_injection_null_rejects_preexisting_converter_envelope_violation() -> None:
+    plan = _scan_plan()
+    backgrounds = _recorded_backgrounds(plan, value=3_000)
+    with pytest.raises(StarlinkScanFixtureError, match="would clip"):
+        generate_paired_starlink_scan_fixture(
+            plan,
+            _scan_case(backgrounds, signal_present=False, clipping_policy="reject"),
+        )
+
+
+def test_recorded_background_lineage_and_full_plan_coverage_fail_closed() -> None:
+    plan = _scan_plan()
+    backgrounds = _recorded_backgrounds(plan)
+    with pytest.raises(StarlinkScanFixtureError, match="segment digest"):
+        FrozenPairedBackground(
+            **{**backgrounds[0].__dict__, "source_segment_sha256": "0" * 64}
+        )
+    with pytest.raises(StarlinkScanFixtureError, match="cover every scan segment"):
+        generate_paired_starlink_scan_fixture(
+            plan,
+            _scan_case(backgrounds[:-1]),
+        )
+
+
+def test_campaign_spec_spans_required_offline_dimensions_and_forbids_tx() -> None:
+    path = (
+        Path(__file__).parents[2]
+        / "benchmark"
+        / "specs"
+        / "starlink-fixture-campaign-v1.json"
+    )
+    campaign = json.loads(path.read_text(encoding="utf-8"))
+    conditions = campaign["conditions"]
+
+    assert campaign["schema"] == "leo-flow.starlink-fixture-campaign-spec/v1"
+    assert campaign["tx_eligible"] is False
+    assert {item["signal_present"] for item in conditions} == {False, True}
+    assert (
+        len(
+            {
+                item["injection_to_background_db"]
+                for item in conditions
+                if item["signal_present"]
+            }
+        )
+        >= 5
+    )
+    assert any(item["cfo_hz"] != 0 for item in conditions)
+    assert {item["frequency_drift_hz_s"] for item in conditions} >= {
+        -50_000,
+        0,
+        50_000,
+    }
+    assert {item["clipping_policy"] for item in conditions} == {
+        "reject",
+        "saturate_and_report",
+    }
+    assert len(campaign["receiver_path_arms"]) >= 3
+    assert campaign["background_contract"]["source_signal_status"] == "unknown"
+    assert (
+        "declared_source_recording_data_sha256"
+        in campaign["background_contract"]["required_lineage"]
+    )

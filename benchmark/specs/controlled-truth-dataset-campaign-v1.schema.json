@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schemas/controlled-truth-dataset-campaign-v1.schema.json",
+  "title": "LEO Flow controlled-truth dataset campaign v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "campaign_id",
+    "frozen_utc_ns",
+    "candidate_method_ids",
+    "truth_specs_digest",
+    "membership_digest",
+    "truth_specs",
+    "groups",
+    "members"
+  ],
+  "properties": {
+    "schema": {"const": "leo-flow.dataset-campaign/v1"},
+    "campaign_id": {"$ref": "#/$defs/token"},
+    "frozen_utc_ns": {"$ref": "#/$defs/utc_ns"},
+    "candidate_method_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/token"}
+    },
+    "truth_specs_digest": {"$ref": "#/$defs/digest"},
+    "membership_digest": {"$ref": "#/$defs/digest"},
+    "truth_specs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/truth_spec"}
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/group"}
+    },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/member"}
+    }
+  },
+  "$defs": {
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\s]+$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "utc_ns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?$"
+    },
+    "nullable_decimal": {
+      "oneOf": [
+        {"$ref": "#/$defs/decimal"},
+        {"type": "null"}
+      ]
+    },
+    "nullable_integer": {
+      "type": ["integer", "null"]
+    },
+    "nullable_token": {
+      "oneOf": [
+        {"$ref": "#/$defs/token"},
+        {"type": "null"}
+      ]
+    },
+    "token_array": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/token"}
+    },
+    "truth_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "truth_spec_id",
+        "truth_spec_digest",
+        "group_id",
+        "kind",
+        "target_present",
+        "base_truth_spec_id",
+        "provenance",
+        "matrix"
+      ],
+      "properties": {
+        "truth_spec_id": {"$ref": "#/$defs/token"},
+        "truth_spec_digest": {"$ref": "#/$defs/digest"},
+        "group_id": {"$ref": "#/$defs/token"},
+        "kind": {
+          "enum": [
+            "base_noise",
+            "digital_injection",
+            "controlled_rf",
+            "hard_null",
+            "confounder"
+          ]
+        },
+        "target_present": {"type": ["boolean", "null"]},
+        "base_truth_spec_id": {"$ref": "#/$defs/nullable_token"},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "matrix": {"$ref": "#/$defs/matrix"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer_id",
+        "producer_kind",
+        "producer_artifact_digest",
+        "evidence_digest",
+        "selection_policy_digest",
+        "produced_utc_ns",
+        "independent_of_method_ids",
+        "detector_derived"
+      ],
+      "properties": {
+        "producer_id": {"$ref": "#/$defs/token"},
+        "producer_kind": {
+          "enum": [
+            "independent_generator",
+            "controlled_instrument",
+            "score_blind_selection",
+            "independent_characterization"
+          ]
+        },
+        "producer_artifact_digest": {"$ref": "#/$defs/digest"},
+        "evidence_digest": {"$ref": "#/$defs/digest"},
+        "selection_policy_digest": {"$ref": "#/$defs/digest"},
+        "produced_utc_ns": {"$ref": "#/$defs/utc_ns"},
+        "independent_of_method_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/token"}
+        },
+        "detector_derived": {"const": false}
+      }
+    },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snr_db",
+        "frequency_offset_hz",
+        "drift_hz_s",
+        "receiver_delay_samples",
+        "receiver_gain_db",
+        "clipping",
+        "clip_min",
+        "clip_max",
+        "null_class",
+        "confounders"
+      ],
+      "properties": {
+        "snr_db": {"$ref": "#/$defs/nullable_decimal"},
+        "frequency_offset_hz": {"$ref": "#/$defs/nullable_integer"},
+        "drift_hz_s": {"$ref": "#/$defs/nullable_decimal"},
+        "receiver_delay_samples": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "integer"}
+            },
+            {"type": "null"}
+          ]
+        },
+        "receiver_gain_db": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/decimal"}
+            },
+            {"type": "null"}
+          ]
+        },
+        "clipping": {"type": "boolean"},
+        "clip_min": {"$ref": "#/$defs/nullable_integer"},
+        "clip_max": {"$ref": "#/$defs/nullable_integer"},
+        "null_class": {"$ref": "#/$defs/nullable_token"},
+        "confounders": {"$ref": "#/$defs/token_array"}
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "partition",
+        "start_utc_ns",
+        "stop_utc_ns",
+        "base_truth_spec_id",
+        "injection_truth_spec_ids",
+        "truth_spec_ids"
+      ],
+      "properties": {
+        "group_id": {"$ref": "#/$defs/token"},
+        "partition": {"enum": ["train", "validation", "locked_test"]},
+        "start_utc_ns": {"$ref": "#/$defs/utc_ns"},
+        "stop_utc_ns": {"$ref": "#/$defs/utc_ns"},
+        "base_truth_spec_id": {"$ref": "#/$defs/token"},
+        "injection_truth_spec_ids": {"$ref": "#/$defs/token_array"},
+        "truth_spec_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/token"}
+        }
+      }
+    },
+    "ephemeris_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_digest",
+        "provenance_digest",
+        "selection_policy_digest",
+        "selection_policy",
+        "available_utc_ns"
+      ],
+      "properties": {
+        "snapshot_digest": {"$ref": "#/$defs/digest"},
+        "provenance_digest": {"$ref": "#/$defs/digest"},
+        "selection_policy_digest": {"$ref": "#/$defs/digest"},
+        "selection_policy": {"const": "available_then"},
+        "available_utc_ns": {"$ref": "#/$defs/utc_ns"}
+      }
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "truth_spec_id",
+        "group_id",
+        "recording_id",
+        "recording_identity_digest",
+        "feature_set_id",
+        "feature_set_digest",
+        "captured_utc_ns",
+        "radio_id",
+        "lnb_ids",
+        "observation_mode",
+        "sample_rate_hz",
+        "gain_mode",
+        "gain_db",
+        "scored_truth",
+        "derived_from_recording_id",
+        "ephemeris_input"
+      ],
+      "properties": {
+        "truth_spec_id": {"$ref": "#/$defs/token"},
+        "group_id": {"$ref": "#/$defs/token"},
+        "recording_id": {"$ref": "#/$defs/token"},
+        "recording_identity_digest": {"$ref": "#/$defs/digest"},
+        "feature_set_id": {"$ref": "#/$defs/token"},
+        "feature_set_digest": {"$ref": "#/$defs/digest"},
+        "captured_utc_ns": {"$ref": "#/$defs/utc_ns"},
+        "radio_id": {"$ref": "#/$defs/token"},
+        "lnb_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/token"}
+        },
+        "observation_mode": {"$ref": "#/$defs/token"},
+        "sample_rate_hz": {"type": "integer", "minimum": 1},
+        "gain_mode": {"$ref": "#/$defs/token"},
+        "gain_db": {"$ref": "#/$defs/nullable_token"},
+        "scored_truth": {"type": "boolean"},
+        "derived_from_recording_id": {"$ref": "#/$defs/nullable_token"},
+        "ephemeris_input": {
+          "oneOf": [
+            {"$ref": "#/$defs/ephemeris_input"},
+            {"type": "null"}
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from io import StringIO
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from leo_flow.capture.drivers.v5_preflight import ExpectedV5Radio, ExpectedV5Run
 from leo_flow.fixtures.conducted_tx2 import (
     CONDUCTED_CONFIRMATION,
     CONDUCTED_TOPOLOGY,
+    TX_AUTHORIZATION,
 )
 from leo_flow.fixtures.conducted_tx2_runner import (
     CONFIG_SCHEMA,
@@ -23,16 +25,36 @@ URI = "ip:192.168.1.15"
 
 
 def config_document() -> dict[str, object]:
+    now = time.time_ns()
     return {
         "schema": CONFIG_SCHEMA,
+        "tx_operator_id": "operator-a",
+        "authorization_issued_utc_ns": now - 1_000_000_000,
+        "authorization_expires_utc_ns": now + 14 * 60 * 1_000_000_000,
         "topology": {
             "radio_serial": SERIAL,
             "topology": CONDUCTED_TOPOLOGY,
             "splitter_id": "tee-bench-01",
-            "tx2_to_rx1_attenuator_ids": ["att-rx1-30db"],
-            "tx2_to_rx2_attenuator_ids": ["att-rx2-30db"],
-            "tx2_to_rx1_attenuation_db": 30.0,
-            "tx2_to_rx2_attenuation_db": 30.0,
+            "path_evidence": [
+                {
+                    "receiver_path": "RX1",
+                    "attenuator_ids": ["att-rx1-30db"],
+                    "attenuation_db": 30.0,
+                    "verified_by": "reviewer-a",
+                    "verification_method": "calibrated_vna",
+                    "verified_utc_ns": now,
+                    "evidence_sha256": "1" * 64,
+                },
+                {
+                    "receiver_path": "RX2",
+                    "attenuator_ids": ["att-rx2-30db"],
+                    "attenuation_db": 30.0,
+                    "verified_by": "reviewer-b",
+                    "verification_method": "calibrated_signal_generator_power_meter",
+                    "verified_utc_ns": now,
+                    "evidence_sha256": "2" * 64,
+                },
+            ],
             "confirmation": CONDUCTED_CONFIRMATION,
         },
         "tx_lo_hz": 1_709_687_500,
@@ -270,6 +292,10 @@ def test_exact_dry_receipt_arms_one_finite_send_and_cleanup_receipt(
                 SERIAL,
                 "--confirm-conducted-topology",
                 CONDUCTED_CONFIRMATION,
+                "--confirm-operator-id",
+                "OPERATOR-A",
+                "--authorize-tx",
+                TX_AUTHORIZATION,
             ],
             device_factory=lambda uri: device,
         )
@@ -284,9 +310,26 @@ def test_exact_dry_receipt_arms_one_finite_send_and_cleanup_receipt(
     assert observed["status"] == "pass"
     assert observed["cleanup"] == {
         "status": "verified_muted",
-        "tx_buffer_destroyed": True,
-        "tx2_dds_disabled": True,
-        "tx2_gain_db": -80.0,
+        "initial_mute": {
+            "tx_buffer_destroyed": True,
+            "tx_gain_readback_db": -80.0,
+            "tx2_dds_scale_readbacks": [
+                ["altvoltage4", 0.0],
+                ["altvoltage5", 0.0],
+                ["altvoltage6", 0.0],
+                ["altvoltage7", 0.0],
+            ],
+        },
+        "final_mute": {
+            "tx_buffer_destroyed": True,
+            "tx_gain_readback_db": -80.0,
+            "tx2_dds_scale_readbacks": [
+                ["altvoltage4", 0.0],
+                ["altvoltage5", 0.0],
+                ["altvoltage6", 0.0],
+                ["altvoltage7", 0.0],
+            ],
+        },
         "context_closed": True,
     }
 
@@ -322,6 +365,10 @@ def test_changed_plan_rejects_prior_dry_receipt_before_radio_contact(
                 SERIAL,
                 "--confirm-conducted-topology",
                 CONDUCTED_CONFIRMATION,
+                "--confirm-operator-id",
+                "OPERATOR-A",
+                "--authorize-tx",
+                TX_AUTHORIZATION,
             ],
             device_factory=factory,
             stderr=StringIO(),
@@ -352,6 +399,10 @@ def test_transmit_failure_still_writes_cleanup_outcome(tmp_path: Path) -> None:
                 SERIAL,
                 "--confirm-conducted-topology",
                 CONDUCTED_CONFIRMATION,
+                "--confirm-operator-id",
+                "OPERATOR-A",
+                "--authorize-tx",
+                TX_AUTHORIZATION,
             ],
             device_factory=lambda uri: device,
         )

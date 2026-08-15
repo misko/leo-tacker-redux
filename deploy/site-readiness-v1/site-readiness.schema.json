@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schema/site-readiness-v0.1.json",
+  "title": "LEO Flow fail-closed site deployment readiness manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "site_id",
+    "inputs",
+    "storage_policy",
+    "postgres",
+    "dashboard_policy",
+    "operations"
+  ],
+  "properties": {
+    "schema_id": {"const": "org.leo-flow.site-readiness"},
+    "schema_version": {"const": "0.1"},
+    "site_id": {"$ref": "#/$defs/token"},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capture", "analysis", "dashboard", "ephemeris", "storage", "health", "units"],
+      "properties": {
+        "capture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["config", "plan_source_ref", "plan_id", "plan_digest", "radio_ref", "radio_id", "radio_serial"],
+          "properties": {
+            "config": {"$ref": "#/$defs/artifact"},
+            "plan_source_ref": {"$ref": "#/$defs/token"},
+            "plan_id": {"$ref": "#/$defs/token"},
+            "plan_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "radio_ref": {"$ref": "#/$defs/token"},
+            "radio_id": {"$ref": "#/$defs/token"},
+            "radio_serial": {"$ref": "#/$defs/token"}
+          }
+        },
+        "analysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["plugin_ref", "workers"],
+          "properties": {
+            "plugin_ref": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$"},
+            "workers": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["instance", "config"],
+                "properties": {
+                  "instance": {"$ref": "#/$defs/token"},
+                  "config": {"$ref": "#/$defs/artifact"}
+                }
+              }
+            }
+          }
+        },
+        "dashboard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["config"],
+          "properties": {"config": {"$ref": "#/$defs/artifact"}}
+        },
+        "ephemeris": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["config", "mode"],
+          "properties": {
+            "config": {"$ref": "#/$defs/artifact"},
+            "mode": {"const": "offline"}
+          }
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capacity_config", "offhost_config"],
+          "properties": {
+            "capacity_config": {"$ref": "#/$defs/artifact"},
+            "offhost_config": {"$ref": "#/$defs/artifact"}
+          }
+        },
+        "health": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["config"],
+          "properties": {"config": {"$ref": "#/$defs/artifact"}}
+        },
+        "units": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {"$ref": "#/$defs/unit_artifact"}
+        }
+      }
+    },
+    "storage_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cas_acl"],
+      "properties": {
+        "cas_acl": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["directory_mode", "group_name", "service_access"],
+          "properties": {
+            "directory_mode": {"const": "2770"},
+            "group_name": {"$ref": "#/$defs/token"},
+            "service_access": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["capture", "analysis", "dashboard"],
+              "properties": {
+                "capture": {"const": "rwx"},
+                "analysis": {"const": "rwx"},
+                "dashboard": {"const": "none"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "postgres": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "credentials"],
+      "properties": {
+        "endpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["host", "port", "database", "tls_mode"],
+          "properties": {
+            "host": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$"},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "database": {"$ref": "#/$defs/token"},
+            "tls_mode": {"enum": ["verify-ca", "verify-full"]}
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["leo_capture", "leo_analysis", "leo_dashboard", "postgres_audit"],
+          "properties": {
+            "leo_capture": {"$ref": "#/$defs/credential"},
+            "leo_analysis": {"$ref": "#/$defs/credential"},
+            "leo_dashboard": {"$ref": "#/$defs/credential"},
+            "postgres_audit": {"$ref": "#/$defs/credential"}
+          }
+        }
+      }
+    },
+    "dashboard_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public_origin", "proxy_kind", "auth_policy_ref", "tls_certificate_ref", "tls_private_key_ref"],
+      "properties": {
+        "public_origin": {"type": "string", "pattern": "^https://[^/?#]+/?$"},
+        "proxy_kind": {"enum": ["nginx", "apache", "caddy", "envoy"]},
+        "auth_policy_ref": {"$ref": "#/$defs/token"},
+        "tls_certificate_ref": {"$ref": "#/$defs/token"},
+        "tls_private_key_ref": {"$ref": "#/$defs/token"}
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ephemeris_receipt_retention_days",
+        "health_receipt_retention_days",
+        "offhost_receipt_retention_days",
+        "health_receipt_path",
+        "incident_receipt_directory",
+        "alert_route_ref"
+      ],
+      "properties": {
+        "ephemeris_receipt_retention_days": {"type": "integer", "minimum": 1, "maximum": 3650},
+        "health_receipt_retention_days": {"type": "integer", "minimum": 1, "maximum": 3650},
+        "offhost_receipt_retention_days": {"type": "integer", "minimum": 1, "maximum": 3650},
+        "health_receipt_path": {"$ref": "#/$defs/absolute_path"},
+        "incident_receipt_directory": {"$ref": "#/$defs/absolute_path"},
+        "alert_route_ref": {"$ref": "#/$defs/token"}
+      }
+    }
+  },
+  "$defs": {
+    "token": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}$"},
+    "absolute_path": {"type": "string", "pattern": "^/(?!$)(?!\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/\\.{1,2}(?:/|$))[^\\u0000]+$"},
+    "relative_path": {"type": "string", "pattern": "^(?!/)(?!\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/\\.{1,2}(?:/|$))[^/\\u0000]+(?:/[^/\\u0000]+)*$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_path", "destination_path", "sha256"],
+      "properties": {
+        "source_path": {"$ref": "#/$defs/relative_path"},
+        "destination_path": {"$ref": "#/$defs/absolute_path"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "unit_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "source_path", "destination_path", "sha256"],
+      "properties": {
+        "unit": {
+          "enum": [
+            "leo-flow.target",
+            "leo-flow-health.service",
+            "leo-flow-health.timer",
+            "leo-v5-scan.service",
+            "leo-offline-analysis@.service",
+            "leo-dashboard.service",
+            "leo-storage-capacity.service",
+            "leo-storage-capacity.timer",
+            "leo-ephemeris-provider-canary.service",
+            "leo-ephemeris-provider-canary.timer"
+          ]
+        },
+        "source_path": {"$ref": "#/$defs/relative_path"},
+        "destination_path": {"$ref": "#/$defs/absolute_path"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "credential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source_path"],
+      "properties": {
+        "name": {"$ref": "#/$defs/token"},
+        "source_path": {"$ref": "#/$defs/absolute_path"}
+      }
+    }
+  }
+}

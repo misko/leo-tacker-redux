@@ -1,0 +1,453 @@
+{
+  "campaign_id": "controlled-truth-campaign-v1-example",
+  "candidate_method_ids": [
+    "edge-energy@1",
+    "paired-delay@2"
+  ],
+  "frozen_utc_ns": 700,
+  "groups": [
+    {
+      "base_truth_spec_id": "truth-train-base",
+      "group_id": "group-train",
+      "injection_truth_spec_ids": [
+        "truth-train-injection"
+      ],
+      "partition": "train",
+      "start_utc_ns": 100,
+      "stop_utc_ns": 200,
+      "truth_spec_ids": [
+        "truth-train-base",
+        "truth-train-injection"
+      ]
+    },
+    {
+      "base_truth_spec_id": "truth-validation-base",
+      "group_id": "group-validation",
+      "injection_truth_spec_ids": [],
+      "partition": "validation",
+      "start_utc_ns": 300,
+      "stop_utc_ns": 400,
+      "truth_spec_ids": [
+        "truth-validation-base",
+        "truth-validation-null"
+      ]
+    },
+    {
+      "base_truth_spec_id": "truth-test-base",
+      "group_id": "group-test",
+      "injection_truth_spec_ids": [],
+      "partition": "locked_test",
+      "start_utc_ns": 500,
+      "stop_utc_ns": 600,
+      "truth_spec_ids": [
+        "truth-test-base",
+        "truth-test-confounder"
+      ]
+    }
+  ],
+  "members": [
+    {
+      "captured_utc_ns": 110,
+      "derived_from_recording_id": null,
+      "ephemeris_input": {
+        "available_utc_ns": 109,
+        "provenance_digest": "sha256:8f4141c11f46366925023f27df33b023ea217b9741b07ea694c0673eaee66591",
+        "selection_policy": "available_then",
+        "selection_policy_digest": "sha256:e8974e3500fb29bc77051878567654868337a065fcaaa12d842c3e6b1c985930",
+        "snapshot_digest": "sha256:f7dfb052512e9381783bf57fef9ebe927d77d5951f9e131fdbcf722f546d416a"
+      },
+      "feature_set_digest": "sha256:1801a37189a38ef862bb42620cdfd513750782dac025e1288b4e8949d705612a",
+      "feature_set_id": "feature-1",
+      "gain_db": "50",
+      "gain_mode": "manual",
+      "group_id": "group-train",
+      "lnb_ids": [
+        "lnb-a",
+        "lnb-b"
+      ],
+      "observation_mode": "controlled-campaign",
+      "radio_id": "radio-v5-a",
+      "recording_id": "recording-1",
+      "recording_identity_digest": "sha256:ede9a6d90439902eb0a49f46fca6b7e9bad3b5d8c80fefd209a2f74d0be8e7af",
+      "sample_rate_hz": 2000000,
+      "scored_truth": false,
+      "truth_spec_id": "truth-train-base"
+    },
+    {
+      "captured_utc_ns": 111,
+      "derived_from_recording_id": "recording-1",
+      "ephemeris_input": {
+        "available_utc_ns": 110,
+        "provenance_digest": "sha256:546d96b1f93e878722c8eb2ba462aeb924af30d486ce1a859a64fa7ef211cab3",
+        "selection_policy": "available_then",
+        "selection_policy_digest": "sha256:e8974e3500fb29bc77051878567654868337a065fcaaa12d842c3e6b1c985930",
+        "snapshot_digest": "sha256:366b7f4fed0efc5bc9194ac84152275634153aa5bb7b3e9188f059aa18b12e52"
+      },
+      "feature_set_digest": "sha256:df15e51b5cb12b49e605575c27c9fa24f7c046dc32ba3c8ee864a738e022708f",
+      "feature_set_id": "feature-2",
+      "gain_db": "50",
+      "gain_mode": "manual",
+      "group_id": "group-train",
+      "lnb_ids": [
+        "lnb-a",
+        "lnb-b"
+      ],
+      "observation_mode": "controlled-campaign",
+      "radio_id": "radio-v5-a",
+      "recording_id": "recording-2",
+      "recording_identity_digest": "sha256:afd909534550171ed47330e291ee5caf058923e2aa21d3815c0b23fc3c60caed",
+      "sample_rate_hz": 2000000,
+      "scored_truth": true,
+      "truth_spec_id": "truth-train-injection"
+    },
+    {
+      "captured_utc_ns": 310,
+      "derived_from_recording_id": null,
+      "ephemeris_input": {
+        "available_utc_ns": 309,
+        "provenance_digest": "sha256:230190b5449a5752d8d87949a65ac03457f7141bdb8c1d76e3f75402c9c1619d",
+        "selection_policy": "available_then",
+        "selection_policy_digest": "sha256:e8974e3500fb29bc77051878567654868337a065fcaaa12d842c3e6b1c985930",
+        "snapshot_digest": "sha256:009aae077d8717dc20229fdd6e91022ba09315da37ea481b87ea192e72f6fc0c"
+      },
+      "feature_set_digest": "sha256:8b1e34c0ec033f98e5d479623a3c81b97e1fc80f8ec98df24713509e417092c3",
+      "feature_set_id": "feature-3",
+      "gain_db": "50",
+      "gain_mode": "manual",
+      "group_id": "group-validation",
+      "lnb_ids": [
+        "lnb-a",
+        "lnb-b"
+      ],
+      "observation_mode": "controlled-campaign",
+      "radio_id": "radio-v5-a",
+      "recording_id": "recording-3",
+      "recording_identity_digest": "sha256:f8493e9f6de0f630301d9574e0eb2bade41adb9891cbd8e9b208056d2abedf57",
+      "sample_rate_hz": 2000000,
+      "scored_truth": false,
+      "truth_spec_id": "truth-validation-base"
+    },
+    {
+      "captured_utc_ns": 311,
+      "derived_from_recording_id": null,
+      "ephemeris_input": {
+        "available_utc_ns": 310,
+        "provenance_digest": "sha256:655eb823a7968c63ab8df81e265c9f91d0fb37573521771def6c44e2106c4e00",
+        "selection_policy": "available_then",
+        "selection_policy_digest": "sha256:e8974e3500fb29bc77051878567654868337a065fcaaa12d842c3e6b1c985930",
+        "snapshot_digest": "sha256:15294845f6ee8d34d4b954e5ece87d76fa06148e554a335e4c09ee223a6a22a2"
+      },
+      "feature_set_digest": "sha256:81213bb8a61f3c519ebac715855a9e7c0217e72e42fe926b09427cae1cc54671",
+      "feature_set_id": "feature-4",
+      "gain_db": "50",
+      "gain_mode": "manual",
+      "group_id": "group-validation",
+      "lnb_ids": [
+        "lnb-a",
+        "lnb-b"
+      ],
+      "observation_mode": "controlled-campaign",
+      "radio_id": "radio-v5-a",
+      "recording_id": "recording-4",
+      "recording_identity_digest": "sha256:693af91d33e800a5283a483e7781073df0f253ec61d156b6ba25e3539366fe76",
+      "sample_rate_hz": 2000000,
+      "scored_truth": true,
+      "truth_spec_id": "truth-validation-null"
+    },
+    {
+      "captured_utc_ns": 510,
+      "derived_from_recording_id": null,
+      "ephemeris_input": {
+        "available_utc_ns": 509,
+        "provenance_digest": "sha256:c048f4fffc02ed5dc3a3d61b5680bb71df316eb3626cf16feb582929a749e2ee",
+        "selection_policy": "available_then",
+        "selection_policy_digest": "sha256:e8974e3500fb29bc77051878567654868337a065fcaaa12d842c3e6b1c985930",
+        "snapshot_digest": "sha256:c4011b3990987e5b4b358049e067b80adb579a43896a6ebe5d3fc71329f0abf4"
+      },
+      "feature_set_digest": "sha256:fe1c6535fd372f2f74183b94ad90a92d4eb64c53db73b8638666d5340df98276",
+      "feature_set_id": "feature-5",
+      "gain_db": "50",
+      "gain_mode": "manual",
+      "group_id": "group-test",
+      "lnb_ids": [
+        "lnb-a",
+        "lnb-b"
+      ],
+      "observation_mode": "controlled-campaign",
+      "radio_id": "radio-v5-a",
+      "recording_id": "recording-5",
+      "recording_identity_digest": "sha256:3f204f334c1fb73f769c98eb62238f28aadfb7686a60fc4d062b6a913b108542",
+      "sample_rate_hz": 2000000,
+      "scored_truth": false,
+      "truth_spec_id": "truth-test-base"
+    },
+    {
+      "captured_utc_ns": 511,
+      "derived_from_recording_id": null,
+      "ephemeris_input": {
+        "available_utc_ns": 510,
+        "provenance_digest": "sha256:0f614ca0f1d6a717e45b0d7094dc170734275fe6c3293c3a170e579477dd8765",
+        "selection_policy": "available_then",
+        "selection_policy_digest": "sha256:e8974e3500fb29bc77051878567654868337a065fcaaa12d842c3e6b1c985930",
+        "snapshot_digest": "sha256:f15e74cb856d50db330eb9f0c9e6af3905618c635997887d204d44570c1a8dd2"
+      },
+      "feature_set_digest": "sha256:1b2ed41e8d2a1018443b6399e0ddeae31a8ebc275ac5dafd19f9bcf37191f925",
+      "feature_set_id": "feature-6",
+      "gain_db": "50",
+      "gain_mode": "manual",
+      "group_id": "group-test",
+      "lnb_ids": [
+        "lnb-a",
+        "lnb-b"
+      ],
+      "observation_mode": "controlled-campaign",
+      "radio_id": "radio-v5-a",
+      "recording_id": "recording-6",
+      "recording_identity_digest": "sha256:30282d33c5e1aee1a1a0e43ff2f54fbdf018eb106397de590d29d9efd4aae9c0",
+      "sample_rate_hz": 2000000,
+      "scored_truth": true,
+      "truth_spec_id": "truth-test-confounder"
+    }
+  ],
+  "membership_digest": "sha256:3507ab659b97259e8bbabfdeba0eb09f8737de3ec233283bc5f9168c2007c682",
+  "schema": "leo-flow.dataset-campaign/v1",
+  "truth_specs": [
+    {
+      "base_truth_spec_id": null,
+      "group_id": "group-train",
+      "kind": "base_noise",
+      "matrix": {
+        "clip_max": 32767,
+        "clip_min": -32768,
+        "clipping": true,
+        "confounders": [],
+        "drift_hz_s": "-2750.25",
+        "frequency_offset_hz": 125000,
+        "null_class": null,
+        "receiver_delay_samples": [
+          0,
+          3
+        ],
+        "receiver_gain_db": [
+          "0",
+          "-1.25"
+        ],
+        "snr_db": "-8.5"
+      },
+      "provenance": {
+        "detector_derived": false,
+        "evidence_digest": "sha256:34d3f166b8acc0b1321d9ff2ca6ca76cc95789b907667676aea67e07a8b7fc1e",
+        "independent_of_method_ids": [
+          "edge-energy@1",
+          "paired-delay@2"
+        ],
+        "produced_utc_ns": 10,
+        "producer_artifact_digest": "sha256:d342a2e79fde8fa87f18eb612fdb1486da0a438d95eedd56ddd2a40336ae6eb1",
+        "producer_id": "truth-steward-truth-train-base",
+        "producer_kind": "score_blind_selection",
+        "selection_policy_digest": "sha256:7b3af4dc00e07a2332f323ea4d250a813c038b88d6b5503610ddab839492c705"
+      },
+      "target_present": null,
+      "truth_spec_digest": "sha256:c44f8efb8ce7f742bf007d1b1d04c59c45d5953e37979899819247184ac97f46",
+      "truth_spec_id": "truth-train-base"
+    },
+    {
+      "base_truth_spec_id": "truth-train-base",
+      "group_id": "group-train",
+      "kind": "digital_injection",
+      "matrix": {
+        "clip_max": 32767,
+        "clip_min": -32768,
+        "clipping": true,
+        "confounders": [],
+        "drift_hz_s": "-2750.25",
+        "frequency_offset_hz": 125000,
+        "null_class": null,
+        "receiver_delay_samples": [
+          0,
+          3
+        ],
+        "receiver_gain_db": [
+          "0",
+          "-1.25"
+        ],
+        "snr_db": "-8.5"
+      },
+      "provenance": {
+        "detector_derived": false,
+        "evidence_digest": "sha256:22ac8c62b49da7888cca70c263769d9b211a2be6d7666a926cf2ec29cf7c5ab0",
+        "independent_of_method_ids": [
+          "edge-energy@1",
+          "paired-delay@2"
+        ],
+        "produced_utc_ns": 10,
+        "producer_artifact_digest": "sha256:c9b48a7c8d4437c7c497439e08aff860693e73fe4a2d7985be988f80198b5542",
+        "producer_id": "truth-steward-truth-train-injection",
+        "producer_kind": "independent_generator",
+        "selection_policy_digest": "sha256:7a20dcaaec5d40c9ee598ad535bd26b7bc1c7f4addb3c1707b40a2a46cd8c5e3"
+      },
+      "target_present": true,
+      "truth_spec_digest": "sha256:1a22f51e7aae80ea2e5a467843790c88cf5c066c9f9e18813b4f1ca26616f960",
+      "truth_spec_id": "truth-train-injection"
+    },
+    {
+      "base_truth_spec_id": null,
+      "group_id": "group-validation",
+      "kind": "base_noise",
+      "matrix": {
+        "clip_max": 32767,
+        "clip_min": -32768,
+        "clipping": true,
+        "confounders": [],
+        "drift_hz_s": "-2750.25",
+        "frequency_offset_hz": 125000,
+        "null_class": null,
+        "receiver_delay_samples": [
+          0,
+          3
+        ],
+        "receiver_gain_db": [
+          "0",
+          "-1.25"
+        ],
+        "snr_db": "-8.5"
+      },
+      "provenance": {
+        "detector_derived": false,
+        "evidence_digest": "sha256:9c72089d39617400465793ba39317d4d301d6f676214c4e932a1be01e60c3bda",
+        "independent_of_method_ids": [
+          "edge-energy@1",
+          "paired-delay@2"
+        ],
+        "produced_utc_ns": 10,
+        "producer_artifact_digest": "sha256:939fe71eb1c56ff612f48d109efd38e404063e373ce522a23ebb0213b5fc7202",
+        "producer_id": "truth-steward-truth-validation-base",
+        "producer_kind": "score_blind_selection",
+        "selection_policy_digest": "sha256:b38928e85fe6b2bc3c63bcc61c8850dcc2bf774429fa18a1f845eff205582e4e"
+      },
+      "target_present": null,
+      "truth_spec_digest": "sha256:de65dbaf316c60c1096f7b1824d466381c0e5f3776afedce0ba5763e026e27d8",
+      "truth_spec_id": "truth-validation-base"
+    },
+    {
+      "base_truth_spec_id": null,
+      "group_id": "group-validation",
+      "kind": "hard_null",
+      "matrix": {
+        "clip_max": 32767,
+        "clip_min": -32768,
+        "clipping": true,
+        "confounders": [],
+        "drift_hz_s": "-2750.25",
+        "frequency_offset_hz": 125000,
+        "null_class": "quiet-load",
+        "receiver_delay_samples": [
+          0,
+          3
+        ],
+        "receiver_gain_db": [
+          "0",
+          "-1.25"
+        ],
+        "snr_db": "-8.5"
+      },
+      "provenance": {
+        "detector_derived": false,
+        "evidence_digest": "sha256:5f6f7616f8463c520f7da34cbfabe512b3865b10eb7195b3e253d0c1ce93949d",
+        "independent_of_method_ids": [
+          "edge-energy@1",
+          "paired-delay@2"
+        ],
+        "produced_utc_ns": 10,
+        "producer_artifact_digest": "sha256:a04948d5f9a293b769a9bad19e6dfdef7b2826dc2f3c66e0787f47cfa8f9e2e8",
+        "producer_id": "truth-steward-truth-validation-null",
+        "producer_kind": "score_blind_selection",
+        "selection_policy_digest": "sha256:456719a36cf80ac30bbb3c1e46a24610789d6e1322962ec1c28ead74143541cb"
+      },
+      "target_present": false,
+      "truth_spec_digest": "sha256:3aaddc145ec7a71ac43fb4e5dab63569b25919436c4bf0cc1c31abb0a59c9092",
+      "truth_spec_id": "truth-validation-null"
+    },
+    {
+      "base_truth_spec_id": null,
+      "group_id": "group-test",
+      "kind": "base_noise",
+      "matrix": {
+        "clip_max": 32767,
+        "clip_min": -32768,
+        "clipping": true,
+        "confounders": [],
+        "drift_hz_s": "-2750.25",
+        "frequency_offset_hz": 125000,
+        "null_class": null,
+        "receiver_delay_samples": [
+          0,
+          3
+        ],
+        "receiver_gain_db": [
+          "0",
+          "-1.25"
+        ],
+        "snr_db": "-8.5"
+      },
+      "provenance": {
+        "detector_derived": false,
+        "evidence_digest": "sha256:1a3ef937a766a2ee8ce961cbd3b7ef065007a153de6e07910e7245aced654184",
+        "independent_of_method_ids": [
+          "edge-energy@1",
+          "paired-delay@2"
+        ],
+        "produced_utc_ns": 10,
+        "producer_artifact_digest": "sha256:8181fe68697bb9099677fc978574d9f84014d3584bcebd934f2831155a5747e1",
+        "producer_id": "truth-steward-truth-test-base",
+        "producer_kind": "score_blind_selection",
+        "selection_policy_digest": "sha256:c85555b95603400efcbdac2166be946c1a5cb48898aedbc7338dc1758fc7e9a8"
+      },
+      "target_present": null,
+      "truth_spec_digest": "sha256:b046f297cb5e87b6c59d13f44aa417cc062f1470ee017a3a4555045bd6f7dfbd",
+      "truth_spec_id": "truth-test-base"
+    },
+    {
+      "base_truth_spec_id": null,
+      "group_id": "group-test",
+      "kind": "confounder",
+      "matrix": {
+        "clip_max": 32767,
+        "clip_min": -32768,
+        "clipping": true,
+        "confounders": [
+          "known-lte-interferer"
+        ],
+        "drift_hz_s": "-2750.25",
+        "frequency_offset_hz": 125000,
+        "null_class": null,
+        "receiver_delay_samples": [
+          0,
+          3
+        ],
+        "receiver_gain_db": [
+          "0",
+          "-1.25"
+        ],
+        "snr_db": "-8.5"
+      },
+      "provenance": {
+        "detector_derived": false,
+        "evidence_digest": "sha256:c7b5736d78566af66062916aa0c37e0d6f4c6287f408d7eae861bce1ebe44ade",
+        "independent_of_method_ids": [
+          "edge-energy@1",
+          "paired-delay@2"
+        ],
+        "produced_utc_ns": 10,
+        "producer_artifact_digest": "sha256:9a57d1b531199d8b09e44c3e99c1fa0e41491a3639fe5abed6dca1de7ff69049",
+        "producer_id": "truth-steward-truth-test-confounder",
+        "producer_kind": "independent_characterization",
+        "selection_policy_digest": "sha256:17623270155854b3b6d64e4c6d6cfbbe5b6e4c664fca8fc5b694fb5c82efc857"
+      },
+      "target_present": false,
+      "truth_spec_digest": "sha256:055e62d516122b18aae73c12ee0a0f7274319360ed16ec3e0680bdef12931345",
+      "truth_spec_id": "truth-test-confounder"
+    }
+  ],
+  "truth_specs_digest": "sha256:6b34d80339dae6347abed03a2f170aa3f7b255f93e206a86c931bbb4bb306481"
+}

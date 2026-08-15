@@ -1,0 +1,46 @@
+{
+  "schema": "leo-flow.starlink-fixture-campaign-spec/v1",
+  "purpose": "offline coded-edge-pilot injection campaign over immutable paired-RX recorded backgrounds",
+  "ground_truth_contract": {
+    "positive_label": "exact digital injection described by fixture truth",
+    "null_label": "zero fixture injection; recorded RF signal status remains unknown",
+    "snr_interpretation": "injected-signal to recorded-background power ratio, not calibrated RF SNR",
+    "group_rule": "one source recording carve and every derived injection remain in one dataset split"
+  },
+  "background_contract": {
+    "schema": "leo-flow.recorded-paired-background/v1",
+    "required_lineage": [
+      "source_recording_id",
+      "declared_source_recording_data_sha256",
+      "source_start_sample",
+      "source_sample_count",
+      "source_segment_sha256",
+      "source_signal_status"
+    ],
+    "source_signal_status": "unknown",
+    "minimum_independent_groups": 3,
+    "required_splits": ["train", "validation", "locked_test"]
+  },
+  "conditions": [
+    {"condition_id":"injection_null","signal_present":false,"injection_to_background_db":null,"cfo_hz":0,"frequency_drift_hz_s":0,"clipping_policy":"reject"},
+    {"condition_id":"snr_m18_cfo_m60k","signal_present":true,"injection_to_background_db":-18,"cfo_hz":-60000,"frequency_drift_hz_s":0,"clipping_policy":"reject"},
+    {"condition_id":"snr_m10_drift_m50k","signal_present":true,"injection_to_background_db":-10,"cfo_hz":-30000,"frequency_drift_hz_s":-50000,"clipping_policy":"reject"},
+    {"condition_id":"snr_m2_nominal","signal_present":true,"injection_to_background_db":-2,"cfo_hz":0,"frequency_drift_hz_s":0,"clipping_policy":"reject"},
+    {"condition_id":"snr_p6_drift_p50k","signal_present":true,"injection_to_background_db":6,"cfo_hz":30000,"frequency_drift_hz_s":50000,"clipping_policy":"reject"},
+    {"condition_id":"snr_p14_clip_audit","signal_present":true,"injection_to_background_db":14,"cfo_hz":60000,"frequency_drift_hz_s":0,"clipping_policy":"saturate_and_report"}
+  ],
+  "receiver_path_arms": [
+    {"integer_delay_samples":0,"gain_linear":1.0,"phase_offset_rad":0.0},
+    {"integer_delay_samples":1,"gain_linear":0.8,"phase_offset_rad":-0.5},
+    {"integer_delay_samples":2,"gain_linear":0.95,"phase_offset_rad":0.0},
+    {"integer_delay_samples":3,"gain_linear":1.1,"phase_offset_rad":0.7},
+    {"integer_delay_samples":4,"gain_linear":1.15,"phase_offset_rad":1.4}
+  ],
+  "pilot_arms": [
+    {"edge":"lower","pilot_indices":[531,532]},
+    {"edge":"lower","pilot_indices":[528,529,530,531,532,533,534,535]},
+    {"edge":"upper","pilot_indices":[491,492]},
+    {"edge":"upper","pilot_indices":[488,489,490,491,492,493,494,495]}
+  ],
+  "tx_eligible": false
+}

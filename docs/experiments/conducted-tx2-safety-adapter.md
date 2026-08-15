@@ -21,9 +21,16 @@ all waveform bytes before it calls the factory. A plan is admitted only when:
   layout, TX2 DDS layout, and pre-existing TX2 mute state;
 - the physical attestation names the same serial, the exact
   `TX2->ATTENUATORS->PASSIVE_SPLITTER->RX1+RX2` topology, an identified passive
-  splitter/tee, and identified attenuators on both paths;
-- each attested TX2-to-RX path has at least 30 dB attenuation and the exact
-  antenna-free confirmation is present;
+  splitter/tee, and distinct identified attenuators on both paths;
+- RX1 and RX2 each have at least 30 dB attenuation backed by an exact
+  measurement time, verifier distinct from the TX operator, calibrated method,
+  and lowercase SHA-256 of the verification evidence;
+- an identified operator supplies the exact one-shot authorization and the
+  antenna-free confirmation is present; operator/verifier identities compare
+  case-insensitively;
+- authorization is valid for at most 15 minutes and must include the live
+  execution time; attenuation evidence must not be future-dated or older than
+  four hours at execution;
 - LO, sample rate, number of samples, waveform digest, RMS, and component peak
   are inside the fixed bounds below; and
 - the first step is 16 RMS counts at 80 dB TX attenuation, with each later
@@ -65,15 +72,20 @@ requires a separately reviewed adapter change.
 
 The immutable inputs are:
 
+- `ConductedPathAttenuationEvidence`: RX path, distinct attenuator identities,
+  measured attenuation, independent verifier, calibrated method, measurement
+  time, and evidence digest;
 - `ConductedFixtureAttestation`: serial, exact topology and no-antenna
-  confirmation, splitter identity, attenuator identities, and measured or
-  verified path attenuation;
+  confirmation, splitter identity, and exactly one evidence record for RX1 and
+  RX2;
 - `FiniteTx2Waveform`: CI16 bytes, declared RMS level, and SHA-256 digest;
 - `Tx2LadderStep`: one permitted positive attenuation and waveform pair; and
 - `ConductedTx2Plan`: exact URI/serial arm, topology attestation, the existing
   `ExpectedV5Runtime` and `ExpectedV5Radio` contracts, LO, rate, and a finite
-  tuple of steps. The expected radio must retain the qualified four-component
-  paired layout, TX2 DDS mapping, and `-80 dB` pre-mutation ceiling.
+  tuple of steps, plus identified operator and exact one-shot authorization.
+  Authorization includes exact issue and expiry UTC nanoseconds.
+  The expected radio must retain the qualified four-component paired layout,
+  TX2 DDS mapping, and `-80 dB` pre-mutation ceiling.
 
 `open_exact_pyadi_tx2` is the production device factory. It lazily imports
 pyadi/NumPy and constructs `adi.ad9361(uri=the_exact_uri)` without discovery.
@@ -85,9 +97,10 @@ pinned pyadi 0.0.21 infer the non-cyclic buffer length from that array. The
 adapter does not invent a `tx_buffer_size` property that pyadi does not expose.
 
 The successful result is `ConductedTx2Evidence`, containing exact radio/URI
-identity and per-step gain, LO, rate, sample count, level, and waveform digest
-readbacks. It is returned to an operator-owned harness; this adapter does not
-write files, publish scientific truth, invoke capture, or run analysis.
+identity, structured initial/final mute readbacks, and per-step gain, LO, rate,
+sample count, level, waveform digest, and pre/post mute readbacks. It is returned
+to an operator-owned harness; this adapter does not write files, publish
+scientific truth, invoke capture, or run analysis.
 
 ## Cleanup contract
 
@@ -121,11 +134,12 @@ rung. Stop at the first unexpected readback or receive measurement.
 ## Supervised one-shot runner
 
 `python -m leo_flow.fixtures.conducted_tx2_runner` is an operator-facing
-one-shot harness, not a service. Its strict JSON config contains exactly one
-physical `ConductedFixtureAttestation`, TX LO, and sample rate. Unknown or
-missing fields fail closed. The `.15` URI, host-runtime expectations, and radio
-identity are immutable code constants, not operator-configurable fields, so a
-config cannot redefine an arbitrary current runtime as qualified. The runner
+one-shot harness, not a service. Its v2 strict JSON config contains exactly one
+identified operator, physical `ConductedFixtureAttestation`, TX LO, and sample
+rate. Unknown or missing fields fail closed. The `.15` URI, host-runtime
+expectations, and radio identity are immutable code constants, not
+operator-configurable fields, so a config cannot redefine an arbitrary current
+runtime as qualified. The runner
 constructs one fixed 4,096-sample,
 16-RMS-count waveform at 80 dB TX attenuation. It contains two unmodulated
 tones at ±117,187.5 Hz, corresponding to the inner pair of lower-edge pilot
@@ -156,8 +170,9 @@ python -m leo_flow.fixtures.conducted_tx2_runner \
 Transmission requires all of the following in one invocation: `--arm`, a
 previous passing dry-run receipt for the byte-identical plan, a new result
 receipt path, the exact serial repeated by the operator, and the exact current
-antenna-free topology confirmation. The output receipt path must not already
-exist. This preserves both the dry-run and final cleanup evidence.
+antenna-free topology confirmation, operator identity, and exact one-shot
+authorization phrase. The output receipt path must not already exist. This
+preserves both the dry-run and final cleanup evidence.
 
 ```text
 python -m leo_flow.fixtures.conducted_tx2_runner \
@@ -166,15 +181,17 @@ python -m leo_flow.fixtures.conducted_tx2_runner \
   --arm \
   --arm-from-dry-run /absolute/path/conducted-tx2-dry-run.json \
   --confirm-radio-serial 104000b29905000e17000800065934759d \
-  --confirm-conducted-topology TX2_CONDUCTED_RX1_RX2_NO_ANTENNA
+  --confirm-conducted-topology TX2_CONDUCTED_RX1_RX2_NO_ANTENNA \
+  --confirm-operator-id OPERATOR_FROM_CONFIG \
+  --authorize-tx AUTHORIZE_ONE_FINITE_CONDUCTED_TX2_SEND
 ```
 
-A successful armed receipt includes the exact control readbacks and a cleanup
-result verifying that the buffer was destroyed, DDS was disabled, TX2 was
-returned to `-80 dB`, and the context closed. A failed operation also creates a
-bounded failure receipt. If mandatory cleanup itself fails, the receipt says
-`cleanup.status=failed`; the operator must treat the radio as unsafe until a
-separate read-only inspection proves mute.
+A successful v2 receipt includes structured initial/final and per-step pre/post
+mute readbacks verifying that the buffer was destroyed, every DDS scale was
+zero, TX2 was at `-80 dB`, and the context closed. A failed operation also
+creates a bounded failure receipt. If mandatory cleanup itself fails, the
+receipt says `cleanup.status=failed`; the operator must treat the radio as
+unsafe until a separate read-only inspection proves mute.
 
 ## 2026-08-14 read-only observation
 
@@ -202,10 +219,12 @@ context was then closed without tune, gain, DDS, buffer, or transmit calls.
 
 The previously described bench topology said one branch may have only 20 dB
 attenuation. The safety adapter requires independently identified and verified
-attenuation of at least 30 dB on each path. Exclusive radio use does not satisfy
+attenuation of at least 30 dB on each path, with evidence digests and verifier
+identity distinct from the TX operator. Exclusive radio use does not satisfy
 that missing physical gate, so the 2026-08-14 dry-run using the last stated
 30/20 dB topology failed validation before opening a radio context and created
-no passing arm receipt. Live mutation was therefore unavailable.
+no passing arm receipt. Live mutation remains unavailable until current v2
+evidence is supplied.
 
 Run the hardware-free safety suite with:
 
