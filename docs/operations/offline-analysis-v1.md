@@ -54,8 +54,8 @@ refusal-only worker would claim and mutate the first matching durable job before
 it learned that the science was unapproved. Pointing such a rehearsal at the
 production DSN would damage queue state.
 
-The checked config, schema, and non-installable systemd template live under
-`deploy/offline-analysis-v1/`. The template names the deliberately absent
+The checked config, schema, and non-installable `leo-offline-analysis@.service`
+template live under `deploy/offline-analysis-v1/`. The template names the deliberately absent
 operator module `leo_station.analysis_v1:PLUGIN` and has no `[Install]` section,
 so this repository alone cannot start an analysis worker or claim a job.
 
@@ -88,6 +88,9 @@ must exist before an off-host worker can consume a submitted recording.
 Low-level tests may construct the service with
 `build_offline_analysis_service(config, components, lease_ttl_s=...)`. A real
 station process runs the common service CLI with its explicit plugin module.
+For the packaged operations target, copy `analysis.json` to the template's exact
+`/etc/leo-flow/analysis-worker-1.json` path and give every additional `%i`
+instance a distinct config and `runtime.instance_id`.
 
 The deterministic component rehearsal covers exact routing, restart-safe
 idempotency, exclusion of ephemeris jobs, unknown algorithm failure, and model

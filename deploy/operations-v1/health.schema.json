@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schema/systemd-health-v0.1.json",
+  "title": "LEO Flow systemd health qualification configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "services", "timers"],
+  "properties": {
+    "schema_id": {"const": "org.leo-flow.systemd-health-config"},
+    "schema_version": {"const": "0.1"},
+    "services": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["component", "unit", "mode", "restart", "maximum_restarts"],
+        "properties": {
+          "component": {"enum": ["capture", "analysis", "dashboard"]},
+          "unit": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}\\.service$"},
+          "mode": {"enum": ["running", "oneshot-complete"]},
+          "restart": {"enum": ["no", "on-failure", "always"]},
+          "maximum_restarts": {"type": "integer", "minimum": 0}
+        }
+      },
+      "allOf": [
+        {
+          "contains": {"properties": {"component": {"const": "capture"}}},
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {"properties": {"component": {"const": "analysis"}}},
+          "minContains": 1
+        },
+        {
+          "contains": {"properties": {"component": {"const": "dashboard"}}},
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "timers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}\\.timer$"
+      }
+    }
+  }
+}

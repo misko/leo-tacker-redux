@@ -7,24 +7,30 @@ import psycopg
 import pytest
 
 DEFINER_FUNCTIONS = {
+    "claim_dwell_request",
     "claim_job",
     "claim_unregistered_object",
     "complete_job",
+    "complete_dwell_request",
     "complete_unregistered_object_delete",
     "enqueue_job",
     "fail_job",
+    "fail_dwell_request",
     "gc_claim_object",
     "gc_complete_object_delete",
     "gc_record_delete_failure",
     "heartbeat_job",
+    "heartbeat_dwell_request",
     "lock_active_job_lease",
     "object_blob_assert_live_reference",
     "object_digest_fence",
     "observe_unregistered_object",
     "orphan_claim_is_current",
     "park_job",
+    "park_dwell_request",
     "publish_tracking_input_snapshot",
     "publish_tracking_model_snapshot",
+    "publish_dwell_request",
     "record_unregistered_object_delete_failure",
     "register_live_object_blob",
 }
@@ -39,9 +45,17 @@ ANALYSIS_FUNCTIONS = {
     "park_job",
     "publish_tracking_input_snapshot",
     "publish_tracking_model_snapshot",
+    "publish_dwell_request",
     "register_live_object_blob",
 }
-CAPTURE_FUNCTIONS = {"register_live_object_blob"}
+CAPTURE_FUNCTIONS = {
+    "claim_dwell_request",
+    "complete_dwell_request",
+    "fail_dwell_request",
+    "heartbeat_dwell_request",
+    "park_dwell_request",
+    "register_live_object_blob",
+}
 MAINTENANCE_FUNCTIONS = {
     "claim_unregistered_object",
     "complete_unregistered_object_delete",

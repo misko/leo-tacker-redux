@@ -1,0 +1,31 @@
+{
+  "schema_id": "org.leo-flow.systemd-health-config",
+  "schema_version": "0.1",
+  "services": [
+    {
+      "component": "capture",
+      "unit": "leo-v5-scan.service",
+      "mode": "oneshot-complete",
+      "restart": "on-failure",
+      "maximum_restarts": 5
+    },
+    {
+      "component": "analysis",
+      "unit": "leo-offline-analysis@worker-1.service",
+      "mode": "running",
+      "restart": "on-failure",
+      "maximum_restarts": 5
+    },
+    {
+      "component": "dashboard",
+      "unit": "leo-dashboard.service",
+      "mode": "running",
+      "restart": "on-failure",
+      "maximum_restarts": 5
+    }
+  ],
+  "timers": [
+    "leo-flow-health.timer",
+    "leo-storage-capacity.timer"
+  ]
+}

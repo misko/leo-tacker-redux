@@ -1,16 +1,23 @@
 [Unit]
 Description=LEO Flow read-only dashboard v1
-After=network-online.target
+PartOf=leo-flow.target
+After=network-online.target leo-offline-analysis@worker-1.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
 DynamicUser=yes
+RuntimeDirectory=leo-flow-dashboard
+RuntimeDirectoryMode=0700
 LoadCredential=catalog-dsn:/etc/leo-flow/secrets/dashboard-catalog-dsn
-ExecStart=/opt/leo-flow/bin/python -m leo_flow.services --config /etc/leo-flow/dashboard.json --plugin leo_flow.deployments.dashboard_v1:PLUGIN --forever
+ExecStart=/usr/bin/flock --nonblock /run/leo-flow-dashboard/supervisor.lock /opt/leo-flow/bin/python -m leo_flow.services --config /etc/leo-flow/dashboard.json --plugin leo_flow.deployments.dashboard_v1:PLUGIN --forever
 Restart=on-failure
 RestartSec=2s
+TimeoutStartSec=30s
 TimeoutStopSec=7s
+KillSignal=SIGTERM
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
@@ -20,6 +27,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 

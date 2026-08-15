@@ -1,0 +1,14 @@
+[Unit]
+Description=Schedule LEO Flow three-component health receipts
+PartOf=leo-flow.target
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=15s
+AccuracySec=1s
+Persistent=true
+Unit=leo-flow-health.service
+
+[Install]
+WantedBy=timers.target

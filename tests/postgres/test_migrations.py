@@ -34,6 +34,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0016_tracking_input_catalog.sql",),
         ("0017_security_definer_hardening.sql",),
         ("0018_tracking_model_snapshot_catalog.sql",),
+        ("0019_dwell_request_ingress.sql",),
     ]
 
 
@@ -67,6 +68,33 @@ def test_capability_roles_are_narrow(postgres_dsn: str) -> None:
     assert not capture_job
     assert dashboard_select
     assert not dashboard_mutate
+
+
+@pytest.mark.integration
+def test_dwell_ingress_capabilities_are_directional(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        row = connection.execute(
+            """
+            SELECT has_table_privilege(
+                       'leo_analysis', 'dwell_request_ingress', 'SELECT'),
+                   has_table_privilege(
+                       'leo_capture', 'dwell_request_ingress', 'SELECT'),
+                   has_function_privilege(
+                       'leo_analysis', 'publish_dwell_request(jsonb)', 'EXECUTE'),
+                   has_function_privilege(
+                       'leo_capture', 'publish_dwell_request(jsonb)', 'EXECUTE'),
+                   has_function_privilege(
+                       'leo_capture',
+                       'claim_dwell_request(text,text,text,interval)', 'EXECUTE'),
+                   has_function_privilege(
+                       'leo_analysis',
+                       'claim_dwell_request(text,text,text,interval)', 'EXECUTE'),
+                   has_function_privilege(
+                       'leo_dashboard',
+                       'claim_dwell_request(text,text,text,interval)', 'EXECUTE')
+            """
+        ).fetchone()
+    assert row == (False, False, True, False, True, False, False)
 
 
 @pytest.mark.integration

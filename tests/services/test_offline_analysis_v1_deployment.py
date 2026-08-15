@@ -396,9 +396,10 @@ def test_checked_unit_template_cannot_run_without_operator_station_plugin() -> N
     root = Path(__file__).parents[2] / "deploy" / "offline-analysis-v1"
     config = load_service_config(root / "analysis.json")
     assert isinstance(config, AnalysisServiceConfig)
-    unit = (root / "leo-offline-analysis.service.example").read_text(encoding="utf-8")
+    unit = (root / "leo-offline-analysis@.service.example").read_text(encoding="utf-8")
     assert "leo_station.analysis_v1:PLUGIN" in unit
     assert "LoadCredential=catalog-dsn:" in unit
+    assert "analysis-%i.json" in unit
     assert not any(line.strip() == "[Install]" for line in unit.splitlines())
 
 

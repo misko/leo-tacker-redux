@@ -1,0 +1,28 @@
+[Unit]
+Description=LEO Flow three-component health receipt
+Documentation=file:/opt/leo-flow/docs/operations/three-component-systemd.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=leo-flow/operations-health
+RuntimeDirectory=leo-flow-operations-health
+StateDirectoryMode=0700
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/flock --nonblock /run/leo-flow-operations-health/qualification.lock /opt/leo-flow/bin/python -m leo_flow.deployments.systemd_health --config /etc/leo-flow/systemd-health.json --receipt /var/lib/leo-flow/operations-health/latest.json
+UMask=0077
+TimeoutStartSec=15s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes

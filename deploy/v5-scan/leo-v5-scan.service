@@ -1,7 +1,10 @@
 [Unit]
 Description=LEO Flow V5 scan-only capture
+PartOf=leo-flow.target
 After=network-online.target time-sync.target
 Wants=network-online.target time-sync.target
+Requires=leo-storage-capacity.service
+After=leo-storage-capacity.service
 RequiresMountsFor=/var/lib/leo-flow/objects
 ConditionPathIsMountPoint=/var/lib/leo-flow/objects
 Conflicts=leo-v5-canary.service
@@ -17,7 +20,7 @@ RuntimeDirectory=leo-flow-v5-scan
 StateDirectoryMode=0700
 RuntimeDirectoryMode=0700
 LoadCredential=catalog-dsn:/etc/leo-flow/secrets/capture-catalog-dsn
-ExecStart=/opt/leo-v5/bin/runtime-entrypoint /usr/bin/python3 -m leo_flow.services --config /etc/leo-flow/v5-scan-capture.json --plugin leo_flow.deployments.v5_scan:PLUGIN --once
+ExecStart=/usr/bin/flock --nonblock /run/leo-flow-v5-scan/supervisor.lock /opt/leo-v5/bin/runtime-entrypoint /usr/bin/python3 -m leo_flow.services --config /etc/leo-flow/v5-scan-capture.json --plugin leo_flow.deployments.v5_scan:PLUGIN --once
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=30s

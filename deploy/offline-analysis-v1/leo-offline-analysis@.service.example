@@ -1,0 +1,48 @@
+[Unit]
+Description=LEO Flow offline analysis worker %i (requires approved station plugin)
+Documentation=file:/opt/leo-flow/docs/operations/offline-analysis-v1.md
+PartOf=leo-flow.target
+After=network-online.target time-sync.target leo-storage-capacity.service leo-v5-scan.service
+Wants=network-online.target time-sync.target
+Requires=leo-storage-capacity.service
+RequiresMountsFor=/var/lib/leo-flow/objects
+ConditionPathIsMountPoint=/var/lib/leo-flow/objects
+Before=leo-dashboard.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+DynamicUser=yes
+SupplementaryGroups=leo-flow-cas
+StateDirectory=leo-flow-analysis-%i
+RuntimeDirectory=leo-flow-analysis-%i
+StateDirectoryMode=0700
+RuntimeDirectoryMode=0700
+LoadCredential=catalog-dsn:/etc/leo-flow/secrets/analysis-catalog-dsn
+# leo_station.analysis_v1 is an operator-owned, reviewed package. Installation
+# must fail until it exports the exact approved PLUGIN built by
+# build_station_plugin; there is no checked-in scientific fallback.
+ExecStart=/usr/bin/flock --nonblock /run/leo-flow-analysis-%i/worker.lock /opt/leo-flow/bin/python -m leo_flow.services --config /etc/leo-flow/analysis-%i.json --plugin leo_station.analysis_v1:PLUGIN --forever
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+TimeoutStopSec=17s
+KillSignal=SIGTERM
+UMask=0007
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/leo-flow/objects
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+# Deliberately no [Install] section: the operator enables the reviewed aggregate
+# target only after installing the approved station plugin and exact worker config.

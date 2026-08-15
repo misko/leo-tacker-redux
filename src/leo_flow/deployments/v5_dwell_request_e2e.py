@@ -26,6 +26,7 @@ from leo_flow.application import (
     DwellRequestGate,
     DwellSafetyPolicy,
 )
+from leo_flow.capture.clock import SystemCaptureClock
 from leo_flow.capture.engine import PlanCaptureEngine
 from leo_flow.capture.plan_repository import SQLiteCapturePlanRepository
 from leo_flow.capture.publication import PublicationReconciler
@@ -47,7 +48,7 @@ from leo_flow.contracts.evidence import EvidenceKind, LabelEvidenceRef
 from leo_flow.contracts.features import FeatureSetBundle, FeatureSetRef
 from leo_flow.contracts.ports import RadioDevice
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
-from leo_flow.deployments.v5_canary import V5RadioProvider
+from leo_flow.deployments.v5_canary import CaptureHostGuard, V5RadioProvider
 from leo_flow.deployments.v5_dwell_e2e import (
     BLOCK_SAMPLES,
     CAPTURE_IDENTITY,
@@ -61,8 +62,20 @@ from leo_flow.deployments.v5_dwell_e2e import (
     sustained_continuity_evidence,
 )
 from leo_flow.deployments.v5_dwell_request import OneShotDwellCaptureScheduler
+from leo_flow.deployments.v5_dwell_supervisor import (
+    ClockAttestation,
+    RetentionCapacityPolicy,
+    SQLiteSupervisorState,
+    TrustedCaptureClock,
+    V5DwellSupervisor,
+)
 from leo_flow.deployments.v5_live_safety import verify_tx2_muted
 from leo_flow.jobs import InMemoryJobLeaseRepository, JobState
+from leo_flow.maintenance.capacity import (
+    CapacityConfiguration,
+    CapacityRoot,
+    CapacityThresholds,
+)
 from leo_flow.services.recording_analysis import (
     FencedRecordingAnalysisWorker,
     PreparedRecordingAnalysis,
@@ -256,19 +269,67 @@ def run_live(output_root: Path, *, confirmed_serial: str) -> dict[str, object]:
         spool, RecordingPublisherAdapter(local, blobs, recordings), local
     )
     gate = DurableDwellRequestGate(DwellRequestGate(_policy()), plans, plans)
+    system_clock = SystemCaptureClock()
+    clock_valid_from = UtcNs(now - 60_000_000_000)
+    clock_valid_until = UtcNs(now + 300_000_000_000)
+    trusted_clock = TrustedCaptureClock(
+        system_clock,
+        lambda: ClockAttestation(
+            "operator-confirmed-host-ntp",
+            True,
+            clock_valid_from,
+            clock_valid_until,
+            1_000_000_000,
+        ),
+        maximum_uncertainty_ns=1_000_000_000,
+    )
     scheduler = OneShotDwellCaptureScheduler(
         gate,
         V5RadioProvider(),
-        PlanCaptureEngine(CAPTURE_IDENTITY),
+        PlanCaptureEngine(CAPTURE_IDENTITY, clock=trusted_clock),
         SigMFRecordingWriter(),
         spool,
         reconciler,
     )
+    supervisor_state = SQLiteSupervisorState(database)
+    supervisor = V5DwellSupervisor(
+        host_guard=CaptureHostGuard(
+            root / "run" / "capture.lock",
+            (root, recordings_root, root / "cas"),
+            128 * 1024 * 1024,
+        ),
+        clock=trusted_clock,
+        spool=spool,
+        local_recordings=local,
+        reconciler=reconciler,
+        scheduler=scheduler,
+        capacity=CapacityConfiguration(
+            CapacityThresholds(
+                256 * 1024 * 1024,
+                128 * 1024 * 1024,
+                0.02,
+                0.01,
+            ),
+            (CapacityRoot("qualification", root),),
+            "critical",
+        ),
+        retention=RetentionCapacityPolicy(2, 128 * 1024 * 1024, 16 * 1024 * 1024),
+        state=supervisor_state,
+    )
     tx_before = verify_tx2_muted(EXPECTED_URI, EXPECTED_SERIAL)
     try:
-        receipt = scheduler.run(request, UtcNs(now + 1))
+        supervisor.start()
+        processed = supervisor.process(request)
     finally:
-        tx_after = verify_tx2_muted(EXPECTED_URI, EXPECTED_SERIAL)
+        try:
+            supervisor.close(10.0)
+        finally:
+            tx_after = verify_tx2_muted(EXPECTED_URI, EXPECTED_SERIAL)
+    receipt = processed.schedule
+    durable_receipt = processed.durable_receipt
+    supervisor_health = supervisor_state.health()
+    if supervisor_health is None or supervisor_health.state != "stopped":
+        raise V5DwellRequestE2EError("capture supervisor did not stop durably")
     if not receipt.captured_now or receipt.published_now != 1:
         raise V5DwellRequestE2EError("first request did not capture and publish once")
     published = recordings.get(str(receipt.recording_id))
@@ -391,6 +452,17 @@ def run_live(output_root: Path, *, confirmed_serial: str) -> dict[str, object]:
             "restart_replay_recording_id": str(replay.recording_id),
             "frame_accounting": frame_accounting,
             "object_integrity": integrity,
+            "durable_receipt_digest": str(durable_receipt.identity_digest()),
+            "supervisor_health": {
+                "state": supervisor_health.state,
+                "ready": supervisor_health.ready,
+                "completed_units": supervisor_health.completed_units,
+                "failed_units": supervisor_health.failed_units,
+                "startup_published": supervisor_health.startup_published,
+                "startup_cleaned": supervisor_health.startup_cleaned,
+                "capacity_status": supervisor_health.capacity_status,
+                "clock_source": supervisor_health.clock_source,
+            },
         },
         "analysis": {
             "job_id": str(submitted.job_id),

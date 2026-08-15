@@ -1,0 +1,12 @@
+[Unit]
+Description=LEO Flow capture, analysis, and dashboard
+Documentation=file:/opt/leo-flow/docs/operations/three-component-systemd.md
+Requires=leo-storage-capacity.service
+Wants=network-online.target time-sync.target
+Wants=leo-v5-scan.service leo-offline-analysis@worker-1.service leo-dashboard.service
+Wants=leo-storage-capacity.timer leo-flow-health.timer
+After=network-online.target time-sync.target leo-storage-capacity.service
+After=leo-v5-scan.service leo-offline-analysis@worker-1.service leo-dashboard.service
+
+[Install]
+WantedBy=multi-user.target

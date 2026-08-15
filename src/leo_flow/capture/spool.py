@@ -259,6 +259,23 @@ class SQLiteLocalSpool:
             raise RuntimeError("plan has more than one durable recording")
         return _entry_from_row(rows[0]) if rows else None
 
+    def durable_recordings(self, limit: int) -> tuple[SpoolEntry, ...]:
+        """Return bounded retained-byte receipts for capacity policy."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM recordings
+                 WHERE state IN ('complete', 'acknowledged', 'cleaned')
+                 ORDER BY created_utc_ns, recording_id
+                 LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return tuple(_entry_from_row(row) for row in rows)
+
     def note_publish_attempt(
         self, recording_id: RecordingId, idempotency_key: str, error: str | None
     ) -> None:
