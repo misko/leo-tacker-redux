@@ -41,3 +41,9 @@ def test_no_control_plane_marker_protocol_is_created() -> None:
         for path in component.rglob("*.py"):
             text = path.read_text()
             assert not any(token in text for token in forbidden), path
+
+
+def test_blob_writer_capability_is_not_redeclared_by_consumers() -> None:
+    for path in SOURCE_ROOT.rglob("*.py"):
+        if path != SOURCE_ROOT / "storage" / "ports.py":
+            assert "class _BlobWriter" not in path.read_text(), path

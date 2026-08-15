@@ -1,6 +1,11 @@
 """Explicit composition helpers for the first public-boundary vertical slice."""
 
-from .dwell import DwellRequestGate, DwellRequestRejected, DwellSafetyPolicy
+from .dwell import (
+    DurableDwellRequestGate,
+    DwellRequestGate,
+    DwellRequestRejected,
+    DwellSafetyPolicy,
+)
 from .model_publication import (
     InMemoryModelPublication,
     ModelPublicationConflict,
@@ -10,6 +15,7 @@ from .projections import DashboardProjectionStore, ProjectionInputError
 
 __all__ = [
     "DashboardProjectionStore",
+    "DurableDwellRequestGate",
     "DwellRequestGate",
     "DwellRequestRejected",
     "DwellSafetyPolicy",

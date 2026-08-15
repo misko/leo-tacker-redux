@@ -1,0 +1,26 @@
+{
+  "schema_id": "org.leo-flow.ephemeris-provider-canary-config",
+  "schema_version": "0.1",
+  "provider": "space-track",
+  "endpoint_profile": "space-track-starlink-gp-v1",
+  "scope": "starlink",
+  "request_spec": "space-track-starlink-gp-v1",
+  "attribution": "Space-Track.org GP data",
+  "network_approved": false,
+  "bounds": {
+    "timeout_s": 20,
+    "max_response_bytes": 8388608,
+    "minimum_request_interval_s": 21600
+  },
+  "validation": {
+    "minimum_satellites": 1,
+    "maximum_satellites": 10000,
+    "maximum_epoch_age_s": 2678400,
+    "maximum_future_skew_s": 86400
+  },
+  "credential_capabilities": {
+    "provider": "systemd-credential",
+    "identity_name": "space-track-identity",
+    "password_name": "space-track-password"
+  }
+}

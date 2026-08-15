@@ -7,9 +7,10 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TextIO
+from typing import TYPE_CHECKING, TextIO
 
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
+from leo_flow.services.bootstrap import SecretProvider
 from leo_flow.services.recording_submission import SubmittedRecordingAnalysis
 from leo_flow.services.recording_submission_operator import (
     RecordingAnalysisSubmissionOperator,
@@ -30,17 +31,13 @@ class RecordingSubmissionDeploymentError(RuntimeError):
     """The durable submission adapters could not be safely constructed or used."""
 
 
-class CredentialProvider(Protocol):
-    def resolve(self, name: str) -> str: ...
-
-
 ConnectionFactory = Callable[[], "psycopg.Connection[dict[str, object]]"]
 
 
 def submit_recording_analysis(
     config: RecordingSubmissionOperatorConfig,
     *,
-    credentials: CredentialProvider | None = None,
+    credentials: SecretProvider | None = None,
 ) -> SubmittedRecordingAnalysis:
     """Resolve one systemd credential and submit through analysis-role adapters."""
 

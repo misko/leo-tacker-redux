@@ -1,0 +1,22 @@
+{
+  "schema_id": "org.leo-flow.ephemeris-provider-canary-config",
+  "schema_version": "0.1",
+  "provider": "huggingface",
+  "endpoint_profile": "huggingface-starlink-main-v1",
+  "scope": "starlink",
+  "request_spec": "hf-starlink-main-v1",
+  "attribution": "Hugging Face juliensimon/starlink-tle-latest dataset",
+  "network_approved": false,
+  "bounds": {
+    "timeout_s": 20,
+    "max_response_bytes": 8388608,
+    "minimum_request_interval_s": 21600
+  },
+  "validation": {
+    "minimum_satellites": 1,
+    "maximum_satellites": 10000,
+    "maximum_epoch_age_s": 2678400,
+    "maximum_future_skew_s": 86400
+  },
+  "credential_capabilities": null
+}

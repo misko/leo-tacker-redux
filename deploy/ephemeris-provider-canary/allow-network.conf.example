@@ -1,0 +1,6 @@
+# Install only after reviewing the provider config and setting
+# network_approved=true in /etc/leo-flow/ephemeris-provider-canary.json.
+[Service]
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ExecStart=
+ExecStart=/opt/leo-flow/bin/python -m leo_flow.deployments.ephemeris_provider_canary --config /etc/leo-flow/ephemeris-provider-canary.json --root /var/lib/leo-flow/ephemeris-provider-canary --allow-network

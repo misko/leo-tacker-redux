@@ -38,6 +38,10 @@ from leo_flow.contracts.storage import ByteRange, ObjectMetadata, ObjectRef
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import JobLeaseRepository, StaleLeaseError
 from leo_flow.services.analysis import build_analysis_service
+from leo_flow.services.analysis_router import (
+    AnalysisLeaseExecutor,
+    TypedAnalysisRouterCycle,
+)
 from leo_flow.services.bootstrap import (
     AdapterBuildContext,
     AdapterManifest,
@@ -233,14 +237,12 @@ class OfflineAnalysisComponents:
     close: Callable[[float], None] = lambda timeout_s: None
 
 
-class _LeaseExecutor(Protocol):
-    def execute(self, lease: JobLease) -> object: ...
-
-
 class FencedModelAnalysisExecutor:
     """Give preparation failures the same explicit fenced state as recording jobs."""
 
-    def __init__(self, jobs: JobLeaseRepository, processor: _LeaseExecutor) -> None:
+    def __init__(
+        self, jobs: JobLeaseRepository, processor: AnalysisLeaseExecutor
+    ) -> None:
         self._jobs = jobs
         self._processor = processor
 
@@ -265,8 +267,8 @@ class FencedModelAnalysisExecutor:
             raise
 
 
-class OfflineAnalysisCycle:
-    """Route only independent-recording and cross-recording analysis jobs."""
+class OfflineAnalysisCycle(TypedAnalysisRouterCycle):
+    """Compatibility constructor for the shared typed analysis router."""
 
     CLAIMED_TYPES = (JobType.RECORDING_ANALYSIS, JobType.MODEL_ANALYSIS)
 
@@ -274,45 +276,24 @@ class OfflineAnalysisCycle:
         self,
         jobs: JobLeaseRepository,
         *,
-        recording: _LeaseExecutor,
-        model: _LeaseExecutor,
+        recording: AnalysisLeaseExecutor,
+        model: AnalysisLeaseExecutor,
         worker_id: str,
         lease_ttl_s: float,
         preflight: Callable[[], None] = lambda: None,
         close: Callable[[float], None] = lambda timeout_s: None,
     ) -> None:
-        if not worker_id or lease_ttl_s <= 0:
-            raise ValueError("worker identity and positive lease TTL are required")
-        self._jobs = jobs
-        self._executors = MappingProxyType(
-            {
+        super().__init__(
+            jobs,
+            executors={
                 JobType.RECORDING_ANALYSIS: recording,
                 JobType.MODEL_ANALYSIS: model,
-            }
+            },
+            worker_id=worker_id,
+            lease_ttl_s=lease_ttl_s,
+            preflight=preflight,
+            close=close,
         )
-        self._worker_id = worker_id
-        self._lease_ttl_s = lease_ttl_s
-        self._preflight = preflight
-        self._close = close
-
-    def preflight(self) -> None:
-        self._preflight()
-
-    def process_one_job(self) -> bool:
-        lease = self._jobs.claim(self.CLAIMED_TYPES, self._worker_id, self._lease_ttl_s)
-        if lease is None:
-            return False
-        try:
-            executor = self._executors[lease.job_type]
-        except KeyError as error:
-            raise OfflineAnalysisCompositionError(
-                "claimed job kind is outside offline analysis"
-            ) from error
-        executor.execute(lease)
-        return True
-
-    def close(self, timeout_s: float) -> None:
-        self._close(timeout_s)
 
 
 def build_offline_analysis_cycle(

@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule LEO Flow ephemeris provider canary every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+RandomizedDelaySec=5min
+Persistent=true
+Unit=leo-ephemeris-provider-canary.service
+
+[Install]
+WantedBy=timers.target

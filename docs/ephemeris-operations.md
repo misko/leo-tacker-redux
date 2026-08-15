@@ -28,6 +28,60 @@ terms and rate limits before enabling the scheduler.
 5. Enqueue stable cadence slots with `EphemerisScheduler`; execute them under
    the existing fenced `EPHEMERIS_RETRIEVAL` job lease.
 
+## Provider canary and scheduled evidence
+
+The checked-in provider canary is offline by default. It runs the provider
+parser through a deterministic TLE fixture, writes immutable raw, normalized,
+provenance, and canary-receipt objects, resolves the exact snapshot through the
+catalog, and runs the pinned `sgp4==2.25` profile at the element epoch. The
+receipt binds the object references, NORAD IDs, element epochs, parser and
+validation policy, station geometry, propagation profile, and propagated
+state.
+
+Run the default fixture path with:
+
+```console
+/opt/leo-flow/bin/python -m leo_flow.deployments.ephemeris_provider_canary \
+  --config /etc/leo-flow/ephemeris-provider-canary.json \
+  --root /var/lib/leo-flow/ephemeris-provider-canary
+```
+
+Install `leo-ephemeris-provider-canary.service` and its timer for a persistent,
+six-hour, randomized schedule. The installed service permits only `AF_UNIX`,
+so the timer repeatedly exercises the archive/catalog/SGP4 path without network
+access. Same-slot fixture execution is content-idempotent: the four CAS object
+identities remain unchanged. Existing `EphemerisScheduler`/fenced-worker tests
+separately prove stable cadence IDs, at-least-once enqueue idempotence, and
+bounded rate-limit/transient retries with secret-free failure codes.
+
+Live retrieval has two independent gates: the reviewed config must set
+`network_approved` to `true`, and the process must receive `--allow-network`.
+The sample `allow-network.conf.example` supplies that command-line gate and
+permits only Internet address families; it must not be installed by default.
+The canary then performs at most one provider data request, enforces a 60-second
+absolute timeout ceiling, a 16 MiB response ceiling, and a persistent minimum-
+interval lock before the request. Redirect and host policy remain fixed in the
+provider HTTP adapters. Process-boundary failures emit only exception class,
+never provider response text or credential values.
+
+Current repository state does not authorize a live call. Exact missing inputs
+are:
+
+| Provider | Missing input before live proof |
+|---|---|
+| Hugging Face | A reviewed copy of `huggingface-dry-run.example.json` with `network_approved: true`, plus installation of the explicit network override |
+| Space-Track | All Hugging Face-style approval inputs, plus existing dedicated systemd credential capabilities named by the config (the example names are `space-track-identity` and `space-track-password`) and matching `LoadCredential=` mappings |
+
+Do not discover alternate environment variables, enumerate credential
+directories, copy credential values into JSON, or infer approval from network
+reachability. A Space-Track dry run records only configured capability names
+and does not resolve them. Live and fixture receipts are distinguishable by
+`mode` and `live_retrieval_performed`; an injected test transport is never
+reported as live evidence.
+
+The dated implementation/live-evidence split is recorded in
+`docs/experiments/ephemeris-provider-canary.md`.
+
 ## Persistent catalog and fenced completion
 
 Migration `0003_ephemeris_catalog.sql` adds the immutable
@@ -55,15 +109,16 @@ catalog/object references and update jobs; `leo_dashboard` can only read the
 catalog; `leo_capture` has no ephemeris access. Snapshot rows are immutable for
 all component roles.
 
-Before enabling production schedules, integration still needs to supply the
-provider-specific retriever factory and secret-store capability, run one
-explicit opt-in provider canary, define operator handling for non-retryable job
-failures, and install the cadence scheduler as a supervised process.
+Before enabling the production ingestion worker, integration still needs to
+supply its provider-specific retriever factory and persistent catalog/secret-
+store capabilities, run one explicit opt-in provider canary, and define
+operator handling for non-retryable job failures. The checked-in canary timer
+is supervised schedule evidence; it is not a substitute for the fenced
+production ingestion worker.
 
-No live provider calls run during normal unit/integration tests. A separately
-marked, opt-in provider canary should fetch once into a temporary CAS, validate
-checksums/count/epoch bounds, verify no secret appears in diagnostics, and then
-be removed.
+No live provider calls run during normal unit/integration tests. Live canary
+evidence must be preserved separately from fixture evidence and must never be
+described as provider proof unless `live_retrieval_performed` is true.
 
 ## Alerts and recovery
 

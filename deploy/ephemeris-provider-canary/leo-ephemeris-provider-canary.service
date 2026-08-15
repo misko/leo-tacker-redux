@@ -1,0 +1,23 @@
+[Unit]
+Description=LEO Flow ephemeris archive/catalog/SGP4 canary
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=leo-flow
+Group=leo-flow
+UMask=0077
+StateDirectory=leo-flow/ephemeris-provider-canary
+ExecStart=/opt/leo-flow/bin/python -m leo_flow.deployments.ephemeris_provider_canary --config /etc/leo-flow/ephemeris-provider-canary.json --root /var/lib/leo-flow/ephemeris-provider-canary
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes

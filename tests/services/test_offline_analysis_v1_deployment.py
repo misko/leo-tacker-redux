@@ -58,6 +58,7 @@ from leo_flow.services import (
     Process,
     RuntimeConfig,
     SecretRef,
+    TypedAnalysisRouterCycle,
     assemble_service,
 )
 from leo_flow.services.config import AnalysisServiceConfig, load_service_config
@@ -77,6 +78,10 @@ def test_example_configuration_is_strictly_parseable() -> None:
     config = load_service_config(path)
     assert isinstance(config, AnalysisServiceConfig)
     assert config.runtime.instance_id == "station-a-offline-analysis-1"
+
+
+def test_offline_cycle_reuses_the_shared_typed_router() -> None:
+    assert issubclass(OfflineAnalysisCycle, TypedAnalysisRouterCycle)
 
 
 @dataclass

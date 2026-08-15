@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable
-from typing import BinaryIO, Protocol
 
 import psycopg
 from psycopg.rows import dict_row
@@ -20,7 +19,6 @@ from leo_flow.analysis.model.tracking_model_persistence import (
     tracking_model_projection,
 )
 from leo_flow.contracts.core import ArtifactRef, Digest
-from leo_flow.contracts.storage import ObjectRef
 from leo_flow.contracts.tracking_model_output import TrackingModelSnapshotBundle
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import StaleLeaseError
@@ -29,29 +27,17 @@ from leo_flow.services.model_analysis import (
     TRACKING_MODEL_ANALYSIS_JOB_SCHEMA,
     decode_tracking_model_analysis_payload,
 )
+from leo_flow.storage.ports import BlobWriter
 
 from .tracking_model_postgres import publish_tracking_model_with_cursor
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 
 
-class _BlobWriter(Protocol):
-    def put(
-        self,
-        stream: BinaryIO,
-        *,
-        expected_digest: Digest,
-        expected_bytes: int,
-        media_type: str,
-        format_id: str,
-        idempotency_key: str,
-    ) -> ObjectRef: ...
-
-
 class AtomicPostgresTrackingModelCommitter:
     """Upload first, then atomically publish output and complete its lease."""
 
-    def __init__(self, blobs: _BlobWriter, connect: ConnectionFactory) -> None:
+    def __init__(self, blobs: BlobWriter, connect: ConnectionFactory) -> None:
         self._blobs = blobs
         self._connect = connect
 

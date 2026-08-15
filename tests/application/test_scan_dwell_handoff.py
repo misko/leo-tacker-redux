@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from leo_flow.application import (
+    DurableDwellRequestGate,
     DwellRequestGate,
     DwellRequestRejected,
     DwellSafetyPolicy,
@@ -23,6 +24,7 @@ from leo_flow.contracts.core import (
     SchemaVersion,
     StationId,
     UtcNs,
+    canonical_digest,
 )
 from leo_flow.contracts.dwell import (
     MAX_DWELL_SAMPLE_COUNT,
@@ -150,6 +152,21 @@ class FakeCaptureExecutor:
         return plan
 
 
+class FakePlanRepository:
+    def __init__(self) -> None:
+        self.plans = {}
+
+    def publish(self, plan: CapturePlan, *, idempotency_key: str):
+        del idempotency_key
+        self.plans[plan.plan_id] = plan
+        from leo_flow.contracts.capture import CapturePlanRef
+
+        return CapturePlanRef(plan.plan_id, canonical_digest(plan))
+
+    def get(self, plan_id):
+        return self.plans[plan_id]
+
+
 def test_public_scan_result_to_capture_plan_is_bounded_and_idempotent() -> None:
     emitter: DwellRequestEmitter = FakeAnalysisEmitter()
     gate = DwellRequestGate(_policy())
@@ -170,6 +187,17 @@ def test_public_scan_result_to_capture_plan_is_bounded_and_idempotent() -> None:
     assert dict(segment.tags)["source_feature_set_id"] == "fset_scan_candidate"
     assert dict(segment.tags)["reason_code"] == request.reason_code
     assert "detector" not in repr(first).lower()
+    assert dict(first.experiment_tags)["dwell_request_digest"] == str(
+        canonical_digest(request)
+    )
+
+
+def test_durable_gate_publishes_and_reads_back_before_returning() -> None:
+    plans = FakePlanRepository()
+    gate = DurableDwellRequestGate(DwellRequestGate(_policy()), plans, plans)
+    request = _request()
+    accepted = gate.accept(request, UtcNs(300))
+    assert plans.get(accepted.plan_id) == accepted
 
 
 def test_gate_rejects_expiry_routing_policy_and_idempotency_conflicts() -> None:

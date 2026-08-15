@@ -32,6 +32,11 @@ from leo_flow.contracts.dwell import (
     MAX_DWELL_SAMPLE_RATE_HZ,
     DwellRequest,
 )
+from leo_flow.contracts.ports import (
+    CapturePlanPublisher,
+    CapturePlanSource,
+    DwellRequestGatePort,
+)
 
 
 class DwellRequestRejected(ValueError):
@@ -129,6 +134,31 @@ class DwellRequestGate:
         return plan
 
 
+class DurableDwellRequestGate:
+    """Persist and verify an accepted plan before exposing it to a scheduler."""
+
+    def __init__(
+        self,
+        gate: DwellRequestGatePort,
+        publisher: CapturePlanPublisher,
+        source: CapturePlanSource,
+    ) -> None:
+        self._gate = gate
+        self._publisher = publisher
+        self._source = source
+
+    def accept(self, request: DwellRequest, now_utc_ns: UtcNs) -> CapturePlan:
+        proposed = self._gate.accept(request, now_utc_ns)
+        expected_digest = canonical_digest(proposed)
+        ref = self._publisher.publish(proposed, idempotency_key=request.idempotency_key)
+        if ref.plan_id != proposed.plan_id or ref.plan_digest != expected_digest:
+            raise DwellRequestRejected("capture plan publisher changed plan identity")
+        durable = self._source.get(ref.plan_id)
+        if durable != proposed or canonical_digest(durable) != ref.plan_digest:
+            raise DwellRequestRejected("capture plan source returned different content")
+        return durable
+
+
 def _capture_plan(request: DwellRequest, policy: DwellSafetyPolicy) -> CapturePlan:
     evidence_digests = tuple(
         str(item.artifact_ref.digest) for item in request.evidence_refs
@@ -149,6 +179,7 @@ def _capture_plan(request: DwellRequest, policy: DwellSafetyPolicy) -> CapturePl
             "source_feature_set_id": str(request.source.feature_set_ref.feature_set_id),
             "reason_code": request.reason_code,
             "evidence_digests": evidence_digests,
+            "tx": "prohibited",
         },
     )
     return CapturePlan(
@@ -165,6 +196,7 @@ def _capture_plan(request: DwellRequest, policy: DwellSafetyPolicy) -> CapturePl
         ),
         experiment_tags=(
             ("dwell_idempotency_key", request.idempotency_key),
+            ("dwell_request_digest", str(canonical_digest(request))),
             ("dwell_request_id", request.request_id),
             ("station_id", str(request.station_id)),
         ),

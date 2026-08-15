@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import BinaryIO, Protocol
+from typing import BinaryIO
 
 from leo_flow.contracts.capture import CompletedLocalRecording
 from leo_flow.contracts.core import Digest
@@ -14,20 +14,7 @@ from leo_flow.contracts.storage import (
 )
 
 from .filesystem import IdempotencyConflictError
-from .ports import LocalRecordingSource
-
-
-class _BlobWriter(Protocol):
-    def put(
-        self,
-        stream: BinaryIO,
-        *,
-        expected_digest: Digest,
-        expected_bytes: int,
-        media_type: str,
-        format_id: str,
-        idempotency_key: str,
-    ) -> ObjectRef: ...
+from .ports import BlobWriter, LocalRecordingSource
 
 
 class RecordingConflictError(RuntimeError):
@@ -77,7 +64,7 @@ class RecordingPublisherAdapter:
     def __init__(
         self,
         local: LocalRecordingSource,
-        blobs: _BlobWriter,
+        blobs: BlobWriter,
         catalog: InMemoryRecordingCatalog,
     ) -> None:
         self._local = local

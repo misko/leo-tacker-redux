@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import BinaryIO, Protocol
+from typing import BinaryIO
 
 import psycopg
 from psycopg.rows import dict_row
@@ -17,7 +17,7 @@ from leo_flow.contracts.storage import (
 )
 
 from . import postgres_sql
-from .ports import LocalRecordingSource
+from .ports import BlobWriter, LocalRecordingSource
 
 
 class PostgresCatalogError(RuntimeError):
@@ -33,19 +33,6 @@ class RecordingConflictError(PostgresCatalogError):
 
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
-
-
-class _BlobWriter(Protocol):
-    def put(
-        self,
-        stream: BinaryIO,
-        *,
-        expected_digest: Digest,
-        expected_bytes: int,
-        media_type: str,
-        format_id: str,
-        idempotency_key: str,
-    ) -> ObjectRef: ...
 
 
 class PostgresRecordingCatalog:
@@ -144,7 +131,7 @@ class PostgresRecordingPublisher:
     def __init__(
         self,
         local: LocalRecordingSource,
-        blobs: _BlobWriter,
+        blobs: BlobWriter,
         catalog: PostgresRecordingCatalog,
     ) -> None:
         self._local = local

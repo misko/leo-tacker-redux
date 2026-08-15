@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schema/ephemeris-provider-canary-v0.1.json",
+  "title": "LEO Flow ephemeris provider canary configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "provider",
+    "endpoint_profile",
+    "scope",
+    "request_spec",
+    "attribution",
+    "network_approved",
+    "bounds",
+    "validation",
+    "credential_capabilities"
+  ],
+  "properties": {
+    "schema_id": {"const": "org.leo-flow.ephemeris-provider-canary-config"},
+    "schema_version": {"const": "0.1"},
+    "provider": {"enum": ["huggingface", "space-track"]},
+    "endpoint_profile": {"enum": ["huggingface-starlink-main-v1", "space-track-starlink-gp-v1"]},
+    "scope": {"type": "string", "pattern": "^[^\\s]+$"},
+    "request_spec": {"type": "string", "pattern": "^[^\\s]+$"},
+    "attribution": {"type": "string", "minLength": 1},
+    "network_approved": {"type": "boolean"},
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeout_s", "max_response_bytes", "minimum_request_interval_s"],
+      "properties": {
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 60},
+        "max_response_bytes": {"type": "integer", "minimum": 1, "maximum": 16777216},
+        "minimum_request_interval_s": {"type": "integer", "minimum": 60, "maximum": 86400}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_satellites", "maximum_satellites", "maximum_epoch_age_s", "maximum_future_skew_s"],
+      "properties": {
+        "minimum_satellites": {"type": "integer", "minimum": 1},
+        "maximum_satellites": {"type": "integer", "minimum": 1, "maximum": 100000},
+        "maximum_epoch_age_s": {"type": "integer", "minimum": 1, "maximum": 31622400},
+        "maximum_future_skew_s": {"type": "integer", "minimum": 0, "maximum": 31622400}
+      }
+    },
+    "credential_capabilities": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "identity_name", "password_name"],
+          "properties": {
+            "provider": {"const": "systemd-credential"},
+            "identity_name": {"type": "string", "pattern": "^[^/\\s]+$"},
+            "password_name": {"type": "string", "pattern": "^[^/\\s]+$"}
+          }
+        }
+      ]
+    }
+  }
+}

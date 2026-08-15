@@ -8,6 +8,8 @@ from typing import Any
 from leo_flow.contracts.capture import (
     ActivityKind,
     ActivityManifest,
+    ActivityRequest,
+    CapturePlan,
     CompletedLocalRecording,
     GainMode,
     GainSetting,
@@ -47,6 +49,33 @@ def decode_completed(encoded: bytes) -> CompletedLocalRecording:
         metadata_object=_local_object(value["metadata_object"]),
         manifest=manifest,
         manifest_digest=_digest(value["manifest_digest"]),
+    )
+
+
+def encode_plan(plan: CapturePlan) -> bytes:
+    """Encode one immutable plan for the capture-local durability boundary."""
+
+    return canonical_json_bytes(plan)
+
+
+def decode_plan(encoded: bytes) -> CapturePlan:
+    value = json.loads(encoded)
+    return CapturePlan(
+        schema=_schema(value["schema"]),
+        plan_id=PlanId(value["plan_id"]),
+        radio_id=RadioId(value["radio_id"]),
+        receiver_chain_ids=tuple(
+            ReceiverChainId(item) for item in value["receiver_chain_ids"]
+        ),
+        activities=tuple(
+            ActivityRequest(
+                ActivityId(item["activity_id"]),
+                ActivityKind(item["kind"]),
+                tuple(_segment_request(segment) for segment in item["segments"]),
+            )
+            for item in value["activities"]
+        ),
+        experiment_tags=_pairs(value["experiment_tags"]),
     )
 
 

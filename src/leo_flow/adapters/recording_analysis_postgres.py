@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable
-from typing import BinaryIO, Protocol
 
 import psycopg
 from psycopg.rows import dict_row
@@ -17,34 +16,21 @@ from leo_flow.analysis.recording.codec import (
 )
 from leo_flow.analysis.recording.persistence import feature_set_projection
 from leo_flow.contracts.core import ArtifactRef, Digest
-from leo_flow.contracts.storage import ObjectRef
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import StaleLeaseError
 from leo_flow.jobs.postgres_sql import COMPLETE_SQL, LOCK_ACTIVE_SQL
 from leo_flow.services.recording_analysis import PreparedRecordingAnalysis
+from leo_flow.storage.ports import BlobWriter
 
 from .feature_postgres_catalog import publish_feature_set_with_cursor
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 
 
-class _BlobWriter(Protocol):
-    def put(
-        self,
-        stream: BinaryIO,
-        *,
-        expected_digest: Digest,
-        expected_bytes: int,
-        media_type: str,
-        format_id: str,
-        idempotency_key: str,
-    ) -> ObjectRef: ...
-
-
 class AtomicPostgresRecordingAnalysisCommitter:
     """Upload first, then atomically publish FeatureSet and complete its lease."""
 
-    def __init__(self, blobs: _BlobWriter, connect: ConnectionFactory) -> None:
+    def __init__(self, blobs: BlobWriter, connect: ConnectionFactory) -> None:
         self._blobs = blobs
         self._connect = connect
 

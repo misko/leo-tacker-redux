@@ -241,6 +241,24 @@ class SQLiteLocalSpool:
             ).fetchone()
         return row is not None
 
+    def durable_recording_for_plan(self, plan_id: PlanId) -> SpoolEntry | None:
+        """Return the single durable recording receipt for an idempotent plan."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM recordings
+                 WHERE plan_id = ?
+                   AND state IN ('complete', 'acknowledged', 'cleaned')
+                 ORDER BY created_utc_ns, recording_id
+                 LIMIT 2
+                """,
+                (str(plan_id),),
+            ).fetchall()
+        if len(rows) > 1:
+            raise RuntimeError("plan has more than one durable recording")
+        return _entry_from_row(rows[0]) if rows else None
+
     def note_publish_attempt(
         self, recording_id: RecordingId, idempotency_key: str, error: str | None
     ) -> None:
