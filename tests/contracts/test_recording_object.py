@@ -9,8 +9,9 @@ from leo_flow.contracts.core import (
     ArtifactRef,
     RecordingId,
     SchemaRef,
+    SchemaVersion,
 )
-from leo_flow.contracts.features import RecordingAnalysisRequest
+from leo_flow.contracts.features import FeatureSetBundle, RecordingAnalysisRequest
 from leo_flow.contracts.storage import PublishedRecordingRef, RecordingObjectRef
 from leo_flow.storage.ports import RecordingObjectReader
 from testkit import completed_local_recording, digest, recording_object_ref
@@ -74,6 +75,20 @@ def test_analysis_request_pins_the_whole_recording_pair() -> None:
     assert request.recording_object_ref is recording
     with pytest.raises(ValueError, match="recording IDs differ"):
         replace(request, recording_id=RecordingId("rec_02"))
+    with pytest.raises(ValueError, match="output schema"):
+        replace(
+            request,
+            requested_output_schema=SchemaRef(
+                FeatureSetBundle.SCHEMA_ID, SchemaVersion(1, 0)
+            ),
+        )
+
+
+def test_completed_recording_manifest_digest_must_match_manifest() -> None:
+    completed = completed_local_recording()
+
+    with pytest.raises(ValueError, match="digest does not identify"):
+        replace(completed, manifest_digest=digest("another-manifest"))
 
 
 def test_recording_reader_accepts_one_logical_ref_not_individual_blobs() -> None:

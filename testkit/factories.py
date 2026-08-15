@@ -27,6 +27,7 @@ from leo_flow.contracts.core import (
     SegmentId,
     StationId,
     UtcNs,
+    canonical_digest,
 )
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 
@@ -57,7 +58,7 @@ def completed_local_recording() -> CompletedLocalRecording:
         LocalObjectRef("local:data", digest("recording-data"), 128),
         LocalObjectRef("local:metadata", digest("recording-metadata"), 128),
         manifest,
-        digest("embedded-manifest"),
+        canonical_digest(manifest),
     )
 
 

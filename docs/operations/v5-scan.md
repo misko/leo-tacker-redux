@@ -168,6 +168,8 @@ until the run is reviewed.
 | `segment_count` | `8` |
 | `segment_sample_counts` | Eight values, each `262144` |
 | `continuity` | All eight segments `verified` with no gaps |
+| `frame_accounting` | One complete refill per segment, zero flags/gaps/missing counts; inter-segment accounting explicitly not applicable across retunes |
+| `object_integrity` | Data and metadata digests verified; paired data extent exactly `16777216` bytes |
 | `publication.published` | `1` |
 | `publication.deferred` | `0` |
 | `publication.restart_prevents_recapture` | `true` |

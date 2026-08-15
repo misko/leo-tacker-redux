@@ -29,6 +29,8 @@ from leo_flow.analysis.recording.persistence import (
 from leo_flow.capture.engine import PlanCaptureEngine
 from leo_flow.capture.publication import PublicationReconciler
 from leo_flow.capture.spool import SQLiteLocalSpool
+from leo_flow.contracts.capture import SegmentManifest
+from leo_flow.contracts.continuity import SegmentContinuity
 from leo_flow.contracts.core import ArtifactRef, Digest, FeatureSetId, SchemaRef, UtcNs
 from leo_flow.contracts.features import FeatureSetBundle, FeatureSetRef
 from leo_flow.contracts.storage import RecordingObjectRef
@@ -181,6 +183,67 @@ def _verify_tx2_muted() -> dict[str, object]:
             destroy()
 
 
+def _frame_accounting(
+    segment: SegmentManifest, evidence: SegmentContinuity
+) -> dict[str, object]:
+    """Summarize exactly what V5 metadata can prove for one stored segment."""
+
+    stored_samples = sum(refill.sample_count for refill in evidence.refills)
+    if stored_samples != segment.sample_count:
+        raise V5ScanE2EError(
+            f"segment {segment.segment_id} refill coverage differs from manifest"
+        )
+    return {
+        "continuity_status": evidence.status.value,
+        "refill_count": len(evidence.refills),
+        "stored_sample_count": stored_samples,
+        "gap_count": len(evidence.gaps),
+        "missing_buffer_count": sum(gap.missing_buffer_count for gap in evidence.gaps),
+        "missing_sample_count": sum(gap.missing_sample_count for gap in evidence.gaps),
+        "buffer_sequences": [refill.buffer_sequence for refill in evidence.refills],
+        "first_sample_sequences": [
+            refill.first_sample_sequence for refill in evidence.refills
+        ],
+        "stream_ids": sorted({refill.stream_id for refill in evidence.refills}),
+        "flags": sorted(
+            {flag.value for refill in evidence.refills for flag in refill.flags}
+        ),
+    }
+
+
+def _object_integrity(
+    blobs: FileSystemBlobStore,
+    published: RecordingObjectRef,
+    segments: tuple[SegmentManifest, ...],
+) -> dict[str, object]:
+    """Re-hash both local CAS objects and reconcile their declared extents."""
+
+    data = blobs.head(published.data_object)
+    metadata = blobs.head(published.metadata_object)
+    if not data.verified or not metadata.verified:
+        raise V5ScanE2EError("local CAS object integrity is unverified")
+    expected_data_bytes = sum(
+        segment.shape[0] * segment.shape[1] * segment.shape[2] * 2
+        for segment in segments
+    )
+    if published.data_object.byte_count != expected_data_bytes:
+        raise V5ScanE2EError("paired IQ object extent differs from the manifest")
+    return {
+        "data": {
+            "digest": str(published.data_object.digest),
+            "byte_count": published.data_object.byte_count,
+            "verified": data.verified,
+        },
+        "metadata": {
+            "digest": str(published.metadata_object.digest),
+            "byte_count": published.metadata_object.byte_count,
+            "verified": metadata.verified,
+        },
+        "manifest_digest": str(published.manifest_digest),
+        "expected_data_byte_count": expected_data_bytes,
+    }
+
+
 def run_live(output_root: Path, *, confirmed_serial: str) -> dict[str, object]:
     """Capture, publish, read, submit, and analyze one passive eight-tuning scan."""
 
@@ -212,9 +275,14 @@ def run_live(output_root: Path, *, confirmed_serial: str) -> dict[str, object]:
         raise V5ScanE2EError("published recording is absent from the catalog")
 
     continuity: dict[str, str] = {}
+    frame_accounting: dict[str, dict[str, object]] = {}
     with SigMFRecordingObjectReader(blobs).open(
         published.recording_object
     ) as recording_view:
+        if recording_view.manifest != completed.manifest:
+            raise V5ScanE2EError(
+                "local CAS recording manifest differs from captured manifest"
+            )
         for segment in completed.manifest.segments:
             evidence = recording_view.continuity(segment.segment_id)
             if evidence is None or not evidence.is_verified or evidence.gaps:
@@ -222,6 +290,14 @@ def run_live(output_root: Path, *, confirmed_serial: str) -> dict[str, object]:
                     f"segment {segment.segment_id} lacks contiguous V5 evidence"
                 )
             continuity[str(segment.segment_id)] = evidence.status.value
+            frame_accounting[str(segment.segment_id)] = _frame_accounting(
+                segment, evidence
+            )
+    object_integrity = _object_integrity(
+        blobs,
+        published.recording_object,
+        completed.manifest.segments,
+    )
 
     config = QualityPsdConfig(
         psd_window_samples=256,
@@ -299,11 +375,20 @@ def run_live(output_root: Path, *, confirmed_serial: str) -> dict[str, object]:
             item.sample_count for item in completed.manifest.segments
         ],
         "continuity": continuity,
+        "frame_accounting": {
+            "scope": "within-segment; stream is recreated at every tuning",
+            "inter_segment_gaps": "not_applicable_retune_boundaries",
+            "segments": frame_accounting,
+        },
+        "object_integrity": object_integrity,
         "publication": {
             "published": publication.published,
             "cleaned": publication.cleaned,
             "deferred": publication.deferred,
             "restart_prevents_recapture": restart_prevents_recapture,
+            "blob_backend": "local_filesystem_cas",
+            "catalog_backend": "in_memory",
+            "external_write_attempted": False,
         },
         "analysis": {
             "job_id": str(submitted.job_id),

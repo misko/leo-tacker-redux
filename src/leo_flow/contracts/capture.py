@@ -20,6 +20,7 @@ from .core import (
     SegmentId,
     StationId,
     UtcNs,
+    canonical_digest,
 )
 
 
@@ -279,3 +280,5 @@ class CompletedLocalRecording:
             raise ValueError("recording IDs differ")
         if self.data_object.digest == self.metadata_object.digest:
             raise ValueError("recording data and metadata must be distinct objects")
+        if self.manifest_digest != canonical_digest(self.manifest):
+            raise ValueError("manifest digest does not identify the manifest")

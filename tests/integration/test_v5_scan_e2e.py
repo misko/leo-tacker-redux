@@ -47,6 +47,7 @@ from leo_flow.contracts.core import (
 )
 from leo_flow.contracts.features import FeatureSetBundle, FeatureSetRef
 from leo_flow.contracts.storage import PublishedRecordingRef, RecordingObjectRef
+from leo_flow.deployments.v5_scan_e2e import _frame_accounting, _object_integrity
 from leo_flow.jobs import InMemoryJobLeaseRepository, JobState
 from leo_flow.services.recording_analysis import (
     FencedRecordingAnalysisWorker,
@@ -277,11 +278,32 @@ def test_scan_capture_publish_submit_analyze_and_restart_without_recapture(
     with SigMFRecordingObjectReader(blobs).open(
         published.recording_object
     ) as recording_view:
-        assert all(
-            recording_view.continuity(segment.segment_id).status
-            is ContinuityStatus.VERIFIED
-            for segment in completed.manifest.segments
-        )
+        for segment in completed.manifest.segments:
+            continuity = recording_view.continuity(segment.segment_id)
+            assert continuity is not None
+            assert continuity.status is ContinuityStatus.VERIFIED
+            accounting = _frame_accounting(segment, continuity)
+            assert accounting["refill_count"] == 1
+            assert accounting["stored_sample_count"] == 256
+            assert accounting["gap_count"] == 0
+            assert accounting["missing_buffer_count"] == 0
+            assert accounting["missing_sample_count"] == 0
+            assert accounting["flags"] == []
+
+    integrity = _object_integrity(
+        blobs, published.recording_object, completed.manifest.segments
+    )
+    assert integrity["data"] == {
+        "digest": str(published.recording_object.data_object.digest),
+        "byte_count": 8 * 256 * 2 * 2 * 2,
+        "verified": True,
+    }
+    assert integrity["metadata"] == {
+        "digest": str(published.recording_object.metadata_object.digest),
+        "byte_count": published.recording_object.metadata_object.byte_count,
+        "verified": True,
+    }
+    assert integrity["expected_data_byte_count"] == 8 * 256 * 2 * 2 * 2
 
 
 def test_publication_outage_leaves_completed_scan_for_restart_retry(tmp_path) -> None:

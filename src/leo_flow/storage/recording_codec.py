@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol, cast
+from typing import Any, BinaryIO
 
 from leo_flow.contracts.capture import (
     ActivityKind,
@@ -55,11 +55,7 @@ from leo_flow.contracts.core import (
 )
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 
-
-class _BlobReader(Protocol):
-    def head(self, ref: Any) -> Any: ...
-
-    def open(self, ref: Any, byte_range: Any = None) -> Any: ...
+from .ports import BlobReader
 
 
 class RecordingCodecError(RuntimeError):
@@ -76,6 +72,10 @@ class UnverifiedContinuityError(RecordingCodecError):
 
 _META_SCHEMA = "org.leo-flow.recording-object-metadata"
 _META_VERSION = "1.2"
+_DATA_MEDIA_TYPE = "application/octet-stream"
+_DATA_FORMAT_ID = "leo-recording-data-v1"
+_METADATA_MEDIA_TYPE = "application/json"
+_METADATA_FORMAT_ID = "leo-recording-metadata-v1"
 _DATA_FILENAME = "recording.data"
 _METADATA_FILENAME = "recording.meta"
 _MAX_METADATA_BYTES = 16 * 1024 * 1024
@@ -141,15 +141,15 @@ def recover_completed_local_recording(
     data_ref = ObjectRef(
         data_digest,
         data_bytes,
-        "application/octet-stream",
-        "leo-recording-data-v1",
+        _DATA_MEDIA_TYPE,
+        _DATA_FORMAT_ID,
         data_locator,
     )
     metadata_ref = ObjectRef(
         metadata_digest,
         len(metadata_bytes),
-        "application/json",
-        "leo-recording-metadata-v1",
+        _METADATA_MEDIA_TYPE,
+        _METADATA_FORMAT_ID,
         metadata_locator,
     )
     parsed = _parse_metadata(
@@ -355,26 +355,46 @@ class RecordingWriteSession:
 
 
 class SigMFRecordingObjectReader:
-    def __init__(self, blobs: _BlobReader) -> None:
+    def __init__(self, blobs: BlobReader) -> None:
         self._blobs = blobs
 
     @contextmanager
     def open(self, recording_ref: RecordingObjectRef) -> Iterator[RecordingView]:
+        if (
+            recording_ref.data_object.media_type != _DATA_MEDIA_TYPE
+            or recording_ref.data_object.format_id != _DATA_FORMAT_ID
+            or recording_ref.metadata_object.media_type != _METADATA_MEDIA_TYPE
+            or recording_ref.metadata_object.format_id != _METADATA_FORMAT_ID
+        ):
+            raise MalformedRecordingError("recording object formats are unsupported")
+        if recording_ref.metadata_object.byte_count > _MAX_METADATA_BYTES:
+            raise MalformedRecordingError("recording metadata exceeds size limit")
+        for name, object_ref in (
+            ("data", recording_ref.data_object),
+            ("metadata", recording_ref.metadata_object),
+        ):
+            observed = self._blobs.head(object_ref)
+            if observed.ref != object_ref or not observed.verified:
+                raise MalformedRecordingError(
+                    f"{name} object metadata is not exactly verified"
+                )
         with self._blobs.open(recording_ref.metadata_object) as stream:
             metadata_bytes = stream.read(_MAX_METADATA_BYTES + 1)
         if len(metadata_bytes) > _MAX_METADATA_BYTES:
             raise MalformedRecordingError("recording metadata exceeds size limit")
-        if Digest.sha256(metadata_bytes) != recording_ref.metadata_object.digest:
-            raise MalformedRecordingError("metadata digest differs from reference")
+        if (
+            len(metadata_bytes) != recording_ref.metadata_object.byte_count
+            or Digest.sha256(metadata_bytes) != recording_ref.metadata_object.digest
+        ):
+            raise MalformedRecordingError("metadata bytes differ from reference")
         metadata = _parse_metadata(metadata_bytes, recording_ref)
-        self._blobs.head(recording_ref.data_object)
         yield RecordingView(self._blobs, recording_ref, metadata)
 
 
 class RecordingView:
     def __init__(
         self,
-        blobs: _BlobReader,
+        blobs: BlobReader,
         ref: RecordingObjectRef,
         metadata: _ParsedMetadata,
     ) -> None:
@@ -406,7 +426,7 @@ class RecordingView:
             data = stream.read()
         if len(data) != expected:
             raise MalformedRecordingError("truncated data slice")
-        return cast(bytes, data)
+        return data
 
     def continuity(self, segment_id: SegmentId) -> SegmentContinuity | None:
         if segment_id not in self._metadata.segments:
@@ -762,6 +782,31 @@ def _gain_observation_from_wire(value: Any) -> GainObservation:
 
 
 def _manifest_from_wire(value: Mapping[str, Any]) -> RecordingManifest:
+    _exact_fields(
+        value,
+        {
+            "schema",
+            "recording_id",
+            "created_utc_ns",
+            "capture_started_utc_ns",
+            "capture_finished_utc_ns",
+            "station_id",
+            "radio_id",
+            "radio_serial",
+            "receiver_chain_ids",
+            "clock_status",
+            "hardware_metadata_snapshot_id",
+            "activities",
+            "segments",
+            "plan_id",
+            "producer",
+            "experiment_tags",
+            "sample_dtype",
+            "sample_layout",
+            "state",
+        },
+        "manifest",
+    )
     schema = _schema(value["schema"])
     activities = tuple(
         _activity_manifest(item) for item in _list(value["activities"], "activities")
@@ -807,6 +852,23 @@ def _manifest_from_wire(value: Mapping[str, Any]) -> RecordingManifest:
 
 def _segment_manifest(value: Any) -> SegmentManifest:
     item = _mapping(value, "segment manifest")
+    _exact_fields(
+        item,
+        {
+            "segment_id",
+            "requested",
+            "actual_center_frequency_hz",
+            "actual_sample_rate_hz",
+            "actual_bandwidth_hz",
+            "actual_gain",
+            "start_utc_ns",
+            "monotonic_start_ns",
+            "sample_count",
+            "shape",
+            "diagnostics",
+        },
+        "segment manifest",
+    )
     requested = _segment_request(item["requested"])
     gain = _gain(item["actual_gain"])
     return SegmentManifest(
@@ -826,6 +888,23 @@ def _segment_manifest(value: Any) -> SegmentManifest:
 
 def _segment_request(value: Any) -> SegmentRequest:
     item = _mapping(value, "segment request")
+    _exact_fields(
+        item,
+        {
+            "segment_id",
+            "center_frequency_hz",
+            "sample_rate_hz",
+            "bandwidth_hz",
+            "receiver_chain_ids",
+            "gain",
+            "duration_s",
+            "sample_count",
+            "scheduled_utc_ns",
+            "hardware_controls",
+            "tags",
+        },
+        "segment request",
+    )
     return SegmentRequest(
         SegmentId(_string(item["segment_id"], "segment_id")),
         _number(item["center_frequency_hz"], "center_frequency_hz"),
@@ -848,6 +927,17 @@ def _segment_request(value: Any) -> SegmentRequest:
 
 def _activity_manifest(value: Any) -> ActivityManifest:
     item = _mapping(value, "activity manifest")
+    _exact_fields(
+        item,
+        {
+            "activity_id",
+            "kind",
+            "started_utc_ns",
+            "finished_utc_ns",
+            "segment_ids",
+        },
+        "activity manifest",
+    )
     return ActivityManifest(
         ActivityId(_string(item["activity_id"], "activity_id")),
         ActivityKind(_string(item["kind"], "kind")),
@@ -859,6 +949,7 @@ def _activity_manifest(value: Any) -> ActivityManifest:
 
 def _gain(value: Any) -> GainSetting:
     item = _mapping(value, "gain")
+    _exact_fields(item, {"mode", "gain_db"}, "gain")
     gain = item["gain_db"]
     return GainSetting(
         GainMode(_string(item["mode"], "gain mode")),
@@ -868,7 +959,9 @@ def _gain(value: Any) -> GainSetting:
 
 def _schema(value: Any) -> SchemaRef:
     item = _mapping(value, "schema")
+    _exact_fields(item, {"schema_id", "version"}, "schema")
     version = _mapping(item["version"], "schema version")
+    _exact_fields(version, {"major", "minor"}, "schema version")
     return SchemaRef(
         _string(item["schema_id"], "schema_id"),
         SchemaVersion(
@@ -882,6 +975,11 @@ def _mapping(value: Any, field: str) -> Mapping[str, Any]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise TypeError(f"{field} must be an object")
     return value
+
+
+def _exact_fields(value: Mapping[str, Any], expected: set[str], field: str) -> None:
+    if set(value) != expected:
+        raise ValueError(f"{field} fields differ from schema")
 
 
 def _list(value: Any, field: str) -> list[Any]:

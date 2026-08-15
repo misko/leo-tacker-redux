@@ -169,6 +169,8 @@ class RecordingAnalysisRequest:
             raise ValueError("unsupported recording analysis request")
         if self.recording_id != self.recording_object_ref.recording_id:
             raise ValueError("analysis request recording IDs differ")
+        if self.requested_output_schema != SchemaRef(FeatureSetBundle.SCHEMA_ID):
+            raise ValueError("unsupported recording analysis output schema")
 
 
 @dataclass(frozen=True)

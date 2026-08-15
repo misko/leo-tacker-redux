@@ -3,11 +3,12 @@ from __future__ import annotations
 import io
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
-from leo_flow.contracts.core import Digest
-from leo_flow.contracts.storage import RecordingObjectRef
+from leo_flow.contracts.core import Digest, canonical_json_bytes
+from leo_flow.contracts.storage import ObjectMetadata, ObjectRef, RecordingObjectRef
 from leo_flow.storage.filesystem import FileSystemBlobStore
 from leo_flow.storage.recording_codec import (
     MalformedRecordingError,
@@ -156,6 +157,128 @@ class IndependentMemoryBlobs:
         if Digest.sha256(data) != ref.digest or len(data) != ref.byte_count:
             raise MalformedRecordingError("bad object")
         return ObjectMetadata(ref, True)
+
+
+def memory_recording(local, metadata: dict) -> tuple[RecordingObjectRef, bytes, bytes]:
+    data = Path(local.data_object.locator).read_bytes()
+    encoded_metadata = canonical_json_bytes(metadata)
+    data_ref = ObjectRef(
+        Digest.sha256(data),
+        len(data),
+        "application/octet-stream",
+        "leo-recording-data-v1",
+        "memory:data",
+    )
+    metadata_ref = ObjectRef(
+        Digest.sha256(encoded_metadata),
+        len(encoded_metadata),
+        "application/json",
+        "leo-recording-metadata-v1",
+        "memory:metadata",
+    )
+    return (
+        RecordingObjectRef(
+            local.recording_id,
+            data_ref,
+            metadata_ref,
+            local.manifest_digest,
+        ),
+        data,
+        encoded_metadata,
+    )
+
+
+@pytest.mark.parametrize(
+    "location",
+    ("manifest", "activity", "segment", "request", "gain", "schema"),
+)
+def test_reader_rejects_unknown_embedded_manifest_fields(tmp_path, location) -> None:
+    local = write_local(tmp_path, bytes(range(64)))
+    metadata = json.loads(Path(local.metadata_object.locator).read_bytes())
+    targets = {
+        "manifest": metadata["manifest"],
+        "activity": metadata["manifest"]["activities"][0],
+        "segment": metadata["manifest"]["segments"][0],
+        "request": metadata["manifest"]["segments"][0]["requested"],
+        "gain": metadata["manifest"]["segments"][0]["actual_gain"],
+        "schema": metadata["manifest"]["schema"],
+    }
+    targets[location]["unknown"] = True
+    ref, data, encoded_metadata = memory_recording(local, metadata)
+    reader = SigMFRecordingObjectReader(
+        IndependentMemoryBlobs(
+            {
+                ref.data_object.digest.value: data,
+                ref.metadata_object.digest.value: encoded_metadata,
+            }
+        )
+    )
+
+    with (
+        pytest.raises(MalformedRecordingError, match="invalid embedded manifest"),
+        reader.open(ref),
+    ):
+        pass
+
+
+@pytest.mark.parametrize(("major", "minor"), ((0, 2), (1, 0)))
+def test_reader_rejects_incompatible_embedded_manifest_versions(
+    tmp_path, major: int, minor: int
+) -> None:
+    local = write_local(tmp_path, bytes(range(64)))
+    metadata = json.loads(Path(local.metadata_object.locator).read_bytes())
+    metadata["manifest"]["schema"]["version"] = {"major": major, "minor": minor}
+    ref, data, encoded_metadata = memory_recording(local, metadata)
+    reader = SigMFRecordingObjectReader(
+        IndependentMemoryBlobs(
+            {
+                ref.data_object.digest.value: data,
+                ref.metadata_object.digest.value: encoded_metadata,
+            }
+        )
+    )
+
+    with (
+        pytest.raises(MalformedRecordingError, match="invalid embedded manifest"),
+        reader.open(ref),
+    ):
+        pass
+
+
+def test_reader_rejects_wrong_blob_format_and_unverified_head_identity(
+    tmp_path,
+) -> None:
+    local = write_local(tmp_path, bytes(range(64)))
+    metadata = json.loads(Path(local.metadata_object.locator).read_bytes())
+    ref, data, encoded_metadata = memory_recording(local, metadata)
+    blobs = IndependentMemoryBlobs(
+        {
+            ref.data_object.digest.value: data,
+            ref.metadata_object.digest.value: encoded_metadata,
+        }
+    )
+
+    wrong_format = replace(
+        ref,
+        data_object=replace(ref.data_object, format_id="invented-recording-v9"),
+    )
+    with (
+        pytest.raises(MalformedRecordingError, match="formats are unsupported"),
+        SigMFRecordingObjectReader(blobs).open(wrong_format),
+    ):
+        pass
+
+    class InconsistentHead(IndependentMemoryBlobs):
+        def head(self, object_ref):
+            return ObjectMetadata(
+                replace(object_ref, locator="memory:different-object"), True
+            )
+
+    with (
+        pytest.raises(MalformedRecordingError, match="not exactly verified"),
+        SigMFRecordingObjectReader(InconsistentHead(blobs.objects)).open(ref),
+    ):
+        pass
 
 
 def test_independent_fixture_rejects_overlapping_and_trailing_ranges(tmp_path) -> None:
