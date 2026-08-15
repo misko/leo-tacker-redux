@@ -19,7 +19,8 @@ from typing import Final
 
 from leo_flow.contracts.core import canonical_json_bytes
 
-_SCHEMA: Final = "org.leo-flow.postgres-backup/v1"
+_SCHEMA: Final = "org.leo-flow.postgres-backup/v2"
+_ARCHIVE_POLICY: Final = "preserve-owner-and-acl-v1"
 _TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _MIGRATION_QUERY: Final = (
     "SELECT name || E'\\t' || sha256 FROM schema_migration ORDER BY name"
@@ -48,6 +49,7 @@ class BackupManifest:
     dump_sha256: str
     dump_byte_count: int
     pg_dump_version: str
+    archive_policy: str
     migrations: tuple[tuple[str, str], ...]
 
     def __post_init__(self) -> None:
@@ -61,6 +63,8 @@ class BackupManifest:
             raise ValueError("dump_sha256 must be lowercase SHA-256")
         if not self.pg_dump_version:
             raise ValueError("pg_dump_version cannot be empty")
+        if self.archive_policy != _ARCHIVE_POLICY:
+            raise ValueError("archive policy must preserve owners and ACLs")
         if not self.migrations or tuple(sorted(self.migrations)) != self.migrations:
             raise ValueError("migrations must be non-empty and ordered")
         if len({name for name, _ in self.migrations}) != len(self.migrations):
@@ -113,8 +117,6 @@ def create_backup(
                 "--dbname",
                 f"service={service_name}",
                 "--format=custom",
-                "--no-owner",
-                "--no-acl",
                 "--file",
                 str(partial_dump),
             ],
@@ -133,6 +135,7 @@ def create_backup(
             digest,
             byte_count,
             version,
+            _ARCHIVE_POLICY,
             migrations,
         )
         _write_new(partial_manifest, _encode(manifest))
@@ -164,6 +167,7 @@ def verify_backup(manifest_path: Path) -> BackupManifest:
         "dump_sha256",
         "dump_byte_count",
         "pg_dump_version",
+        "archive_policy",
         "migrations",
     }:
         raise BackupError("backup manifest fields differ")
@@ -178,6 +182,7 @@ def verify_backup(manifest_path: Path) -> BackupManifest:
             document["dump_sha256"],
             document["dump_byte_count"],
             document["pg_dump_version"],
+            document["archive_policy"],
             migrations,
         )
     except (KeyError, TypeError, ValueError) as error:
@@ -216,8 +221,6 @@ def restore_backup(
             "pg_restore",
             "--exit-on-error",
             "--single-transaction",
-            "--no-owner",
-            "--no-acl",
             "--dbname",
             f"service={service_name}",
             str(dump),
@@ -282,6 +285,7 @@ def _read_migrations(
             "0" * 64,
             0,
             "validation",
+            _ARCHIVE_POLICY,
             tuple(rows),
         ).migrations
     except ValueError as error:
@@ -332,6 +336,7 @@ def _encode(manifest: BackupManifest) -> bytes:
             "dump_sha256": manifest.dump_sha256,
             "dump_byte_count": manifest.dump_byte_count,
             "pg_dump_version": manifest.pg_dump_version,
+            "archive_policy": manifest.archive_policy,
             "migrations": [list(item) for item in manifest.migrations],
         }
     )

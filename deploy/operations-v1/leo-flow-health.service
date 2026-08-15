@@ -1,6 +1,7 @@
 [Unit]
 Description=LEO Flow three-component health receipt
 Documentation=file:/opt/leo-flow/docs/operations/three-component-systemd.md
+PartOf=leo-flow.target
 After=network-online.target
 Wants=network-online.target
 

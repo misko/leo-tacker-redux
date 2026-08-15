@@ -74,6 +74,7 @@ def test_backup_publishes_manifest_last_without_credentials(tmp_path: Path) -> N
     manifest = verify_backup(manifest_path)
 
     assert manifest.migrations == MIGRATIONS
+    assert manifest.archive_policy == "preserve-owner-and-acl-v1"
     assert manifest.dump_byte_count == len(b"PGDMP\x01deterministic-fixture")
     assert (manifest_path.parent / manifest.dump_file).stat().st_mode & 0o777 == 0o600
     assert runner.psql_calls == 2
@@ -99,6 +100,26 @@ def test_verify_rejects_noncanonical_manifest_and_changed_dump(tmp_path: Path) -
         verify_backup(manifest_path)
 
 
+def test_verify_and_restore_reject_legacy_unbound_archive_policy(
+    tmp_path: Path,
+) -> None:
+    manifest_path, runner = make_backup(tmp_path)
+    legacy = json.loads(manifest_path.read_bytes())
+    legacy["schema"] = "org.leo-flow.postgres-backup/v1"
+    legacy.pop("archive_policy")
+    manifest_path.write_text(json.dumps(legacy, sort_keys=True, separators=(",", ":")))
+
+    with pytest.raises(BackupError, match="fields differ"):
+        verify_backup(manifest_path)
+    with pytest.raises(BackupError, match="fields differ"):
+        restore_backup(
+            manifest_path,
+            service_name="catalog",
+            service_file=service_file(tmp_path),
+            runner=runner,
+        )
+
+
 def test_restore_verifies_archive_then_restores_atomically_and_audits(
     tmp_path: Path,
 ) -> None:
@@ -114,6 +135,15 @@ def test_restore_verifies_archive_then_restores_atomically_and_audits(
     assert restore[0][1] == "--list"
     assert "--single-transaction" in restore[1]
     assert "--clean" not in restore[1]
+    assert "--no-owner" not in restore[1]
+    assert "--no-acl" not in restore[1]
+    dump = next(
+        command
+        for command in commands
+        if command[0] == "pg_dump" and "--file" in command
+    )
+    assert "--no-owner" not in dump
+    assert "--no-acl" not in dump
     assert commands[-1][0] == "psql"
 
 

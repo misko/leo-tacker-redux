@@ -1,18 +1,33 @@
 {
   "schema_id": "org.leo-flow.offhost-qualification",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "station_id": "station_REPLACE_WITH_STATION_ID",
   "cas": {
     "root": "/var/lib/leo-flow/objects",
     "mount_source": "REPLACE_WITH_EXACT_MOUNTINFO_SOURCE",
     "filesystem_type": "REPLACE_WITH_EXACT_FILESYSTEM_TYPE",
-    "group_name": "leo-flow-cas"
+    "group_name": "leo-flow-cas",
+    "mount_root": "/"
   },
   "migration_directory": "/opt/leo-flow/migrations",
   "credential_names": {
     "leo_capture": "capture-catalog-dsn",
     "leo_analysis": "analysis-catalog-dsn",
-    "leo_dashboard": "dashboard-catalog-dsn"
+    "leo_dashboard": "dashboard-catalog-dsn",
+    "postgres_audit": "postgres-audit-dsn"
+  },
+  "postgres": {
+    "database_name": "REPLACE_WITH_DATABASE_NAME",
+    "database_owner": "REPLACE_WITH_DATABASE_OWNER",
+    "server_major": 16,
+    "system_identifier": "REPLACE_WITH_PG_SYSTEM_IDENTIFIER",
+    "migration_head": "0019_dwell_request_ingress.sql",
+    "login_names": {
+      "leo_capture": "REPLACE_WITH_CAPTURE_LOGIN",
+      "leo_analysis": "REPLACE_WITH_ANALYSIS_LOGIN",
+      "leo_dashboard": "REPLACE_WITH_DASHBOARD_LOGIN",
+      "postgres_audit": "REPLACE_WITH_AUDIT_LOGIN"
+    }
   },
   "pipeline": null
 }

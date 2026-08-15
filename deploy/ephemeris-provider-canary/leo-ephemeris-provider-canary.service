@@ -1,5 +1,6 @@
 [Unit]
 Description=LEO Flow ephemeris archive/catalog/SGP4 canary
+PartOf=leo-flow.target
 After=local-fs.target
 
 [Service]

@@ -1,5 +1,6 @@
 [Unit]
 Description=Schedule LEO Flow operator storage-capacity checks
+PartOf=leo-flow.target
 
 [Timer]
 OnBootSec=5min

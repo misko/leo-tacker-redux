@@ -20,20 +20,26 @@ from leo_flow.contracts._validation import require_utc_ns
 from leo_flow.contracts.core import Digest, UtcNs, canonical_digest
 
 SCHEMA_ID = "org.leo-flow.systemd-health-config"
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.3"
 RECEIPT_SCHEMA_ID = "org.leo-flow.systemd-health-receipt"
-RECEIPT_SCHEMA_VERSION = "0.1"
+RECEIPT_SCHEMA_VERSION = "0.2"
 MAX_CONFIG_BYTES = 65_536
 SYSTEMCTL_TIMEOUT_S = 5.0
+MAXIMUM_FRESHNESS_S = 31 * 24 * 60 * 60
 _UNIT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}\.(service|timer)$")
-_PROPERTIES = (
+_COMMON_PROPERTIES = (
     "LoadState",
     "ActiveState",
     "SubState",
     "Result",
+)
+_SERVICE_PROPERTIES = (
+    *_COMMON_PROPERTIES,
     "NRestarts",
     "ExecMainStatus",
     "Restart",
+    "ExecMainStartTimestampMonotonic",
+    "ExecMainExitTimestampMonotonic",
 )
 
 
@@ -53,6 +59,7 @@ class ServiceExpectation:
     mode: ServiceMode
     restart: str
     maximum_restarts: int
+    maximum_age_s: int | None
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,9 @@ class UnitObservation:
     restart_count: int | None
     exit_status: int | None
     restart: str
+    exec_start_monotonic_us: int | None
+    exec_exit_monotonic_us: int | None
+    execution_age_us: int | None
     passed: bool
     failures: tuple[str, ...]
 
@@ -112,7 +122,7 @@ def load_config(path: Path) -> HealthConfig:
     if len({*service_units, *timers}) != len(service_units) + len(timers):
         raise HealthQualificationError("health unit names must be unique")
     components = [item.component for item in services]
-    if set(components) != {"capture", "analysis", "dashboard"}:
+    if not {"capture", "analysis", "dashboard"}.issubset(components):
         raise HealthQualificationError("capture, analysis, and dashboard are required")
     if components.count("capture") != 1 or components.count("dashboard") != 1:
         raise HealthQualificationError(
@@ -125,10 +135,21 @@ def qualify_health(
     config: HealthConfig,
     probe: UnitProbe,
     observed_utc_ns: UtcNs,
+    observed_monotonic_us: int,
 ) -> dict[str, object]:
     require_utc_ns(observed_utc_ns, "observed_utc_ns")
+    if (
+        isinstance(observed_monotonic_us, bool)
+        or not isinstance(observed_monotonic_us, int)
+        or observed_monotonic_us <= 0
+    ):
+        raise HealthQualificationError("observed monotonic time is invalid")
     observations = [
-        _service_observation(expectation, probe(expectation.unit))
+        _service_observation(
+            expectation,
+            probe(expectation.unit),
+            observed_monotonic_us,
+        )
         for expectation in sorted(config.services, key=lambda item: item.unit)
     ]
     observations.extend(
@@ -140,6 +161,7 @@ def qualify_health(
         "schema_id": RECEIPT_SCHEMA_ID,
         "schema_version": RECEIPT_SCHEMA_VERSION,
         "observed_utc_ns": int(observed_utc_ns),
+        "observed_monotonic_us": observed_monotonic_us,
         "config_digest": str(config.config_digest),
         "status": "pass" if passed else "fail",
         "units": [asdict(item) for item in observations],
@@ -147,11 +169,16 @@ def qualify_health(
 
 
 def systemctl_probe(unit: str) -> Mapping[str, str]:
+    if not _UNIT.fullmatch(unit):
+        raise HealthQualificationError("systemd health unit name is invalid")
+    properties = (
+        _SERVICE_PROPERTIES if unit.endswith(".service") else _COMMON_PROPERTIES
+    )
     command = [
         "/usr/bin/systemctl",
         "show",
         "--no-pager",
-        f"--property={','.join(_PROPERTIES)}",
+        f"--property={','.join(properties)}",
         unit,
     ]
     try:
@@ -169,10 +196,10 @@ def systemctl_probe(unit: str) -> Mapping[str, str]:
     values: dict[str, str] = {}
     for line in result.stdout.splitlines():
         name, separator, value = line.partition("=")
-        if not separator or name not in _PROPERTIES or name in values:
+        if not separator or name not in properties or name in values:
             raise HealthQualificationError("systemd health response is invalid")
         values[name] = value
-    if set(values) != set(_PROPERTIES):
+    if set(values) != set(properties):
         raise HealthQualificationError("systemd health response is incomplete")
     return values
 
@@ -214,6 +241,7 @@ def main(
     stderr: TextIO | None = None,
     probe: UnitProbe = systemctl_probe,
     now_utc_ns: Callable[[], UtcNs] = lambda: UtcNs(time.time_ns()),
+    now_monotonic_us: Callable[[], int] = lambda: time.monotonic_ns() // 1_000,
 ) -> int:
     output = sys.stdout if stdout is None else stdout
     errors = sys.stderr if stderr is None else stderr
@@ -223,7 +251,12 @@ def main(
     arguments = parser.parse_args(argv)
     try:
         config = load_config(arguments.config)
-        document = qualify_health(config, probe, now_utc_ns())
+        document = qualify_health(
+            config,
+            probe,
+            now_utc_ns(),
+            now_monotonic_us(),
+        )
         write_receipt(arguments.receipt, document)
     except Exception:  # noqa: BLE001 - never expose process or path details.
         errors.write('{"event":"systemd_health_failed"}\n')
@@ -238,7 +271,14 @@ def _service(value: object) -> ServiceExpectation:
     item = _mapping(value, "service expectation")
     _exact_keys(
         item,
-        {"component", "unit", "mode", "restart", "maximum_restarts"},
+        {
+            "component",
+            "unit",
+            "mode",
+            "restart",
+            "maximum_restarts",
+            "maximum_age_s",
+        },
         "service expectation",
     )
     component = item["component"]
@@ -246,6 +286,7 @@ def _service(value: object) -> ServiceExpectation:
         "capture",
         "analysis",
         "dashboard",
+        "auxiliary",
     }:
         raise HealthQualificationError("service component is unsupported")
     unit = _unit_name(item["unit"], "service")
@@ -263,14 +304,39 @@ def _service(value: object) -> ServiceExpectation:
     maximum = item["maximum_restarts"]
     if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 0:
         raise HealthQualificationError("maximum_restarts must be non-negative")
-    return ServiceExpectation(component, unit, mode, restart, maximum)
+    maximum_age = item["maximum_age_s"]
+    if mode is ServiceMode.RUNNING:
+        if maximum_age is not None:
+            raise HealthQualificationError(
+                "running services cannot have a maximum execution age"
+            )
+    elif (
+        isinstance(maximum_age, bool)
+        or not isinstance(maximum_age, int)
+        or not 0 < maximum_age <= MAXIMUM_FRESHNESS_S
+    ):
+        raise HealthQualificationError(
+            "oneshot maximum_age_s must be a positive bounded integer"
+        )
+    return ServiceExpectation(component, unit, mode, restart, maximum, maximum_age)
 
 
 def _service_observation(
-    expected: ServiceExpectation, values: Mapping[str, str]
+    expected: ServiceExpectation,
+    values: Mapping[str, str],
+    observed_monotonic_us: int,
 ) -> UnitObservation:
     restart_count = _integer(values.get("NRestarts"), "NRestarts")
     exit_status = _integer(values.get("ExecMainStatus"), "ExecMainStatus")
+    start_monotonic_us = _integer(
+        values.get("ExecMainStartTimestampMonotonic"),
+        "ExecMainStartTimestampMonotonic",
+    )
+    exit_monotonic_us = _integer(
+        values.get("ExecMainExitTimestampMonotonic"),
+        "ExecMainExitTimestampMonotonic",
+    )
+    execution_age_us: int | None = None
     failures: list[str] = []
     if values.get("LoadState") != "loaded":
         failures.append("not_loaded")
@@ -288,7 +354,28 @@ def _service_observation(
         failures.append("restart_policy_changed")
     if restart_count > expected.maximum_restarts:
         failures.append("restart_limit_exceeded")
-    return _observation(expected.unit, values, restart_count, exit_status, failures)
+    if expected.mode is ServiceMode.ONESHOT_COMPLETE:
+        if start_monotonic_us == 0 or exit_monotonic_us == 0:
+            failures.append("never_executed")
+        elif not (start_monotonic_us <= exit_monotonic_us <= observed_monotonic_us):
+            failures.append("invalid_execution_timestamps")
+        else:
+            execution_age_us = observed_monotonic_us - exit_monotonic_us
+            assert expected.maximum_age_s is not None
+            if execution_age_us > expected.maximum_age_s * 1_000_000:
+                failures.append("stale_execution")
+    elif not 0 < start_monotonic_us <= observed_monotonic_us:
+        failures.append("invalid_execution_timestamps")
+    return _observation(
+        expected.unit,
+        values,
+        restart_count,
+        exit_status,
+        start_monotonic_us,
+        exit_monotonic_us,
+        execution_age_us,
+        failures,
+    )
 
 
 def _timer_observation(unit: str, values: Mapping[str, str]) -> UnitObservation:
@@ -300,7 +387,7 @@ def _timer_observation(unit: str, values: Mapping[str, str]) -> UnitObservation:
         "waiting",
     ):
         failures.append("unexpected_state")
-    return _observation(unit, values, None, None, failures)
+    return _observation(unit, values, None, None, None, None, None, failures)
 
 
 def _observation(
@@ -308,6 +395,9 @@ def _observation(
     values: Mapping[str, str],
     restart_count: int | None,
     exit_status: int | None,
+    exec_start_monotonic_us: int | None,
+    exec_exit_monotonic_us: int | None,
+    execution_age_us: int | None,
     failures: list[str],
 ) -> UnitObservation:
     return UnitObservation(
@@ -319,6 +409,9 @@ def _observation(
         restart_count,
         exit_status,
         values.get("Restart", ""),
+        exec_start_monotonic_us,
+        exec_exit_monotonic_us,
+        execution_age_us,
         not failures,
         tuple(failures),
     )

@@ -1,5 +1,6 @@
 [Unit]
 Description=LEO Flow operator storage-capacity check
+PartOf=leo-flow.target
 
 [Service]
 Type=oneshot

@@ -48,7 +48,8 @@ if TYPE_CHECKING:
 
 
 SCHEMA_ID: Final = "org.leo-flow.offhost-qualification"
-SCHEMA_VERSION: Final = "0.1"
+SCHEMA_VERSION: Final = "0.3"
+REQUIRED_MIGRATION_HEAD: Final = "0019_dwell_request_ingress.sql"
 PROBE_FORMAT_ID: Final = "offhost-qualification-probe-v1"
 PROBE_MEDIA_TYPE: Final = "application/octet-stream"
 MAX_PROBE_BYTES: Final = 4096
@@ -63,11 +64,20 @@ POSTGRES_TIMEOUT_S: Final = 5
 _PROBE_ID = re.compile(r"^offhost_[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
 _MIGRATION_NAME = re.compile(r"^[0-9]{4}_[A-Za-z0-9_]+\.sql$")
 _ROLES = ("leo_capture", "leo_analysis", "leo_dashboard")
+_AUDIT_ROLE = "postgres_audit"
+_CREDENTIAL_KEYS = (*_ROLES, _AUDIT_ROLE)
+_CAPABILITY_ROLES = (
+    *_ROLES,
+    "leo_maintenance",
+    "leo_routine_owner",
+    "pg_monitor",
+)
 _HOST_GATE_NAMES = (
     "cas.root.exact_mountpoint",
     "cas.root.not_symlink",
     "cas.mount.source",
     "cas.mount.filesystem_type",
+    "cas.mount.root",
     "cas.mount.read_write",
     "cas.group.identity",
     "cas.group.membership",
@@ -96,6 +106,7 @@ class CasExpectation:
     mount_source: str
     filesystem_type: str
     group_name: str
+    mount_root: str = "/"
 
     def __post_init__(self) -> None:
         normalized = Path(os.path.abspath(self.root))
@@ -106,9 +117,37 @@ class CasExpectation:
             or not self.mount_source
             or not self.filesystem_type
             or not self.group_name
+            or not self.mount_root.startswith("/")
+            or "\x00" in self.mount_root
         ):
             raise OffHostQualificationError(
                 "CAS root, source, filesystem type, and group must be exact"
+            )
+
+
+@dataclass(frozen=True)
+class PostgresExpectation:
+    database_name: str
+    database_owner: str
+    server_major: int
+    system_identifier: str
+    migration_head: str
+    login_names: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        if (
+            not self.database_name
+            or not self.database_owner
+            or self.server_major != 16
+            or not self.system_identifier
+            or not self.migration_head
+            or set(self.login_names) != set(_CREDENTIAL_KEYS)
+            or any(not name for name in self.login_names.values())
+            or len(set(self.login_names.values())) != len(self.login_names)
+        ):
+            raise OffHostQualificationError(
+                "PostgreSQL database, owner, major, system identifier, and migration "
+                "head, and distinct login names must be explicit"
             )
 
 
@@ -134,6 +173,7 @@ class QualificationConfig:
     credential_names: Mapping[str, str]
     pipeline: PipelineSelection | None
     config_digest: str
+    postgres: PostgresExpectation | None = None
 
 
 @dataclass(frozen=True)
@@ -193,6 +233,7 @@ class PreflightReport:
     cas: CasExpectation
     migration_directory: str
     pipeline: PipelineSelection | None
+    postgres: PostgresExpectation | None
     gates: tuple[Gate, ...]
 
     @property
@@ -215,8 +256,21 @@ class PreflightReport:
                     "mount_source": self.cas.mount_source,
                     "filesystem_type": self.cas.filesystem_type,
                     "group_name": self.cas.group_name,
+                    "mount_root": self.cas.mount_root,
                 },
                 "migration_directory": self.migration_directory,
+                "postgres": (
+                    None
+                    if self.postgres is None
+                    else {
+                        "database_name": self.postgres.database_name,
+                        "database_owner": self.postgres.database_owner,
+                        "server_major": self.postgres.server_major,
+                        "system_identifier": self.postgres.system_identifier,
+                        "migration_head": self.postgres.migration_head,
+                        "login_names": dict(self.postgres.login_names),
+                    }
+                ),
                 "database_roles": list(self.required_database_roles),
                 "systemd_credentials": list(self.required_credential_names),
                 "database_connections": [
@@ -227,10 +281,23 @@ class PreflightReport:
                     }
                     for role, credential in zip(
                         self.required_database_roles,
-                        self.required_credential_names,
+                        self.required_credential_names[
+                            : len(self.required_database_roles)
+                        ],
                         strict=True,
                     )
-                ],
+                ]
+                + (
+                    []
+                    if self.postgres is None
+                    else [
+                        {
+                            "role": _AUDIT_ROLE,
+                            "systemd_credential": self.required_credential_names[-1],
+                            "dsn": "not-resolved",
+                        }
+                    ]
+                ),
                 "pipeline": (
                     None
                     if self.pipeline is None
@@ -368,18 +435,29 @@ _FORBIDDEN_PRIVILEGES: Final[dict[str, tuple[tuple[str, str], ...]]] = {
         ("job", "UPDATE"),
         ("feature_set", "UPDATE"),
         ("feature_set", "DELETE"),
+        ("dwell_request_ingress", "SELECT"),
+        ("dwell_request_ingress", "INSERT"),
     ),
     "leo_dashboard": (
         ("recording", "INSERT"),
         ("job", "SELECT"),
         ("job", "INSERT"),
         ("feature_set", "INSERT"),
+        ("dwell_request_ingress", "SELECT"),
+        ("dwell_request_ingress", "INSERT"),
         ("dashboard_feature_projection", "INSERT"),
     ),
 }
 
 _REQUIRED_FUNCTION_PRIVILEGES: Final[dict[str, tuple[str, ...]]] = {
-    "leo_capture": ("register_live_object_blob(text,text,bigint,text,text,text)",),
+    "leo_capture": (
+        "register_live_object_blob(text,text,bigint,text,text,text)",
+        "claim_dwell_request(text,text,text,interval)",
+        "heartbeat_dwell_request(text,text,bigint,interval)",
+        "complete_dwell_request(text,text,bigint,jsonb)",
+        "fail_dwell_request(text,text,bigint,text,timestamptz)",
+        "park_dwell_request(text,text,bigint,text)",
+    ),
     "leo_analysis": (
         "register_live_object_blob(text,text,bigint,text,text,text)",
         "enqueue_job(text,text,text,text,jsonb,timestamptz)",
@@ -389,6 +467,7 @@ _REQUIRED_FUNCTION_PRIVILEGES: Final[dict[str, tuple[str, ...]]] = {
         "complete_job(text,text,bigint,jsonb)",
         "fail_job(text,text,bigint,text,timestamptz)",
         "park_job(text,text,bigint,text)",
+        "publish_dwell_request(jsonb)",
     ),
     "leo_dashboard": (),
 }
@@ -417,18 +496,42 @@ def load_config(path: Path) -> QualificationConfig:
             "migration_directory",
             "credential_names",
             "pipeline",
+            "postgres",
         },
         "config",
     )
     if root["schema_id"] != SCHEMA_ID or root["schema_version"] != SCHEMA_VERSION:
         raise OffHostQualificationError("qualification schema is unsupported")
     cas = _mapping(root["cas"], "cas")
-    _exact_keys(cas, {"root", "mount_source", "filesystem_type", "group_name"}, "cas")
+    _exact_keys(
+        cas,
+        {"root", "mount_source", "filesystem_type", "group_name", "mount_root"},
+        "cas",
+    )
+    postgres = _mapping(root["postgres"], "postgres")
+    _exact_keys(
+        postgres,
+        {
+            "database_name",
+            "database_owner",
+            "server_major",
+            "system_identifier",
+            "migration_head",
+            "login_names",
+        },
+        "postgres",
+    )
+    logins = _mapping(postgres["login_names"], "postgres.login_names")
+    _exact_keys(logins, set(_CREDENTIAL_KEYS), "postgres.login_names")
+    login_names = {
+        role: _nonempty(logins[role], f"postgres.login_names.{role}")
+        for role in _CREDENTIAL_KEYS
+    }
     credentials = _mapping(root["credential_names"], "credential_names")
-    _exact_keys(credentials, set(_ROLES), "credential_names")
+    _exact_keys(credentials, set(_CREDENTIAL_KEYS), "credential_names")
     credential_names = {
         role: _nonempty(credentials[role], f"credential_names.{role}")
-        for role in _ROLES
+        for role in _CREDENTIAL_KEYS
     }
     if len(set(credential_names.values())) != len(credential_names):
         raise OffHostQualificationError("database credential names must be distinct")
@@ -449,6 +552,7 @@ def load_config(path: Path) -> QualificationConfig:
             _nonempty(cas["mount_source"], "cas.mount_source"),
             _nonempty(cas["filesystem_type"], "cas.filesystem_type"),
             _nonempty(cas["group_name"], "cas.group_name"),
+            _nonempty(cas["mount_root"], "cas.mount_root"),
         ),
         migration_directory=Path(
             _nonempty(root["migration_directory"], "migration_directory")
@@ -456,6 +560,14 @@ def load_config(path: Path) -> QualificationConfig:
         credential_names=credential_names,
         pipeline=pipeline,
         config_digest=f"sha256:{digest}",
+        postgres=PostgresExpectation(
+            _nonempty(postgres["database_name"], "postgres.database_name"),
+            _nonempty(postgres["database_owner"], "postgres.database_owner"),
+            _integer(postgres["server_major"], "postgres.server_major"),
+            _nonempty(postgres["system_identifier"], "postgres.system_identifier"),
+            _nonempty(postgres["migration_head"], "postgres.migration_head"),
+            login_names,
+        ),
     )
 
 
@@ -465,18 +577,35 @@ def build_preflight_report(
     """Describe exact host inputs without inspecting or resolving any of them."""
 
     roles = _database_roles_for_host(host_role)
-    credential_names = tuple(config.credential_names[role] for role in roles)
+    credential_names = tuple(config.credential_names[role] for role in roles) + (
+        config.credential_names[_AUDIT_ROLE],
+    )
     values = {
         "station_id": config.station_id,
         "cas.root": str(config.cas.root),
         "cas.mount_source": config.cas.mount_source,
         "cas.filesystem_type": config.cas.filesystem_type,
         "cas.group_name": config.cas.group_name,
+        "cas.mount_root": config.cas.mount_root,
         "migration_directory": str(config.migration_directory),
         **{
-            f"credential_names.{role}": config.credential_names[role] for role in _ROLES
+            f"credential_names.{role}": config.credential_names[role]
+            for role in _CREDENTIAL_KEYS
         },
     }
+    if config.postgres is not None:
+        values.update(
+            {
+                "postgres.database_name": config.postgres.database_name,
+                "postgres.database_owner": config.postgres.database_owner,
+                "postgres.system_identifier": config.postgres.system_identifier,
+                "postgres.migration_head": config.postgres.migration_head,
+                **{
+                    f"postgres.login_names.{role}": login
+                    for role, login in config.postgres.login_names.items()
+                },
+            }
+        )
     if config.pipeline is not None:
         values.update(
             {
@@ -502,6 +631,19 @@ def build_preflight_report(
         for role, name in config.credential_names.items()
         if not name or name in {".", ".."} or "/" in name or "\x00" in name
     )
+    postgres_exact = (
+        config.postgres is not None
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", config.postgres.database_name)
+        is not None
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", config.postgres.database_owner)
+        is not None
+        and re.fullmatch(r"[0-9]{10,20}", config.postgres.system_identifier) is not None
+        and config.postgres.migration_head == REQUIRED_MIGRATION_HEAD
+        and all(
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", login) is not None
+            for login in config.postgres.login_names.values()
+        )
+    )
     gates = (
         Gate(
             "preflight.inputs.resolved",
@@ -517,6 +659,21 @@ def build_preflight_report(
             "preflight.credential_names.safe",
             not unsafe_credentials,
             ",".join(unsafe_credentials) or "complete",
+        ),
+        Gate(
+            "preflight.postgres.identity.exact",
+            postgres_exact,
+            (
+                "missing"
+                if config.postgres is None
+                else (
+                    f"database={config.postgres.database_name};"
+                    f"owner={config.postgres.database_owner};"
+                    f"major={config.postgres.server_major};"
+                    f"system_identifier={config.postgres.system_identifier};"
+                    f"migration_head={config.postgres.migration_head}"
+                )
+            ),
         ),
         Gate(
             "preflight.external_access.disabled",
@@ -535,6 +692,7 @@ def build_preflight_report(
         config.cas,
         str(config.migration_directory),
         config.pipeline,
+        config.postgres,
         gates,
     )
 
@@ -596,6 +754,11 @@ def inspect_host(
             "cas.mount.filesystem_type",
             mount.filesystem_type == config.cas.filesystem_type,
             mount.filesystem_type,
+        ),
+        Gate(
+            "cas.mount.root",
+            mount.mount_root == config.cas.mount_root,
+            mount.mount_root,
         ),
         Gate("cas.mount.read_write", "rw" in mount.options, ",".join(mount.options)),
         Gate(
@@ -709,49 +872,196 @@ def expected_migration_receipts(directory: Path) -> dict[str, str]:
     return receipts
 
 
+def inspect_database_audit(
+    config: QualificationConfig,
+    *,
+    credentials: CredentialProvider | None = None,
+) -> tuple[Gate, ...]:
+    """Prove cluster identity and the exact migration inventory via audit access."""
+
+    if config.postgres is None:
+        raise OffHostQualificationError("PostgreSQL identity expectation is required")
+    dsn = (credentials or SystemdCredentialProvider()).resolve(
+        config.credential_names[_AUDIT_ROLE]
+    )
+    expected = expected_migration_receipts(config.migration_directory)
+    with _connection_factory(dsn)() as connection:
+        connection.execute("SET TRANSACTION READ ONLY")
+        connection.execute("SET LOCAL search_path = pg_catalog, public")
+        cluster = connection.execute(
+            """
+            SELECT current_database() AS database_name,
+                   pg_catalog.pg_get_userbyid(d.datdba) AS database_owner,
+                   current_setting('server_version_num') AS server_version_num,
+                   c.system_identifier::text AS system_identifier,
+                   current_user AS current_user_name,
+                   session_user AS session_user_name
+              FROM pg_catalog.pg_database AS d
+              CROSS JOIN pg_catalog.pg_control_system() AS c
+             WHERE d.datname = current_database()
+            """
+        ).fetchone()
+        read_only_row = connection.execute("SHOW transaction_read_only").fetchone()
+        rows = connection.execute(
+            """
+            SELECT name, sha256
+              FROM public.schema_migration
+             ORDER BY name
+             LIMIT %s
+            """,
+            (len(expected) + 1,),
+        ).fetchall()
+    actual = {str(row["name"]): str(row["sha256"]) for row in rows}
+    missing = sorted(set(expected) - set(actual))
+    extra = sorted(set(actual) - set(expected))
+    changed = sorted(
+        name
+        for name, digest in expected.items()
+        if actual.get(name) not in (None, digest)
+    )
+    expected_login = config.postgres.login_names[_AUDIT_ROLE]
+    login_matches = (
+        cluster is not None
+        and cluster["current_user_name"] == expected_login
+        and cluster["session_user_name"] == expected_login
+    )
+    cluster_matches = (
+        cluster is not None
+        and cluster["database_name"] == config.postgres.database_name
+        and cluster["database_owner"] == config.postgres.database_owner
+        and int(str(cluster["server_version_num"])) // 10_000
+        == config.postgres.server_major
+        and cluster["system_identifier"] == config.postgres.system_identifier
+    )
+    inventory_matches = (
+        not missing
+        and not extra
+        and not changed
+        and tuple(actual) == tuple(expected)
+        and config.postgres.migration_head == REQUIRED_MIGRATION_HEAD
+        and tuple(expected)[-1] == config.postgres.migration_head
+    )
+    return (
+        Gate(
+            "postgres.audit.read_only",
+            read_only_row is not None
+            and read_only_row["transaction_read_only"] == "on",
+            "transaction_read_only",
+        ),
+        Gate(
+            "postgres.audit.session_login",
+            login_matches,
+            "missing"
+            if cluster is None
+            else (
+                f"expected={expected_login};current={cluster['current_user_name']};"
+                f"session={cluster['session_user_name']}"
+            ),
+        ),
+        Gate(
+            "postgres.audit.cluster_identity",
+            cluster_matches,
+            "missing"
+            if cluster is None
+            else (
+                f"database={cluster['database_name']};"
+                f"owner={cluster['database_owner']};"
+                f"server_version_num={cluster['server_version_num']};"
+                f"system_identifier={cluster['system_identifier']}"
+            ),
+        ),
+        Gate(
+            "postgres.audit.migration_receipts",
+            inventory_matches,
+            (
+                f"head={config.postgres.migration_head};"
+                f"missing={','.join(missing) or '-'};"
+                f"extra={','.join(extra) or '-'};"
+                f"changed={','.join(changed) or '-'}"
+            ),
+        ),
+    )
+
+
 def inspect_database_role(
     config: QualificationConfig,
     role: str,
     *,
     credentials: CredentialProvider | None = None,
 ) -> tuple[Gate, ...]:
-    """Prove one credential's receipts and least-privilege role, read-only."""
+    """Prove one exact runtime login and its least-privilege capability role."""
 
     if role not in _ROLES:
         raise OffHostQualificationError("database role is unsupported")
+    if config.postgres is None:
+        raise OffHostQualificationError("PostgreSQL identity expectation is required")
     dsn = (credentials or SystemdCredentialProvider()).resolve(
         config.credential_names[role]
     )
-    connect = _connection_factory(dsn)
-    expected = expected_migration_receipts(config.migration_directory)
-    with connect() as connection:
+    expected_login = config.postgres.login_names[role]
+    with _connection_factory(dsn)() as connection:
         connection.execute("SET TRANSACTION READ ONLY")
         connection.execute("SET LOCAL search_path = pg_catalog, public")
         read_only_row = connection.execute("SHOW transaction_read_only").fetchone()
-        read_only = (
-            read_only_row is not None and read_only_row["transaction_read_only"] == "on"
-        )
-        membership = connection.execute(
-            "SELECT pg_has_role(current_user, %s, 'MEMBER') AS member", (role,)
-        ).fetchone()
-        member = membership is not None and membership["member"] is True
-        # Receipts are operator-owned. The login may read them without granting
-        # that unrelated table to each narrow runtime capability role.
-        rows = connection.execute(
+        login = connection.execute(
             """
-            SELECT name, sha256
-            FROM public.schema_migration
-            WHERE name = ANY(%s)
-            ORDER BY name
-            """,
-            (list(expected),),
-        ).fetchall()
+            SELECT current_user AS current_user_name,
+                   session_user AS session_user_name,
+                   r.rolcanlogin, r.rolsuper, r.rolcreatedb, r.rolcreaterole,
+                   r.rolreplication, r.rolbypassrls
+              FROM pg_catalog.pg_roles AS r
+             WHERE r.rolname = session_user
+            """
+        ).fetchone()
+        memberships = {}
+        for capability in _CAPABILITY_ROLES:
+            membership = connection.execute(
+                "SELECT pg_has_role(session_user, %s, 'MEMBER') AS member",
+                (capability,),
+            ).fetchone()
+            memberships[capability] = (
+                membership is not None and membership["member"] is True
+            )
+        direct = connection.execute(
+            """
+            WITH login AS (
+                SELECT oid FROM pg_catalog.pg_roles WHERE rolname = session_user
+            ), direct_acl AS (
+                SELECT a.grantee FROM pg_catalog.pg_database AS d
+                CROSS JOIN LATERAL pg_catalog.aclexplode(d.datacl) AS a
+                UNION ALL
+                SELECT a.grantee FROM pg_catalog.pg_namespace AS n
+                CROSS JOIN LATERAL pg_catalog.aclexplode(n.nspacl) AS a
+                UNION ALL
+                SELECT a.grantee FROM pg_catalog.pg_class AS c
+                CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) AS a
+                UNION ALL
+                SELECT a.grantee FROM pg_catalog.pg_proc AS p
+                CROSS JOIN LATERAL pg_catalog.aclexplode(p.proacl) AS a
+            ), owned AS (
+                SELECT d.datdba AS owner FROM pg_catalog.pg_database AS d
+                 WHERE d.datname = current_database()
+                UNION ALL
+                SELECT n.nspowner FROM pg_catalog.pg_namespace AS n
+                 WHERE n.nspname NOT LIKE 'pg_temp_%'
+                   AND n.nspname NOT LIKE 'pg_toast_temp_%'
+                UNION ALL
+                SELECT c.relowner FROM pg_catalog.pg_class AS c
+                UNION ALL
+                SELECT p.proowner FROM pg_catalog.pg_proc AS p
+            )
+            SELECT (SELECT count(*) FROM direct_acl, login
+                     WHERE direct_acl.grantee = login.oid) AS direct_acl_count,
+                   (SELECT count(*) FROM owned, login
+                     WHERE owned.owner = login.oid) AS owned_object_count
+            """
+        ).fetchone()
+        member = memberships[role]
         if member:
             connection.execute(f"SET ROLE {role}")
-        identity = connection.execute(
+        assumed = connection.execute(
             "SELECT current_user AS role, session_user AS login"
         ).fetchone()
-        actual = {str(row["name"]): str(row["sha256"]) for row in rows}
         privileges = {
             (table, privilege): _table_privilege(connection, table, privilege)
             for table, privilege in (
@@ -766,11 +1076,27 @@ def inspect_database_role(
             (sequence, privilege): _sequence_privilege(connection, sequence, privilege)
             for sequence, privilege in _REQUIRED_SEQUENCE_PRIVILEGES[role]
         }
-    missing = sorted(set(expected) - set(actual))
-    changed = sorted(
-        name
-        for name, digest in expected.items()
-        if actual.get(name) not in (None, digest)
+    login_matches = (
+        login is not None
+        and login["current_user_name"] == expected_login
+        and login["session_user_name"] == expected_login
+        and login["rolcanlogin"] is True
+        and not any(
+            bool(login[field])
+            for field in (
+                "rolsuper",
+                "rolcreatedb",
+                "rolcreaterole",
+                "rolreplication",
+                "rolbypassrls",
+            )
+        )
+    )
+    membership_exact = member and sum(memberships.values()) == 1
+    direct_access_absent = (
+        direct is not None
+        and direct["direct_acl_count"] == 0
+        and direct["owned_object_count"] == 0
     )
     required_missing = sorted(
         f"{table}:{privilege}"
@@ -791,17 +1117,46 @@ def inspect_database_role(
         if not allowed
     )
     return (
-        Gate(f"postgres.{role}.read_only", read_only, "transaction_read_only"),
-        Gate(f"postgres.{role}.membership", member, role),
         Gate(
-            f"postgres.{role}.assumed_role",
-            identity is not None and identity["role"] == role,
-            role,
+            f"postgres.{role}.read_only",
+            read_only_row is not None
+            and read_only_row["transaction_read_only"] == "on",
+            "transaction_read_only",
         ),
         Gate(
-            f"postgres.{role}.migration_receipts",
-            not missing and not changed,
-            f"missing={','.join(missing) or '-'};changed={','.join(changed) or '-'}",
+            f"postgres.{role}.session_login",
+            login_matches,
+            "missing"
+            if login is None
+            else (
+                f"expected={expected_login};current={login['current_user_name']};"
+                f"session={login['session_user_name']}"
+            ),
+        ),
+        Gate(
+            f"postgres.{role}.membership",
+            membership_exact,
+            ",".join(
+                capability for capability, present in memberships.items() if present
+            )
+            or "none",
+        ),
+        Gate(
+            f"postgres.{role}.direct_authority",
+            direct_access_absent,
+            "missing"
+            if direct is None
+            else (
+                f"direct_acl_count={direct['direct_acl_count']};"
+                f"owned_object_count={direct['owned_object_count']}"
+            ),
+        ),
+        Gate(
+            f"postgres.{role}.assumed_role",
+            assumed is not None
+            and assumed["role"] == role
+            and assumed["login"] == expected_login,
+            role,
         ),
         Gate(
             f"postgres.{role}.required_privileges",
@@ -1092,7 +1447,7 @@ def main(
             code = 0 if preflight_report.passed else 2
         elif args.command == "inspect":
             roles = _database_roles_for_host(args.host_role)
-            database_gates = tuple(
+            database_gates = inspect_database_audit(config) + tuple(
                 gate for role in roles for gate in inspect_database_role(config, role)
             )
             host_report = inspect_host(
@@ -1502,14 +1857,20 @@ def _parse_gate(value: object) -> Gate:
 
 def _expected_host_report_gates(host_role: str) -> set[str]:
     roles = _database_roles_for_host(host_role)
-    names = set(_HOST_GATE_NAMES)
+    names = set(_HOST_GATE_NAMES) | {
+        "postgres.audit.read_only",
+        "postgres.audit.session_login",
+        "postgres.audit.cluster_identity",
+        "postgres.audit.migration_receipts",
+    }
     for role in roles:
         names.update(
             {
                 f"postgres.{role}.read_only",
+                f"postgres.{role}.session_login",
                 f"postgres.{role}.membership",
+                f"postgres.{role}.direct_authority",
                 f"postgres.{role}.assumed_role",
-                f"postgres.{role}.migration_receipts",
                 f"postgres.{role}.required_privileges",
                 f"postgres.{role}.forbidden_privileges",
                 f"postgres.{role}.required_functions",

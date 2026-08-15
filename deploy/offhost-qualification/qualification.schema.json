@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://leo-flow.invalid/schema/offhost-qualification-v0.1.json",
+  "$id": "https://leo-flow.invalid/schema/offhost-qualification-v0.3.json",
   "title": "LEO Flow off-host CAS and PostgreSQL qualification configuration",
   "type": "object",
   "additionalProperties": false,
@@ -11,32 +11,58 @@
     "cas",
     "migration_directory",
     "credential_names",
-    "pipeline"
+    "pipeline",
+    "postgres"
   ],
   "properties": {
     "schema_id": {"const": "org.leo-flow.offhost-qualification"},
-    "schema_version": {"const": "0.1"},
+    "schema_version": {"const": "0.3"},
     "station_id": {"type": "string", "minLength": 1},
     "cas": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["root", "mount_source", "filesystem_type", "group_name"],
+      "required": ["root", "mount_source", "filesystem_type", "group_name", "mount_root"],
       "properties": {
         "root": {"type": "string", "pattern": "^/[^\\u0000]*$"},
         "mount_source": {"type": "string", "minLength": 1},
         "filesystem_type": {"type": "string", "minLength": 1},
-        "group_name": {"type": "string", "minLength": 1}
+        "group_name": {"type": "string", "minLength": 1},
+        "mount_root": {"type": "string", "pattern": "^/[^\\u0000]*$"}
       }
     },
     "migration_directory": {"type": "string", "pattern": "^/[^\\u0000]*$"},
     "credential_names": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["leo_capture", "leo_analysis", "leo_dashboard"],
+      "required": ["leo_capture", "leo_analysis", "leo_dashboard", "postgres_audit"],
       "properties": {
         "leo_capture": {"type": "string", "minLength": 1},
         "leo_analysis": {"type": "string", "minLength": 1},
-        "leo_dashboard": {"type": "string", "minLength": 1}
+        "leo_dashboard": {"type": "string", "minLength": 1},
+        "postgres_audit": {"type": "string", "minLength": 1}
+      }
+    },
+    "postgres": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database_name", "database_owner", "server_major", "system_identifier", "migration_head", "login_names"],
+      "properties": {
+        "database_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "database_owner": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "server_major": {"const": 16},
+        "system_identifier": {"type": "string", "pattern": "^[0-9]{10,20}$"},
+        "migration_head": {"const": "0019_dwell_request_ingress.sql"},
+        "login_names": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["leo_capture", "leo_analysis", "leo_dashboard", "postgres_audit"],
+          "properties": {
+            "leo_capture": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+            "leo_analysis": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+            "leo_dashboard": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+            "postgres_audit": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"}
+          }
+        }
       }
     },
     "pipeline": {

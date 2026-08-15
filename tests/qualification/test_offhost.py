@@ -32,13 +32,16 @@ from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 from leo_flow.qualification import offhost
 from leo_flow.qualification.offhost import (
     MAX_CONFIG_BYTES,
+    REQUIRED_MIGRATION_HEAD,
     SCHEMA_ID,
     SCHEMA_VERSION,
     CasExpectation,
+    Gate,
     HostReport,
     MountObservation,
     OffHostQualificationError,
     PipelineSelection,
+    PostgresExpectation,
     QualificationConfig,
     _load_host_report,
     _PipelineRows,
@@ -46,6 +49,7 @@ from leo_flow.qualification.offhost import (
     compare_host_reports,
     evaluate_pipeline,
     expected_migration_receipts,
+    inspect_database_audit,
     inspect_database_role,
     inspect_host,
     load_config,
@@ -65,9 +69,23 @@ def _config(root: Path, *, digest: str = "sha256:config") -> QualificationConfig
             "leo_capture": "capture-catalog-dsn",
             "leo_analysis": "analysis-catalog-dsn",
             "leo_dashboard": "dashboard-catalog-dsn",
+            "postgres_audit": "postgres-audit-dsn",
         },
         pipeline=PipelineSelection("rec_offhost", "job_offhost"),
         config_digest=digest,
+        postgres=PostgresExpectation(
+            "leo_flow",
+            "postgres",
+            16,
+            "1234567890123456789",
+            REQUIRED_MIGRATION_HEAD,
+            {
+                "leo_capture": "capture_login",
+                "leo_analysis": "analysis_login",
+                "leo_dashboard": "dashboard_login",
+                "postgres_audit": "audit_login",
+            },
+        ),
     )
 
 
@@ -174,6 +192,20 @@ def test_host_inspection_fails_closed_on_wrong_backing_source(tmp_path) -> None:
     assert not next(g for g in report.gates if g.name == "cas.mount.source").passed
 
 
+def test_host_inspection_fails_closed_on_wrong_export_root(tmp_path) -> None:
+    root = _mounted_root(tmp_path)
+    config = _config(root)
+    report = inspect_host(
+        replace(config, cas=replace(config.cas, mount_root="/different-export-root")),
+        "analysis",
+        mountinfo=_mountinfo(root),
+        access=lambda _path, _mode: True,
+    )
+
+    assert not report.passed
+    assert not next(g for g in report.gates if g.name == "cas.mount.root").passed
+
+
 def test_config_requires_exact_fields_and_hashes_the_safe_document(tmp_path) -> None:
     root = tmp_path / "objects"
     document = {
@@ -185,12 +217,27 @@ def test_config_requires_exact_fields_and_hashes_the_safe_document(tmp_path) -> 
             "mount_source": "server:/leo-cas",
             "filesystem_type": "nfs4",
             "group_name": grp.getgrgid(os.getegid()).gr_name,
+            "mount_root": "/",
         },
         "migration_directory": str(tmp_path / "migrations"),
         "credential_names": {
             "leo_capture": "capture-catalog-dsn",
             "leo_analysis": "analysis-catalog-dsn",
             "leo_dashboard": "dashboard-catalog-dsn",
+            "postgres_audit": "postgres-audit-dsn",
+        },
+        "postgres": {
+            "database_name": "leo_flow",
+            "database_owner": "postgres",
+            "server_major": 16,
+            "system_identifier": "1234567890123456789",
+            "migration_head": REQUIRED_MIGRATION_HEAD,
+            "login_names": {
+                "leo_capture": "capture_login",
+                "leo_analysis": "analysis_login",
+                "leo_dashboard": "dashboard_login",
+                "postgres_audit": "audit_login",
+            },
         },
         "pipeline": {"recording_id": "rec_offhost", "job_id": "job_offhost"},
     }
@@ -210,6 +257,12 @@ def test_config_requires_exact_fields_and_hashes_the_safe_document(tmp_path) -> 
     document["credential_names"]["leo_dashboard"] = "analysis-catalog-dsn"
     path.write_text(json.dumps(document))
     with pytest.raises(OffHostQualificationError, match="must be distinct"):
+        load_config(path)
+
+    document["credential_names"]["leo_dashboard"] = "dashboard-catalog-dsn"
+    document["postgres"]["login_names"]["leo_dashboard"] = "analysis_login"
+    path.write_text(json.dumps(document))
+    with pytest.raises(OffHostQualificationError, match="distinct login names"):
         load_config(path)
 
 
@@ -233,6 +286,7 @@ def test_preflight_is_pure_and_lists_role_specific_external_inputs(tmp_path) -> 
     assert report.required_credential_names == (
         "analysis-catalog-dsn",
         "dashboard-catalog-dsn",
+        "postgres-audit-dsn",
     )
     assert document["external_access"] == {
         "radio": False,
@@ -249,6 +303,11 @@ def test_preflight_is_pure_and_lists_role_specific_external_inputs(tmp_path) -> 
         {
             "role": "leo_dashboard",
             "systemd_credential": "dashboard-catalog-dsn",
+            "dsn": "not-resolved",
+        },
+        {
+            "role": "postgres_audit",
+            "systemd_credential": "postgres-audit-dsn",
             "dsn": "not-resolved",
         },
     ]
@@ -290,7 +349,12 @@ def test_deployment_template_matches_loader_and_remains_deliberately_unresolved(
     unresolved = next(
         gate for gate in report.gates if gate.name == "preflight.inputs.resolved"
     )
-    assert unresolved.detail == "cas.filesystem_type,cas.mount_source,station_id"
+    assert unresolved.detail == (
+        "cas.filesystem_type,cas.mount_source,postgres.database_name,"
+        "postgres.database_owner,postgres.login_names.leo_analysis,"
+        "postgres.login_names.leo_capture,postgres.login_names.leo_dashboard,"
+        "postgres.login_names.postgres_audit,postgres.system_identifier,station_id"
+    )
 
 
 def test_expected_migration_receipts_bind_names_to_exact_bytes(tmp_path) -> None:
@@ -312,7 +376,7 @@ def test_database_inspection_sets_read_only_and_proves_receipts_and_role(
     root = _mounted_root(tmp_path)
     config = _config(root)
     config.migration_directory.mkdir()
-    migration = config.migration_directory / "0001_first.sql"
+    migration = config.migration_directory / REQUIRED_MIGRATION_HEAD
     migration.write_text("BEGIN;\nCOMMIT;\n")
     receipts = expected_migration_receipts(config.migration_directory)
     forbidden = set(offhost._FORBIDDEN_PRIVILEGES["leo_analysis"])
@@ -328,8 +392,11 @@ def test_database_inspection_sets_read_only_and_proves_receipts_and_role(
             return self.rows
 
     class Connection:
-        def __init__(self) -> None:
+        def __init__(self, kind: str) -> None:
+            self.kind = kind
             self.statements: list[str] = []
+            self.extra_migration = False
+            self.elevated_session = False
 
         def __enter__(self):
             return self
@@ -341,18 +408,65 @@ def test_database_inspection_sets_read_only_and_proves_receipts_and_role(
             normalized = " ".join(sql.split())
             self.statements.append(normalized)
             if "pg_has_role" in normalized:
-                return Result([{"member": True}])
-            if normalized == "SHOW transaction_read_only":
-                return Result([{"transaction_read_only": "on"}])
-            if "current_user AS role" in normalized:
-                return Result([{"role": "leo_analysis", "login": "station_login"}])
-            if "schema_migration" in normalized:
+                assert params is not None
+                return Result([{"member": params[0] == "leo_analysis"}])
+            if "pg_control_system" in normalized:
                 return Result(
                     [
-                        {"name": name, "sha256": digest}
-                        for name, digest in receipts.items()
+                        {
+                            "database_name": "leo_flow",
+                            "database_owner": "postgres",
+                            "server_version_num": "160004",
+                            "system_identifier": "1234567890123456789",
+                            "current_user_name": "audit_login",
+                            "session_user_name": "audit_login",
+                        }
                     ]
                 )
+            if normalized == "SHOW transaction_read_only":
+                return Result([{"transaction_read_only": "on"}])
+            if "FROM pg_catalog.pg_roles AS r" in normalized:
+                return Result(
+                    [
+                        {
+                            "current_user_name": "analysis_login",
+                            "session_user_name": (
+                                "postgres"
+                                if self.elevated_session
+                                else "analysis_login"
+                            ),
+                            "rolcanlogin": True,
+                            "rolsuper": self.elevated_session,
+                            "rolcreatedb": False,
+                            "rolcreaterole": False,
+                            "rolreplication": False,
+                            "rolbypassrls": False,
+                        }
+                    ]
+                )
+            if "direct_acl_count" in normalized:
+                return Result([{"direct_acl_count": 0, "owned_object_count": 0}])
+            if "current_user AS role" in normalized:
+                return Result(
+                    [
+                        {
+                            "role": "leo_analysis",
+                            "login": (
+                                "postgres"
+                                if self.elevated_session
+                                else "analysis_login"
+                            ),
+                        }
+                    ]
+                )
+            if "schema_migration" in normalized:
+                rows = [
+                    {"name": name, "sha256": digest}
+                    for name, digest in receipts.items()
+                ]
+                if self.extra_migration:
+                    rows.append({"name": "0020_extra.sql", "sha256": "f" * 64})
+                return Result(rows)
             if "has_table_privilege" in normalized:
                 assert params is not None
                 table, privilege = params
@@ -370,24 +484,62 @@ def test_database_inspection_sets_read_only_and_proves_receipts_and_role(
                 return Result([{"allowed": True}])
             return Result([])
 
-    connection = Connection()
-    monkeypatch.setattr(offhost, "_connection_factory", lambda _dsn: lambda: connection)
+    runtime_connection = Connection("runtime")
+    audit_connection = Connection("audit")
+    monkeypatch.setattr(
+        offhost,
+        "_connection_factory",
+        lambda dsn: (
+            lambda: (
+                audit_connection if dsn == "redacted-audit-dsn" else runtime_connection
+            )
+        ),
+    )
 
     class Credentials:
         def resolve(self, name: str) -> str:
+            if name == "postgres-audit-dsn":
+                return "redacted-audit-dsn"
             assert name == "analysis-catalog-dsn"
-            return "redacted-dsn"
+            return "redacted-runtime-dsn"
 
+    assert all(
+        gate.passed
+        for gate in inspect_database_audit(config, credentials=Credentials())
+    )
     gates = inspect_database_role(config, "leo_analysis", credentials=Credentials())
 
     assert all(gate.passed for gate in gates)
-    assert connection.statements[0] == "SET TRANSACTION READ ONLY"
-    assert "SET ROLE leo_analysis" in connection.statements
-    assert next(
-        index
-        for index, statement in enumerate(connection.statements)
-        if "schema_migration" in statement
-    ) < connection.statements.index("SET ROLE leo_analysis")
+    assert runtime_connection.statements[0] == "SET TRANSACTION READ ONLY"
+    assert "SET ROLE leo_analysis" in runtime_connection.statements
+    assert not any(
+        "pg_control_system" in statement or "schema_migration" in statement
+        for statement in runtime_connection.statements
+    )
+
+    runtime_connection.elevated_session = True
+    elevated = inspect_database_role(config, "leo_analysis", credentials=Credentials())
+    assert not next(
+        gate for gate in elevated if gate.name == "postgres.leo_analysis.session_login"
+    ).passed
+    runtime_connection.elevated_session = False
+
+    audit_connection.extra_migration = True
+    extra = inspect_database_audit(config, credentials=Credentials())
+    assert not next(
+        gate for gate in extra if gate.name == "postgres.audit.migration_receipts"
+    ).passed
+    audit_connection.extra_migration = False
+
+    assert config.postgres is not None
+    wrong_identity = replace(
+        config,
+        postgres=replace(config.postgres, system_identifier="9999999999999999999"),
+    )
+    failed = inspect_database_audit(wrong_identity, credentials=Credentials())
+    assert not next(
+        gate for gate in failed if gate.name == "postgres.audit.cluster_identity"
+    ).passed
 
 
 def test_host_comparison_requires_same_config_and_backing_store(tmp_path) -> None:
@@ -480,6 +632,37 @@ def test_host_report_loader_rejects_missing_gate_evidence(tmp_path) -> None:
 
     with pytest.raises(OffHostQualificationError, match="gates are not exact"):
         _load_host_report(path)
+
+
+def test_v03_inspect_report_load_and_compare_round_trip(tmp_path) -> None:
+    root = _mounted_root(tmp_path)
+    config = _config(root)
+
+    def report(host_role: str) -> HostReport:
+        database_names = offhost._expected_host_report_gates(host_role) - set(
+            offhost._HOST_GATE_NAMES
+        )
+        return inspect_host(
+            config,
+            host_role,
+            mountinfo=_mountinfo(root),
+            access=lambda _path, _mode: True,
+            database_gates=tuple(
+                Gate(name, True, "round-trip") for name in sorted(database_names)
+            ),
+        )
+
+    capture_path = tmp_path / "capture.json"
+    analysis_path = tmp_path / "analysis.json"
+    capture_path.write_text(json.dumps(report("capture").document()))
+    analysis_path.write_text(json.dumps(report("analysis").document()))
+
+    gates = compare_host_reports(
+        config,
+        _load_host_report(capture_path),
+        _load_host_report(analysis_path),
+    )
+    assert all(gate.passed for gate in gates)
 
 
 def test_pipeline_gate_binds_every_stage_to_exact_contract_identity(tmp_path) -> None:
@@ -581,12 +764,27 @@ def test_cli_unarmed_probe_fails_without_touching_cas(tmp_path) -> None:
             "mount_source": "server:/leo-cas",
             "filesystem_type": "nfs4",
             "group_name": grp.getgrgid(os.getegid()).gr_name,
+            "mount_root": "/",
         },
         "migration_directory": str(tmp_path / "migrations"),
         "credential_names": {
             "leo_capture": "capture-catalog-dsn",
             "leo_analysis": "analysis-catalog-dsn",
             "leo_dashboard": "dashboard-catalog-dsn",
+            "postgres_audit": "postgres-audit-dsn",
+        },
+        "postgres": {
+            "database_name": "leo_flow",
+            "database_owner": "postgres",
+            "server_major": 16,
+            "system_identifier": "1234567890123456789",
+            "migration_head": REQUIRED_MIGRATION_HEAD,
+            "login_names": {
+                "leo_capture": "capture_login",
+                "leo_analysis": "analysis_login",
+                "leo_dashboard": "dashboard_login",
+                "postgres_audit": "audit_login",
+            },
         },
         "pipeline": None,
     }
@@ -623,12 +821,27 @@ def test_cli_preflight_never_inspects_mount_database_or_credentials(
             "mount_source": "server:/leo-cas",
             "filesystem_type": "nfs4",
             "group_name": grp.getgrgid(os.getegid()).gr_name,
+            "mount_root": "/",
         },
         "migration_directory": str(tmp_path / "migrations"),
         "credential_names": {
             "leo_capture": "capture-catalog-dsn",
             "leo_analysis": "analysis-catalog-dsn",
             "leo_dashboard": "dashboard-catalog-dsn",
+            "postgres_audit": "postgres-audit-dsn",
+        },
+        "postgres": {
+            "database_name": "leo_flow",
+            "database_owner": "postgres",
+            "server_major": 16,
+            "system_identifier": "1234567890123456789",
+            "migration_head": REQUIRED_MIGRATION_HEAD,
+            "login_names": {
+                "leo_capture": "capture_login",
+                "leo_analysis": "analysis_login",
+                "leo_dashboard": "dashboard_login",
+                "postgres_audit": "audit_login",
+            },
         },
         "pipeline": None,
     }
@@ -639,6 +852,7 @@ def test_cli_preflight_never_inspects_mount_database_or_credentials(
         raise AssertionError("preflight performed external inspection")
 
     monkeypatch.setattr(offhost, "inspect_host", forbidden)
+    monkeypatch.setattr(offhost, "inspect_database_audit", forbidden)
     monkeypatch.setattr(offhost, "inspect_database_role", forbidden)
     monkeypatch.setattr(offhost, "_connection_factory", forbidden)
     stdout = io.StringIO()
@@ -651,5 +865,8 @@ def test_cli_preflight_never_inspects_mount_database_or_credentials(
     assert code == 0
     document = json.loads(stdout.getvalue())
     assert document["mode"] == "dry-run"
-    assert document["required_inputs"]["systemd_credentials"] == ["capture-catalog-dsn"]
+    assert document["required_inputs"]["systemd_credentials"] == [
+        "capture-catalog-dsn",
+        "postgres-audit-dsn",
+    ]
     assert not root.exists()

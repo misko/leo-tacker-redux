@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://leo-flow.invalid/schema/systemd-health-v0.1.json",
+  "$id": "https://leo-flow.invalid/schema/systemd-health-v0.3.json",
   "title": "LEO Flow systemd health qualification configuration",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_id", "schema_version", "services", "timers"],
   "properties": {
     "schema_id": {"const": "org.leo-flow.systemd-health-config"},
-    "schema_version": {"const": "0.1"},
+    "schema_version": {"const": "0.3"},
     "services": {
       "type": "array",
       "minItems": 3,
@@ -15,14 +15,35 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["component", "unit", "mode", "restart", "maximum_restarts"],
+        "required": ["component", "unit", "mode", "restart", "maximum_restarts", "maximum_age_s"],
         "properties": {
-          "component": {"enum": ["capture", "analysis", "dashboard"]},
+          "component": {"enum": ["capture", "analysis", "dashboard", "auxiliary"]},
           "unit": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}\\.service$"},
           "mode": {"enum": ["running", "oneshot-complete"]},
           "restart": {"enum": ["no", "on-failure", "always"]},
-          "maximum_restarts": {"type": "integer", "minimum": 0}
-        }
+          "maximum_restarts": {"type": "integer", "minimum": 0},
+          "maximum_age_s": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "integer", "minimum": 1, "maximum": 2678400}
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"mode": {"const": "running"}}},
+            "then": {"properties": {"maximum_age_s": {"type": "null"}}},
+            "else": {
+              "properties": {
+                "maximum_age_s": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2678400
+                }
+              }
+            }
+          }
+        ]
       },
       "allOf": [
         {

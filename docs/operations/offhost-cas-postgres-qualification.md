@@ -24,19 +24,34 @@ configuration is:
 ```json
 {
   "schema_id": "org.leo-flow.offhost-qualification",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "station_id": "station_example",
   "cas": {
     "root": "/var/lib/leo-flow/objects",
     "mount_source": "storage.example:/leo-flow-cas",
     "filesystem_type": "nfs4",
-    "group_name": "leo-flow-cas"
+    "group_name": "leo-flow-cas",
+    "mount_root": "/"
   },
   "migration_directory": "/opt/leo-flow/migrations",
   "credential_names": {
     "leo_capture": "capture-catalog-dsn",
     "leo_analysis": "analysis-catalog-dsn",
-    "leo_dashboard": "dashboard-catalog-dsn"
+    "leo_dashboard": "dashboard-catalog-dsn",
+    "postgres_audit": "postgres-audit-dsn"
+  },
+  "postgres": {
+    "database_name": "leo_flow",
+    "database_owner": "leo_catalog_owner",
+    "server_major": 16,
+    "system_identifier": "7612345678901234567",
+    "migration_head": "0019_dwell_request_ingress.sql",
+    "login_names": {
+      "leo_capture": "leo_capture_station_login",
+      "leo_analysis": "leo_analysis_station_login",
+      "leo_dashboard": "leo_dashboard_station_login",
+      "postgres_audit": "leo_catalog_audit_login"
+    }
   },
   "pipeline": {
     "recording_id": "rec_replace_with_exact_published_id",
@@ -46,18 +61,18 @@ configuration is:
 ```
 
 The CAS root must be absolute, normalized, non-root, and an exact mount point.
-`mount_source` and `filesystem_type` are required operator assertions, not
-values discovered and silently accepted by the harness. Use the stable backing
-source as it appears in `/proc/self/mountinfo`; aliases are intentionally not
-treated as equivalent. The root must be owned by the configured shared group,
-have group `rwx` and setgid permissions, and the capture and analysis service
-users must each be members of that group.
+`mount_source`, `filesystem_type`, and `mount_root` are required operator
+assertions, not values discovered and silently accepted by the harness. Use the
+stable values as they appear in `/proc/self/mountinfo`; aliases are intentionally
+not treated as equivalent. The root must be owned by the configured shared
+group, have group `rwx` and setgid permissions, and the capture and analysis
+service users must each be members of that group.
 
 The configuration contains credential *names*, never DSNs. The commands resolve
 only systemd credentials. `migration_directory` must contain the exact ordered
 SQL files used to migrate the catalog; every corresponding `schema_migration`
-name and SHA-256 receipt must match. Additional future receipts are reported as
-compatible, but every migration known to this runtime is required.
+name and SHA-256 receipt must match. Missing, changed, extra, or forward
+migration receipts all fail this release's gate.
 
 Copy
 `deploy/offhost-qualification/qualification.example.json` to the managed
@@ -73,7 +88,11 @@ The site-specific inputs intentionally absent from the repository are:
 | Input | Source of truth | Stored in qualification JSON |
 |---|---|---|
 | Station ID | Operator inventory | Yes |
-| Exact CAS backing source and filesystem type | The provisioned mount and `/proc/self/mountinfo` | Yes |
+| Exact CAS backing source, filesystem type, and mount root | Approved storage provisioning record, confirmed against `/proc/self/mountinfo` | Yes |
+| PostgreSQL database name and database owner | Approved database provisioning record | Yes |
+| PostgreSQL major version (`16`) and cluster system identifier | Approved cluster provisioning/backup record, confirmed with `server_version_num` and `pg_control_system()` | Yes |
+| Required migration head (`0019_dwell_request_ingress.sql`) | Release manifest | Yes |
+| Four exact, distinct authenticated login names | Database role provisioning record | Yes |
 | PostgreSQL endpoint and login secret for each role | Secret-management owner | No; store each DSN in its named systemd credential |
 | Exact published recording/job IDs | Catalog output from the conducted run | Yes, only after the pipeline exists |
 
@@ -103,7 +122,8 @@ credentials, inspect the CAS path or mount table, import a PostgreSQL endpoint,
 open a socket, or contact the radio. Its JSON report lists the exact CAS,
 migration-directory, database-role, and systemd-credential inputs that the
 selected host will require. Capture requires `leo_capture`; analysis requires
-both `leo_analysis` and the independent `leo_dashboard` read credential. Exit
+both `leo_analysis` and the independent `leo_dashboard` read credential. Every
+inspection also requires the separate `postgres_audit` credential. Exit
 `0` means the configuration is syntactically ready for read-only inspection;
 exit `2` means the report contains an unresolved or unsafe local input; exit `3`
 means the configuration itself could not be loaded safely.
@@ -112,23 +132,31 @@ A passing dry-run is a plan, not infrastructure evidence. It does not assert
 that a mount, credential, PostgreSQL endpoint, migration receipt, or catalog row
 exists. Those are checked by the read-only `inspect` command below.
 
+Do not populate the PostgreSQL or mount identity fields by accepting whatever a
+candidate endpoint reports. Obtain the approved values independently, enter
+them in the shared configuration, and let `inspect` compare the observation to
+that pinned identity. This prevents a valid credential for the wrong database,
+cluster, export root, or release from passing qualification.
+
 ## Gate 1: read-only host inspection
 
-Run capture inspection as the capture service identity with only the capture
-credential loaded:
+Run capture inspection as the capture service identity with the capture and
+separate audit credentials loaded:
 
 ```console
 systemd-run --wait --pipe --collect \
   --property=User=leo-capture \
   --property=SupplementaryGroups=leo-flow-cas \
   --property=LoadCredential=capture-catalog-dsn:/etc/leo-flow/secrets/capture-catalog-dsn \
+  --property=LoadCredential=postgres-audit-dsn:/etc/leo-flow/secrets/postgres-audit-dsn \
   /opt/leo-flow/bin/python -m leo_flow.qualification.offhost \
   --config /etc/leo-flow/offhost-qualification.json \
   inspect --host-role capture
 ```
 
-Run analysis inspection as the analysis service identity. It checks both the
-analysis write capability and the dashboard's separate read-only credential:
+Run analysis inspection as the analysis service identity. It checks the
+analysis write capability, the dashboard's separate read-only credential, and
+the audit credential:
 
 ```console
 systemd-run --wait --pipe --collect \
@@ -136,6 +164,7 @@ systemd-run --wait --pipe --collect \
   --property=SupplementaryGroups=leo-flow-cas \
   --property=LoadCredential=analysis-catalog-dsn:/etc/leo-flow/secrets/analysis-catalog-dsn \
   --property=LoadCredential=dashboard-catalog-dsn:/etc/leo-flow/secrets/dashboard-catalog-dsn \
+  --property=LoadCredential=postgres-audit-dsn:/etc/leo-flow/secrets/postgres-audit-dsn \
   /opt/leo-flow/bin/python -m leo_flow.qualification.offhost \
   --config /etc/leo-flow/offhost-qualification.json \
   inspect --host-role analysis
@@ -146,6 +175,18 @@ means the inspection completed with at least one failed gate, and exit `3`
 means input or infrastructure could not be safely inspected. Save stdout in an
 operator evidence location outside the CAS. Reports are evidence only; no
 service watches them.
+
+Database inspection begins read-only transactions. The audit credential alone
+proves the exact database name, owner, PostgreSQL 16 major version, cluster
+system identifier, and an inventory equal to the local migration receipt hashes
+through `0019`; it may receive the separately reviewed monitoring access needed
+for cluster identity. Runtime logins do not need `pg_monitor`. Each runtime
+credential must authenticate as its exact configured `session_user`, must be a
+distinct non-elevated login with exactly one application capability membership,
+must own no database objects, and must have no direct ACL entries. In particular,
+`leo_analysis` may publish dwell requests and `leo_capture` may lease or
+transition them only through the approved security-definer routines; neither
+role receives direct access to `dwell_request_ingress`.
 
 Transfer the two evidence documents through the operator management plane and
 compare them on either host:

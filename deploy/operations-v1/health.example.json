@@ -1,30 +1,50 @@
 {
   "schema_id": "org.leo-flow.systemd-health-config",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "services": [
     {
       "component": "capture",
       "unit": "leo-v5-scan.service",
       "mode": "oneshot-complete",
       "restart": "on-failure",
-      "maximum_restarts": 5
+      "maximum_restarts": 5,
+      "maximum_age_s": 3600
     },
     {
       "component": "analysis",
       "unit": "leo-offline-analysis@worker-1.service",
       "mode": "running",
       "restart": "on-failure",
-      "maximum_restarts": 5
+      "maximum_restarts": 5,
+      "maximum_age_s": null
     },
     {
       "component": "dashboard",
       "unit": "leo-dashboard.service",
       "mode": "running",
       "restart": "on-failure",
-      "maximum_restarts": 5
+      "maximum_restarts": 5,
+      "maximum_age_s": null
+    },
+    {
+      "component": "auxiliary",
+      "unit": "leo-storage-capacity.service",
+      "mode": "oneshot-complete",
+      "restart": "no",
+      "maximum_restarts": 0,
+      "maximum_age_s": 600
+    },
+    {
+      "component": "auxiliary",
+      "unit": "leo-ephemeris-provider-canary.service",
+      "mode": "oneshot-complete",
+      "restart": "no",
+      "maximum_restarts": 0,
+      "maximum_age_s": 25200
     }
   ],
   "timers": [
+    "leo-ephemeris-provider-canary.timer",
     "leo-flow-health.timer",
     "leo-storage-capacity.timer"
   ]

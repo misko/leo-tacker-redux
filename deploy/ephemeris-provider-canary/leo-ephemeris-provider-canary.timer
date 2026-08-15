@@ -1,5 +1,6 @@
 [Unit]
 Description=Schedule LEO Flow ephemeris provider canary every six hours
+PartOf=leo-flow.target
 
 [Timer]
 OnCalendar=*-*-* 00/6:00:00
