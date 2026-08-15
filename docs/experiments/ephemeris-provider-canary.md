@@ -30,6 +30,20 @@ provenance, and receipt objects are preserved under
 `/var/tmp/leo-ephemeris-hf-live-20260814`. This proves the public Hugging Face
 path, not authenticated Space-Track access.
 
+On the analysis host, the user-scoped `leo-ephemeris-live.timer` was enabled
+and active after this proof. It uses a persistent six-hour calendar, a five-
+minute randomized delay, the same CAS/rate root, and the same dual-gated live
+canary command. At verification time its next trigger was 2026-08-15 03:02 PDT.
+The host-local unit and reviewed configuration live under
+`~/.config/systemd/user` and `~/.config/leo-flow`; the checked-in system units
+remain the portable deployment source.
+
+The live check also found two provider-compatibility facts now covered by
+tests: Hugging Face's `resolve/main` URL redirects while `raw/main` returns the
+same file directly, and the dataset uses conventional unprefixed three-line
+TLE title records. Redirect rejection remains intact; the fixed endpoint and
+strict parser now accept that standard representation.
+
 The implementation/network boundary is tested with injected HTTP transports.
 Those tests exercise the dual approval gate, one-request ceiling, persistent
 minimum interval, exact named Space-Track credential resolution, and absence of
