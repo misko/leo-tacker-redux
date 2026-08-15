@@ -7,7 +7,6 @@ harness.  The production scan deployment remains capture-only.
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import time
 from collections.abc import Sequence
@@ -35,6 +34,10 @@ from leo_flow.contracts.core import ArtifactRef, Digest, FeatureSetId, SchemaRef
 from leo_flow.contracts.features import FeatureSetBundle, FeatureSetRef
 from leo_flow.contracts.storage import RecordingObjectRef
 from leo_flow.deployments.v5_canary import V5RadioProvider
+from leo_flow.deployments.v5_live_safety import (
+    V5LiveSafetyError,
+    verify_tx2_muted,
+)
 from leo_flow.deployments.v5_scan import CAPTURE_IDENTITY, PLAN_ID, SCAN_PLAN
 from leo_flow.jobs import InMemoryJobLeaseRepository, JobState
 from leo_flow.services.recording_analysis import (
@@ -138,49 +141,10 @@ def _require_live_confirmation(value: str) -> None:
 def _verify_tx2_muted() -> dict[str, object]:
     """Read only the selected context and refuse a non-muted DDS path."""
 
-    iio = importlib.import_module("iio")
-    context = iio.Context(EXPECTED_URI)
     try:
-        serial = str(context.attrs["hw_serial"])
-        if serial != EXPECTED_SERIAL:
-            raise V5ScanE2EError("TX mute check reached a different radio serial")
-        phy = context.find_device("ad9361-phy")
-        dds = context.find_device("cf-ad9361-dds-core-lpc")
-        if phy is None or dds is None:
-            raise V5ScanE2EError("TX mute check cannot find PHY or DDS")
-        tx2_gain = None
-        for channel in phy.channels:
-            if channel.output and channel.id == "voltage1":
-                tx2_gain = float(channel.attrs["hardwaregain"].value.split()[0])
-                break
-        if tx2_gain is None or tx2_gain > -80.0:
-            raise V5ScanE2EError("TX2 hardware gain is not at the muted floor")
-        scales: dict[str, float] = {}
-        for channel in dds.channels:
-            if channel.output and channel.id in {
-                "altvoltage4",
-                "altvoltage5",
-                "altvoltage6",
-                "altvoltage7",
-            }:
-                scales[channel.id] = float(channel.attrs["scale"].value)
-        if set(scales) != {
-            "altvoltage4",
-            "altvoltage5",
-            "altvoltage6",
-            "altvoltage7",
-        } or any(value != 0.0 for value in scales.values()):
-            raise V5ScanE2EError("TX2 DDS scales are not all zero")
-        return {
-            "radio_serial": serial,
-            "tx2_hardware_gain_db": tx2_gain,
-            "tx2_dds_scales": scales,
-            "read_only_check": True,
-        }
-    finally:
-        destroy = getattr(context, "destroy", None)
-        if callable(destroy):
-            destroy()
+        return verify_tx2_muted(EXPECTED_URI, EXPECTED_SERIAL)
+    except V5LiveSafetyError as error:
+        raise V5ScanE2EError(str(error)) from error
 
 
 def _frame_accounting(

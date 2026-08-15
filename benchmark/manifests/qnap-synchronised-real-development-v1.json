@@ -1,0 +1,200 @@
+{
+  "schema": "leo-flow.qnap-synchronised-real-dataset/v1",
+  "dataset_id": "qnap-synchronised-real-development-2026-08-14-v1",
+  "purpose": "Bounded development-only detector-behavior audit over real synchronized recordings; not an accuracy or target-detection benchmark.",
+  "root_id": "qnap-leo-scans",
+  "source_schema": "leo-tracker.interim-synchronised-scan/v1",
+  "membership_digest_sha256": "532dbe2ec0cbcc5506042e91443ddeb258aa3879278b7ae9dfccebadd7b1a8f0",
+  "partition_policy": {
+    "allowed_partition": "development",
+    "split_group_id": "group-qnap-2026-08-14-unresolved-session",
+    "basis": "All available recordings are from one dense UTC-day acquisition with no independently established pass or session boundaries. Both radios from every synchronized sweep remain in one group.",
+    "prohibited_uses": [
+      "train-validation-test splitting within this corpus",
+      "threshold fitting from these recordings",
+      "accuracy, sensitivity, specificity, or false-positive-rate claims"
+    ]
+  },
+  "truth_policy": {
+    "tier": "unlabeled_sky",
+    "label": "unlabeled",
+    "target_present": null,
+    "accuracy_eligible": false,
+    "basis": "Source metadata contains no target labels, independent instrument truth, TLE association, injected truth, negative controls, or pass identifiers. Detector agreement and operator hardware notes are not target truth."
+  },
+  "inventory": {
+    "root_observed_read_only": "/mnt/qnap01/mouse9911/leo-scans",
+    "observed_utc_span": ["20260814T000315Z", "20260814T144922Z"],
+    "sweep_directory_count": 7054,
+    "metadata_file_count": 7054,
+    "iq_file_count": 13215,
+    "file_count": 20270,
+    "total_bytes": 1141277703024,
+    "metadata_bytes": 16897970,
+    "metadata_inventory_digest_sha256": "22d47093ddb5241349236c42f968a9809c88419b1124c3d5316a8218d4a4df4b",
+    "radio_attempt_count": 14108,
+    "successful_radio_attempt_count": 13215,
+    "failed_radio_attempt_count": 893,
+    "matched_arm_sweep_count": 6364,
+    "unmatched_arm_sweep_count": 690,
+    "failure_detail": {
+      "pluto-5d4d_key_error_count": 892,
+      "pluto-5d4d_io_error_count": 1,
+      "other_failure_count": 0
+    }
+  },
+  "selection": {
+    "policy": "From lexicographically sorted sweep directories, require two successful radios, matched arms, exact arm 80ms-2.50MSps with pilot_band_fits=true, UTC before 20260814T032400Z, and declared maximum barrier-release skew <=0.1 ms; then select the earliest sweep for each collapsed relationship opposite, same-L, and same-U.",
+    "score_blind": true,
+    "representative_window_starts": [0, 65536, 130368, 195904],
+    "window_samples": 4096,
+    "funnel": [
+      {"stage": "all_sweeps", "retained": 7054, "excluded_at_stage": 0},
+      {"stage": "both_radios_successful", "retained": 6161, "excluded_at_stage": 893},
+      {"stage": "matched_arm", "retained": 5550, "excluded_at_stage": 611},
+      {"stage": "exact_80ms_2.50MSps_arm", "retained": 465, "excluded_at_stage": 5085},
+      {"stage": "before_first_explicit_io_error_cutoff", "retained": 95, "excluded_at_stage": 370},
+      {"stage": "max_declared_skew_at_most_0.1ms", "retained": 62, "excluded_at_stage": 33},
+      {"stage": "earliest_collapsed_order_relationship", "retained": 3, "excluded_at_stage": 59}
+    ],
+    "eligible_order_relationship_counts": {
+      "opposite_LU": 19,
+      "opposite_UL": 17,
+      "same_L": 12,
+      "same_U": 14
+    },
+    "selected_sweep_count": 3,
+    "selected_recording_count": 6,
+    "referenced_iq_bytes": 76800000,
+    "analyzed_iq_bytes": 6291456,
+    "detector_window_count": 192
+  },
+  "analysis_profile": {
+    "detector_suite": "independent-detector-suite@0.1.0",
+    "config": {
+      "window_samples": 4096,
+      "stride_samples": 4096,
+      "periodic_lag_samples": 9,
+      "max_pair_delay_samples": 4,
+      "clip_threshold_abs": 2048,
+      "refuse_clipping": true
+    },
+    "reference_thresholds": {
+      "status": "Frozen synthetic TRAIN-calibrated exploratory thresholds; not fitted or validated on this real corpus.",
+      "source_policy": "train-recording-max-balanced-accuracy-higher-threshold-v1",
+      "source_refs": [
+        {"relative_path": "benchmark/specs/starlink-detector-matrix-v1.json", "sha256": "f51b9bc7f289cf8400a4a1a77361d38e0e2c134310a750ee8e0a952de152a90d"},
+        {"relative_path": "benchmark/specs/starlink-detector-representative-windows-v1.json", "sha256": "2e28b74d84b6f03d964c004648ef370ff3ff5ca05356ea4356d7a26ea554beea"}
+      ],
+      "values": {
+        "coarse-energy@0.1.0": 18.12875118139136,
+        "paired-common-mode@0.1.0": 0.05922808309560977,
+        "periodic-coherence@0.1.0": 0.018011781113335644
+      }
+    }
+  },
+  "members": [
+    {
+      "member_id": "real-dev-0001-pluto-19f2",
+      "recording_id": "rec_qnap_20260814t000513z_pluto_19f2",
+      "partition": "development",
+      "split_group_id": "group-qnap-2026-08-14-unresolved-session",
+      "sweep_pair_id": "sync-20260814T000513Z",
+      "order_relationship": "opposite",
+      "radio_id": "pluto-19f2",
+      "receiver_labels": ["lnb-c", "lnb-d"],
+      "edge_order": "U",
+      "sweep_number": 22,
+      "utc": "20260814T000513Z",
+      "max_declared_skew_ms": 0.0721,
+      "truth": {"tier": "unlabeled_sky", "label": "unlabeled", "target_present": null, "accuracy_eligible": false},
+      "source_metadata_ref": {"relative_path": "sync-20260814T000513Z/sweep.json", "sha256": "f6f664700f562eb4a953449303f580f5fab1a9b9ee0d41e2ba1e90f1e604a1bb", "bytes": 2418},
+      "iq_ref": {"relative_path": "sync-20260814T000513Z/pluto-19f2.ci16", "sha256": "eb5ea4b936300450d298e95948b219bc0c18043aa83800deb5e8bc915fd32e58", "bytes": 12800000, "shape": [8, 200000, 2, 2], "dtype": "<i2", "layout": ["tuning", "sample", "receiver", "component"]}
+    },
+    {
+      "member_id": "real-dev-0002-pluto-5d4d",
+      "recording_id": "rec_qnap_20260814t000513z_pluto_5d4d",
+      "partition": "development",
+      "split_group_id": "group-qnap-2026-08-14-unresolved-session",
+      "sweep_pair_id": "sync-20260814T000513Z",
+      "order_relationship": "opposite",
+      "radio_id": "pluto-5d4d",
+      "receiver_labels": ["lnb-a", "lnb-b"],
+      "edge_order": "L",
+      "sweep_number": 22,
+      "utc": "20260814T000513Z",
+      "max_declared_skew_ms": 0.0721,
+      "truth": {"tier": "unlabeled_sky", "label": "unlabeled", "target_present": null, "accuracy_eligible": false},
+      "source_metadata_ref": {"relative_path": "sync-20260814T000513Z/sweep.json", "sha256": "f6f664700f562eb4a953449303f580f5fab1a9b9ee0d41e2ba1e90f1e604a1bb", "bytes": 2418},
+      "iq_ref": {"relative_path": "sync-20260814T000513Z/pluto-5d4d.ci16", "sha256": "e1f44c1e585d7812209dd4895cc3cc5ce0bf00257d6f69c5e67753849d81b120", "bytes": 12800000, "shape": [8, 200000, 2, 2], "dtype": "<i2", "layout": ["tuning", "sample", "receiver", "component"]}
+    },
+    {
+      "member_id": "real-dev-0003-pluto-19f2",
+      "recording_id": "rec_qnap_20260814t001700z_pluto_19f2",
+      "partition": "development",
+      "split_group_id": "group-qnap-2026-08-14-unresolved-session",
+      "sweep_pair_id": "sync-20260814T001700Z",
+      "order_relationship": "same_L",
+      "radio_id": "pluto-19f2",
+      "receiver_labels": ["lnb-c", "lnb-d"],
+      "edge_order": "L",
+      "sweep_number": 7,
+      "utc": "20260814T001700Z",
+      "max_declared_skew_ms": 0.0584,
+      "truth": {"tier": "unlabeled_sky", "label": "unlabeled", "target_present": null, "accuracy_eligible": false},
+      "source_metadata_ref": {"relative_path": "sync-20260814T001700Z/sweep.json", "sha256": "a1751c753a65a6ef482852ce25671d98f5be9b53b7424614e15ec729460c6de2", "bytes": 2418},
+      "iq_ref": {"relative_path": "sync-20260814T001700Z/pluto-19f2.ci16", "sha256": "f5949cd80bcd06760caa386065c6a9bb1dd09fd83a3a28de76684c413342a6fb", "bytes": 12800000, "shape": [8, 200000, 2, 2], "dtype": "<i2", "layout": ["tuning", "sample", "receiver", "component"]}
+    },
+    {
+      "member_id": "real-dev-0004-pluto-5d4d",
+      "recording_id": "rec_qnap_20260814t001700z_pluto_5d4d",
+      "partition": "development",
+      "split_group_id": "group-qnap-2026-08-14-unresolved-session",
+      "sweep_pair_id": "sync-20260814T001700Z",
+      "order_relationship": "same_L",
+      "radio_id": "pluto-5d4d",
+      "receiver_labels": ["lnb-a", "lnb-b"],
+      "edge_order": "L",
+      "sweep_number": 7,
+      "utc": "20260814T001700Z",
+      "max_declared_skew_ms": 0.0584,
+      "truth": {"tier": "unlabeled_sky", "label": "unlabeled", "target_present": null, "accuracy_eligible": false},
+      "source_metadata_ref": {"relative_path": "sync-20260814T001700Z/sweep.json", "sha256": "a1751c753a65a6ef482852ce25671d98f5be9b53b7424614e15ec729460c6de2", "bytes": 2418},
+      "iq_ref": {"relative_path": "sync-20260814T001700Z/pluto-5d4d.ci16", "sha256": "2189ebc2672f5d3fd516e50684bda124a3f85a432219c91a60b2156b969cf6bf", "bytes": 12800000, "shape": [8, 200000, 2, 2], "dtype": "<i2", "layout": ["tuning", "sample", "receiver", "component"]}
+    },
+    {
+      "member_id": "real-dev-0005-pluto-19f2",
+      "recording_id": "rec_qnap_20260814t003616z_pluto_19f2",
+      "partition": "development",
+      "split_group_id": "group-qnap-2026-08-14-unresolved-session",
+      "sweep_pair_id": "sync-20260814T003616Z",
+      "order_relationship": "same_U",
+      "radio_id": "pluto-19f2",
+      "receiver_labels": ["lnb-c", "lnb-d"],
+      "edge_order": "U",
+      "sweep_number": 17,
+      "utc": "20260814T003616Z",
+      "max_declared_skew_ms": 0.05,
+      "truth": {"tier": "unlabeled_sky", "label": "unlabeled", "target_present": null, "accuracy_eligible": false},
+      "source_metadata_ref": {"relative_path": "sync-20260814T003616Z/sweep.json", "sha256": "7570187ba4208400847668371b4a9103aa823e513e5bc7fa15ebb43b8fa15f6f", "bytes": 2413},
+      "iq_ref": {"relative_path": "sync-20260814T003616Z/pluto-19f2.ci16", "sha256": "59d63ac8e341595df14908216f5cec3b1148bd63c8bcbcd236f2299993bbcfea", "bytes": 12800000, "shape": [8, 200000, 2, 2], "dtype": "<i2", "layout": ["tuning", "sample", "receiver", "component"]}
+    },
+    {
+      "member_id": "real-dev-0006-pluto-5d4d",
+      "recording_id": "rec_qnap_20260814t003616z_pluto_5d4d",
+      "partition": "development",
+      "split_group_id": "group-qnap-2026-08-14-unresolved-session",
+      "sweep_pair_id": "sync-20260814T003616Z",
+      "order_relationship": "same_U",
+      "radio_id": "pluto-5d4d",
+      "receiver_labels": ["lnb-a", "lnb-b"],
+      "edge_order": "U",
+      "sweep_number": 17,
+      "utc": "20260814T003616Z",
+      "max_declared_skew_ms": 0.05,
+      "truth": {"tier": "unlabeled_sky", "label": "unlabeled", "target_present": null, "accuracy_eligible": false},
+      "source_metadata_ref": {"relative_path": "sync-20260814T003616Z/sweep.json", "sha256": "7570187ba4208400847668371b4a9103aa823e513e5bc7fa15ebb43b8fa15f6f", "bytes": 2413},
+      "iq_ref": {"relative_path": "sync-20260814T003616Z/pluto-5d4d.ci16", "sha256": "50827ac3e9d11973bfee8972c3ed250e2deae16399f6baf2d45e3bf3073af0f6", "bytes": 12800000, "shape": [8, 200000, 2, 2], "dtype": "<i2", "layout": ["tuning", "sample", "receiver", "component"]}
+    }
+  ]
+}

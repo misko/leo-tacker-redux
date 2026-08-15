@@ -145,6 +145,16 @@ class DashboardProjectionStore:
     def project_evaluation(self, view: DetectorEvaluationView) -> None:
         """Retain one immutable evaluation under both of its exact identities."""
 
+        report = view.ref.report_object
+        expected_locator = f"cas:{report.digest.algorithm.value}:{report.digest.value}"
+        if (
+            report.media_type != "application/json"
+            or report.format_id != "detector-evaluation-report-v0.1"
+            or report.locator != expected_locator
+        ):
+            raise ProjectionInputError(
+                "evaluation report reference has an unsupported format or locator"
+            )
         evaluation_id = str(view.ref.evaluation_id)
         run_id = str(view.ref.run_id)
         existing = self._evaluations.get(evaluation_id)

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leo-flow.invalid/schemas/qnap-synchronised-real-dataset-v1.schema.json",
+  "title": "LEO Flow synchronized real-recording development dataset",
+  "type": "object",
+  "required": [
+    "schema",
+    "dataset_id",
+    "root_id",
+    "membership_digest_sha256",
+    "partition_policy",
+    "truth_policy",
+    "inventory",
+    "selection",
+    "analysis_profile",
+    "members"
+  ],
+  "properties": {
+    "schema": {"const": "leo-flow.qnap-synchronised-real-dataset/v1"},
+    "dataset_id": {"type": "string", "minLength": 1},
+    "root_id": {"const": "qnap-leo-scans"},
+    "membership_digest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/member"}
+    }
+  },
+  "$defs": {
+    "objectRef": {
+      "type": "object",
+      "required": ["relative_path", "sha256", "bytes"],
+      "properties": {
+        "relative_path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "truth": {
+      "type": "object",
+      "required": ["tier", "label", "target_present", "accuracy_eligible"],
+      "properties": {
+        "tier": {"const": "unlabeled_sky"},
+        "label": {"const": "unlabeled"},
+        "target_present": {"type": "null"},
+        "accuracy_eligible": {"const": false}
+      }
+    },
+    "member": {
+      "type": "object",
+      "required": [
+        "member_id",
+        "recording_id",
+        "partition",
+        "split_group_id",
+        "sweep_pair_id",
+        "radio_id",
+        "receiver_labels",
+        "edge_order",
+        "truth",
+        "source_metadata_ref",
+        "iq_ref"
+      ],
+      "properties": {
+        "partition": {"const": "development"},
+        "edge_order": {"enum": ["L", "U"]},
+        "receiver_labels": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "truth": {"$ref": "#/$defs/truth"},
+        "source_metadata_ref": {"$ref": "#/$defs/objectRef"},
+        "iq_ref": {
+          "allOf": [
+            {"$ref": "#/$defs/objectRef"},
+            {
+              "type": "object",
+              "required": ["shape", "dtype", "layout"],
+              "properties": {
+                "dtype": {"const": "<i2"},
+                "layout": {"const": ["tuning", "sample", "receiver", "component"]},
+                "shape": {
+                  "type": "array",
+                  "prefixItems": [
+                    {"const": 8},
+                    {"type": "integer", "minimum": 1},
+                    {"const": 2},
+                    {"const": 2}
+                  ],
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -84,3 +84,19 @@ def test_dashboard_source_has_no_filesystem_scan_or_scientific_thresholding() ->
     for path in DASHBOARD.rglob("*.py"):
         text = path.read_text().lower()
         assert not any(token in text for token in forbidden), path
+
+
+def test_dashboard_read_model_cannot_open_iq_or_import_authoritative_engines() -> None:
+    forbidden = (
+        "leo_flow.analysis",
+        "leo_flow.capture.engine",
+        "leo_flow.storage.recording_codec",
+        "read_iq_bytes",
+        "iter_safe_windows",
+        "sigmfrecording",
+        "featuresetbundle",
+        "modelsnapshotbundle",
+    )
+    for path in DASHBOARD.rglob("*.py"):
+        text = path.read_text(encoding="utf-8").lower()
+        assert not any(token.lower() in text for token in forbidden), path

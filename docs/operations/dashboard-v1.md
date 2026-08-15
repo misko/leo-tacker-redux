@@ -34,6 +34,38 @@ method/split coverage, firing and confusion counts, warnings, and the exact
 canonical report `ObjectRef`. Covariance matrices remain in that canonical
 report; the JSON route neither opens the report nor exposes a filesystem path.
 
+## Offline public-boundary proof
+
+`tests/application/test_public_projection_dashboard_e2e.py` is the deterministic
+no-service proof for the complete read-model boundary. It constructs only public
+contract values, validates exact published recording, FeatureSet, and model
+references through the projection-command gates, then queries the resulting
+recording status, feature, model, and detector-evaluation views through
+`DashboardQueryPort` and the JSON application. It opens no raw IQ, CAS object,
+database, mount, or radio.
+
+The proof also fixes the compatibility behavior expected of concrete projection
+adapters:
+
+- replaying identical immutable inputs leaves every reduced query result
+  unchanged;
+- mismatched recording/FeatureSet/model identities fail before a reduced row is
+  exposed;
+- a recording whose analysis is incomplete remains visible with its explicit
+  `pending` state while feature, model, and evaluation queries remain empty or
+  not found;
+- unsupported authoritative schema versions fail during contract construction;
+  and
+- a pagination cursor retains its original high-water snapshot when later rows
+  arrive, while reuse with a different query fingerprint fails closed.
+
+The dashboard package is separately architecture-tested to import neither
+capture/analysis engines nor the recording codec. Its read model contains no IQ
+reader operation, authoritative FeatureSet/ModelSnapshot bundle, or provenance.
+The evaluation route carries only its explicit public report `ObjectRef`, whose
+locator is required to be the canonical `cas:sha256:` form; it never opens that
+object or exposes a constructed filesystem path.
+
 ## Operator interface
 
 The same process serves the operator interface at `/`, with packaged assets at

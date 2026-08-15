@@ -35,6 +35,7 @@ class _Context:
     def __init__(self, *, tx2_gain: str = "-80 dB", tx2_scale: str = "0") -> None:
         self.attrs = {"hw_serial": EXPECTED_SERIAL}
         self.destroyed = False
+        self.timeout_calls: list[int] = []
         self._devices = {
             "ad9361-phy": _Device([_Channel("voltage1", hardwaregain=tx2_gain)]),
             "cf-ad9361-dds-core-lpc": _Device(
@@ -52,6 +53,9 @@ class _Context:
 
     def find_device(self, name: str) -> _Device | None:
         return self._devices.get(name)
+
+    def set_timeout(self, value: int) -> None:
+        self.timeout_calls.append(value)
 
     def destroy(self) -> None:
         self.destroyed = True
@@ -95,7 +99,10 @@ def test_output_root_must_be_a_directory(tmp_path) -> None:
 
 def test_tx2_mute_check_is_read_only_and_closes_context(monkeypatch) -> None:
     context = _Context()
-    monkeypatch.setattr(harness.importlib, "import_module", lambda name: _Iio(context))
+    monkeypatch.setattr(
+        "leo_flow.deployments.v5_live_safety.importlib.import_module",
+        lambda name: _Iio(context),
+    )
 
     evidence = _verify_tx2_muted()
 
@@ -110,12 +117,16 @@ def test_tx2_mute_check_is_read_only_and_closes_context(monkeypatch) -> None:
         },
         "read_only_check": True,
     }
+    assert context.timeout_calls == [5_000]
     assert context.destroyed
 
 
 def test_tx2_mute_check_rejects_nonzero_dds_and_closes_context(monkeypatch) -> None:
     context = _Context(tx2_scale="0.25")
-    monkeypatch.setattr(harness.importlib, "import_module", lambda name: _Iio(context))
+    monkeypatch.setattr(
+        "leo_flow.deployments.v5_live_safety.importlib.import_module",
+        lambda name: _Iio(context),
+    )
 
     with pytest.raises(V5ScanE2EError, match="DDS scales are not all zero"):
         _verify_tx2_muted()

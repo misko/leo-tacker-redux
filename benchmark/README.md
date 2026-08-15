@@ -87,6 +87,15 @@ This writes only the requested CI16 file and its adjacent `.truth.json`. Normal
 callers should use the in-memory return value and persist an injection as a
 content-addressed analysis artifact rather than building a directory workflow.
 
+## Real synchronized development subset
+
+`qnap-synchronised-real-development-v1.json` freezes six external CI16
+recordings from three synchronized sweeps without copying IQ. All members are
+unlabeled, accuracy-ineligible, development-only, and conservatively assigned
+to one split group. The bounded reader and detector-behavior audit are described
+in `qnap-synchronised-real-development.md`. They report firing covariance and
+same-order radio agreement, never accuracy or inferred target labels.
+
 ## Validation
 
 Run the dependency-free checks from the repository root:
