@@ -84,7 +84,7 @@ def test_example_is_offline_and_repeated_runs_are_content_idempotent(
     assert first == second
     assert first.receipt_ref == third.receipt_ref
     assert str(first.receipt_ref.digest) == (
-        "sha256:6c8d3025250b0be8e52bf4b9a02ae08353e36db8d29325d06c0fa169dfdbe3e4"
+        "sha256:779f7255d2f5cfe383c7865ec734b86b1cb24d157e94d2abc9e1ad9a5f568917"
     )
     assert first.mode == "fixture"
     assert first.live_retrieval_performed is False

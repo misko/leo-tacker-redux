@@ -92,6 +92,7 @@ def test_hugging_face_never_receives_space_track_credentials() -> None:
         request(EphemerisSource.HUGGING_FACE)
     )
     assert transport.calls[0][1] is None
+    assert transport.calls[0][0].url.endswith("/raw/main/data/starlink.tle")
     assert result.source is EphemerisSource.HUGGING_FACE
     assert archive.sources == [EphemerisSource.HUGGING_FACE]
 

@@ -64,12 +64,14 @@ interval lock before the request. Redirect and host policy remain fixed in the
 provider HTTP adapters. Process-boundary failures emit only exception class,
 never provider response text or credential values.
 
-Current repository state does not authorize a live call. Exact missing inputs
-are:
+One bounded Hugging Face call passed on 2026-08-14 local time and its immutable
+evidence is recorded in `docs/experiments/ephemeris-provider-canary.md`. A
+machine-installed recurring live configuration still requires explicit
+operator installation. Remaining operational inputs are:
 
 | Provider | Missing input before live proof |
 |---|---|
-| Hugging Face | A reviewed copy of `huggingface-dry-run.example.json` with `network_approved: true`, plus installation of the explicit network override |
+| Hugging Face | Install a reviewed copy of `huggingface-dry-run.example.json` with `network_approved: true`, plus the explicit network override; the one-shot live path itself is proven |
 | Space-Track | All Hugging Face-style approval inputs, plus existing dedicated systemd credential capabilities named by the config (the example names are `space-track-identity` and `space-track-password`) and matching `LoadCredential=` mappings |
 
 Do not discover alternate environment variables, enumerate credential

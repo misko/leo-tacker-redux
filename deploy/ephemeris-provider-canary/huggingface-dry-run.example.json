@@ -14,7 +14,7 @@
   },
   "validation": {
     "minimum_satellites": 1,
-    "maximum_satellites": 10000,
+    "maximum_satellites": 20000,
     "maximum_epoch_age_s": 2678400,
     "maximum_future_skew_s": 86400
   },

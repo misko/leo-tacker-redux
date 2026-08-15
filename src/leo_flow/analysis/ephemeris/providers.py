@@ -246,7 +246,7 @@ class SpaceTrackRetriever(_ProviderRetriever):
 class HuggingFaceRetriever(_ProviderRetriever):
     DEFAULT_URL = (
         "https://huggingface.co/datasets/juliensimon/starlink-tle-latest/"
-        "resolve/main/data/starlink.tle"
+        "raw/main/data/starlink.tle"
     )
 
     def __init__(

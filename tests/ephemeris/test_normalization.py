@@ -65,6 +65,13 @@ def test_normalization_is_deterministic_and_replays_offline() -> None:
     assert first.satellite_count == 2
 
 
+def test_parser_accepts_standard_unprefixed_three_line_titles() -> None:
+    explicit = tle(name="STARLINK TEST")
+    unprefixed = explicit.removeprefix(b"0 ")
+
+    assert parse_tle_catalog(unprefixed) == parse_tle_catalog(explicit)
+
+
 def test_provider_identity_is_part_of_normalized_bytes() -> None:
     raw = tle()
     space_archive, space_ref = refs(raw, EphemerisSource.SPACE_TRACK)

@@ -196,6 +196,12 @@ def parse_tle_catalog(raw: bytes) -> tuple[NormalizedTLE, ...]:
         if lines[index].startswith("0 "):
             name = lines[index][2:].strip()
             index += 1
+        elif not lines[index].startswith("1 "):
+            # Three-line element sets commonly use an unprefixed title line.
+            # Keep accepting the explicit ``0 `` form while normalizing both
+            # representations to the same name value.
+            name = lines[index].strip()
+            index += 1
         if index + 1 >= len(lines):
             raise TLEFormatError("partial TLE at end of catalog")
         line1, line2 = lines[index], lines[index + 1]
