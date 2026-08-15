@@ -205,6 +205,7 @@ class FakeDevice:
     def __init__(self) -> None:
         self.timeout_calls: list[int] = []
         self.destroy_calls = 0
+        self.close_calls = 0
         self._ctx = self
 
     def set_timeout(self, timeout_ms: int) -> None:
@@ -215,6 +216,10 @@ class FakeDevice:
 
     def rx_destroy_buffer(self) -> None:
         self.destroy_calls += 1
+
+    def close(self) -> None:
+        self.close_calls += 1
+        self._ctx = None
 
 
 def config(uri: str = "ip:192.0.2.1") -> PlutoRadioConfig:
@@ -310,3 +315,4 @@ def test_composition_releases_selected_device_when_radio_observation_fails() -> 
             metadata_reader=unused_metadata_reader,
         )
     assert device.destroy_calls == 1
+    assert device.close_calls == 1

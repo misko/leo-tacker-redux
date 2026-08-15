@@ -17,6 +17,10 @@ from leo_flow.deployments.v5_dwell_e2e import (
     DWELL_PLAN,
     DWELL_PLAN_DIGEST,
     EXPECTED_SERIAL,
+    LONG_DWELL_PLAN,
+    LONG_DWELL_PLAN_DIGEST,
+    LONG_REFILL_COUNT,
+    LONG_SAMPLE_COUNT,
     PLAN_ID,
     REFILL_COUNT,
     SAMPLE_COUNT,
@@ -92,6 +96,17 @@ def test_plan_is_one_pinned_receive_only_sixteen_refill_dwell() -> None:
     assert dict(request.tags)["tx"] == "prohibited"
 
 
+def test_long_plan_is_one_pinned_receive_only_256_refill_dwell() -> None:
+    assert canonical_digest(LONG_DWELL_PLAN) == LONG_DWELL_PLAN_DIGEST
+    assert len(LONG_DWELL_PLAN.activities) == 1
+    assert LONG_DWELL_PLAN.activities[0].kind is ActivityKind.DWELL
+    request = LONG_DWELL_PLAN.activities[0].segments[0]
+    assert (
+        request.sample_count == LONG_SAMPLE_COUNT == LONG_REFILL_COUNT * BLOCK_SAMPLES
+    )
+    assert dict(request.tags)["tx"] == "prohibited"
+
+
 def test_sustained_evidence_requires_all_exact_same_stream_transitions() -> None:
     evidence = sustained_continuity_evidence(segment_manifest(), continuity())
     assert evidence["continuity_status"] == "verified_contiguous"
@@ -106,6 +121,57 @@ def test_sustained_evidence_requires_all_exact_same_stream_transitions() -> None
     assert evidence["missing_buffer_count"] == 0
     assert evidence["missing_sample_count"] == 0
     assert evidence["flags"] == []
+    assert evidence["refill_elapsed_ns"] == {
+        "count": 16,
+        "min": 125_000_000,
+        "median": 125_000_000.0,
+        "p95": 125_000_000,
+        "max": 125_000_000,
+    }
+    assert evidence["refill_start_period_ns"] == {
+        "count": 15,
+        "min": 126_000_000,
+        "median": 126_000_000,
+        "p95": 126_000_000,
+        "max": 126_000_000,
+    }
+    assert evidence["refill_boundary_gap_ns"] == {
+        "count": 15,
+        "min": 1_000_000,
+        "median": 1_000_000,
+        "p95": 1_000_000,
+        "max": 1_000_000,
+    }
+    assert evidence["time_uncertainty_ns"] == {
+        "count": 16,
+        "min": 100_000,
+        "median": 100_000.0,
+        "p95": 100_000,
+        "max": 100_000,
+    }
+
+
+def test_long_evidence_accepts_exact_256_refill_series() -> None:
+    request = LONG_DWELL_PLAN.activities[0].segments[0]
+    segment = SegmentManifest(
+        segment_id=request.segment_id,
+        requested=request,
+        actual_center_frequency_hz=1_825_117_187.0,
+        actual_sample_rate_hz=2_083_331.0,
+        actual_bandwidth_hz=2_000_000.0,
+        actual_gain=request.gain,
+        start_utc_ns=UtcNs(1_700_000_000_000_000_000),
+        monotonic_start_ns=1_000_000_000,
+        sample_count=LONG_SAMPLE_COUNT,
+        shape=(LONG_SAMPLE_COUNT, 2, 2),
+    )
+    evidence = sustained_continuity_evidence(
+        segment,
+        continuity(refill_count=LONG_REFILL_COUNT),
+        expected_refill_count=LONG_REFILL_COUNT,
+    )
+    assert evidence["refill_count"] == LONG_REFILL_COUNT
+    assert evidence["transition_count"] == LONG_REFILL_COUNT - 1
 
 
 def test_sustained_evidence_rejects_short_or_gapped_series() -> None:

@@ -80,3 +80,14 @@ be removed.
 CAS objects are immutable. Recovery replays the raw object through a pinned
 parser/policy into a new snapshot identity when behavior changes; it never edits
 an existing normalized catalog or provenance manifest.
+
+## Recording-time visibility candidates
+
+After an authoritative recording–ephemeris link exists, the offline
+`recording_visibility` analyzer can bind the exact snapshot/provenance objects,
+parsed element identities and epochs, recording identity, ITRF station,
+propagation profile, uncertainty policy and algorithm version into a weak
+visibility-candidate artifact. See
+`docs/experiments/recording-visibility-candidates.md` for the exact operator
+inputs and evidence limitations. This step never fetches a provider, chooses a
+mutable latest snapshot, or promotes TLE visibility to ground truth.

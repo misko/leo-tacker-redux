@@ -169,7 +169,7 @@ class PlutoPairedRadio:
         )
 
     def close(self) -> None:
-        """Release metadata and receive buffers once; subsequent use is rejected."""
+        """Release metadata, receive buffer, and IIO context exactly once."""
 
         if self._closed:
             return
@@ -184,6 +184,10 @@ class PlutoPairedRadio:
             try:
                 _destroy_receive_buffer(device)
             except BaseException as error:  # noqa: BLE001 - preserve first close failure
+                failures.append(error)
+            try:
+                _close_device_context(device)
+            except BaseException as error:  # noqa: BLE001 - close every owned resource
                 failures.append(error)
         if failures:
             raise RadioDisconnectedError(
@@ -406,10 +410,10 @@ class PlutoPairedRadio:
                         "pyadi device lacks native paired CI16 refill capability"
                     )
             except RadioConfigurationError:
-                _destroy_receive_buffer(device)
+                _release_device(device)
                 raise
             except (OSError, RuntimeError) as error:
-                _destroy_receive_buffer(device)
+                _release_device(device)
                 raise RadioDisconnectedError(
                     f"Pluto I/O timeout configuration failed: {error}"
                 ) from error
@@ -581,6 +585,19 @@ def _destroy_receive_buffer(device: PlutoDevice) -> None:
     destroy = getattr(device, "rx_destroy_buffer", None)
     if callable(destroy):
         destroy()
+
+
+def _close_device_context(device: PlutoDevice) -> None:
+    close = getattr(device, "close", None)
+    if callable(close):
+        close()
+
+
+def _release_device(device: PlutoDevice) -> None:
+    try:
+        _destroy_receive_buffer(device)
+    finally:
+        _close_device_context(device)
 
 
 def _lazy_numpy_interleaver(refill: object, expected_channels: int) -> bytes:

@@ -36,6 +36,7 @@ from .dashboard import (
     TimeRangeQuery,
     TrackView,
 )
+from .dwell import DwellRequest, ScanResultRef
 from .ephemeris import (
     EphemerisRetrievalRequest,
     EphemerisSelection,
@@ -127,6 +128,18 @@ class RecordingAnalyzer(Protocol):
     def analyze(
         self, recording: RecordingView, request: RecordingAnalysisRequest
     ) -> FeatureSetBundle: ...
+
+
+class DwellRequestEmitter(Protocol):
+    """Analysis policy may propose a dwell using only a public scan result."""
+
+    def emit(self, result: ScanResultRef) -> DwellRequest | None: ...
+
+
+class DwellRequestGatePort(Protocol):
+    """Capture-side validation turns an accepted request into a capture plan."""
+
+    def accept(self, request: DwellRequest, now_utc_ns: UtcNs) -> CapturePlan: ...
 
 
 class FeatureSetPublisher(Protocol):

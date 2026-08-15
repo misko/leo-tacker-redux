@@ -391,8 +391,13 @@ def create_attested_v5_radio(
             )
     except Exception:
         destroy = getattr(device, "rx_destroy_buffer", None)
-        if callable(destroy):
-            destroy()
+        try:
+            if callable(destroy):
+                destroy()
+        finally:
+            close = getattr(device, "close", None)
+            if callable(close):
+                close()
         raise
     used = False
 

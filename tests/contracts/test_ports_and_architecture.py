@@ -4,7 +4,12 @@ import ast
 import inspect
 from pathlib import Path
 
-from leo_flow.contracts.ports import FeatureSetPublisher, RecordingPublisher
+from leo_flow.contracts.ports import (
+    DwellRequestEmitter,
+    DwellRequestGatePort,
+    FeatureSetPublisher,
+    RecordingPublisher,
+)
 from leo_flow.storage.ports import BlobReader, BlobWriter
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +57,19 @@ def test_publication_ports_require_explicit_idempotency_keys() -> None:
     assert (
         "idempotency_key" in inspect.signature(FeatureSetPublisher.publish).parameters
     )
+
+
+def test_dwell_handoff_ports_publish_only_narrow_contract_values() -> None:
+    emitter = inspect.signature(DwellRequestEmitter.emit)
+    assert tuple(emitter.parameters) == ("self", "result")
+    assert emitter.parameters["result"].annotation == "ScanResultRef"
+    assert emitter.return_annotation == "DwellRequest | None"
+
+    gate = inspect.signature(DwellRequestGatePort.accept)
+    assert tuple(gate.parameters) == ("self", "request", "now_utc_ns")
+    assert gate.parameters["request"].annotation == "DwellRequest"
+    assert gate.parameters["now_utc_ns"].annotation == "UtcNs"
+    assert gate.return_annotation == "CapturePlan"
 
 
 def test_contract_source_does_not_encode_nfs_control_plane_layouts() -> None:

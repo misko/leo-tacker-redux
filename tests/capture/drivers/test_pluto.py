@@ -32,6 +32,7 @@ class FakePluto:
         self.refills = list(refills)
         self.rx_calls = 0
         self.destroy_calls = 0
+        self.close_calls = 0
         self.rx_enabled_channels: Sequence[int] = ()
         self.sample_rate = 0
         self.rx_rf_bandwidth = 0
@@ -46,6 +47,10 @@ class FakePluto:
 
     def rx_destroy_buffer(self) -> None:
         self.destroy_calls += 1
+
+    def close(self) -> None:
+        self.close_calls += 1
+        self._ctx = None
 
     def _rx_buffered_data(self):
         self.rx_calls += 1
@@ -209,6 +214,7 @@ def test_io_timeout_and_shutdown_are_bounded_owned_and_idempotent() -> None:
     radio.close()
     assert metadata_reader.close_calls == 2
     assert device.destroy_calls == 2
+    assert device.close_calls == 1
     with pytest.raises(RadioDisconnectedError, match="closed Pluto"):
         radio.acquire_segment(request(2), lambda _data: None)
 
@@ -224,6 +230,7 @@ def test_missing_timeout_capability_fails_closed_and_releases_device() -> None:
     with pytest.raises(RadioConfigurationError, match="context timeout"):
         radio.acquire_segment(request(2), lambda _data: None)
     assert device.destroy_calls == 1
+    assert device.close_calls == 1
 
 
 def test_v5_path_keeps_iq_and_normalized_metadata_associated() -> None:
@@ -312,9 +319,12 @@ def test_readback_and_serial_mismatches_fail_closed() -> None:
     radio, _ = adapter(WrongReadback([refill(0, 3)]))
     with pytest.raises(RadioConfigurationError, match="sample rate"):
         radio.acquire_segment(request(2), lambda _: None)
-    wrong_serial, _ = adapter(FakePluto([refill(0, 3)], serial="other"))
+    wrong_device = FakePluto([refill(0, 3)], serial="other")
+    wrong_serial, _ = adapter(wrong_device)
     with pytest.raises(RadioConfigurationError, match="serial mismatch"):
         wrong_serial.acquire_segment(request(2), lambda _: None)
+    assert wrong_device.destroy_calls == 1
+    assert wrong_device.close_calls == 1
 
 
 @pytest.mark.parametrize(
