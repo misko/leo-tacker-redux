@@ -164,6 +164,11 @@ tbody tr:last-child td { border-bottom: 0; }
 .lookup-form > div { display: flex; gap: 0.45rem; }
 .lookup-form input { min-width: 0; flex: 1; }
 .metric-strip { display: grid; grid-template-columns: repeat(3, minmax(8rem, 1fr)); gap: 0.65rem; margin: 1rem 0; }
+.metric-strip > div { border: 1px solid var(--line); border-radius: 0.45rem; padding: 0.8rem; }
+.metric-label { display: block; color: var(--muted); font-size: 0.72rem; }
+.metric-value { display: block; margin-top: 0.3rem; font: 600 1.15rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.aggregate-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.calibration-required { color: var(--warning); }
 .metric { border: 1px solid var(--line); border-radius: 0.45rem; padding: 0.8rem; }
 .metric span { display: block; color: var(--muted); font-size: 0.72rem; }
 .metric strong { display: block; margin-top: 0.3rem; font: 600 1.15rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -203,6 +208,7 @@ code { color: var(--accent); }
 
 @media (max-width: 58rem) {
   .split-layout { grid-template-columns: 1fr; }
+  .aggregate-grid { grid-template-columns: 1fr; }
   .site-header { align-items: start; }
 }
 

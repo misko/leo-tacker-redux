@@ -14,6 +14,7 @@ let captureBatchCursor = null;
 let loadedCaptureBatches = [];
 let currentCaptureBounds = null;
 let captureBatchGeneration = 0;
+let starlinkRecordingStates = new Map();
 
 const byId = (id) => document.getElementById(id);
 
@@ -123,6 +124,10 @@ function captureRadioFilter() {
   return byId("capture-radio-filter").value.trim().toLowerCase();
 }
 
+function captureStarlinkFilter() {
+  return byId("capture-starlink-filter").value;
+}
+
 function radioDisplayName(radioId) {
   const stableId = String(radioId);
   const alias = RADIO_DISPLAY_ALIASES_V1[stableId];
@@ -140,11 +145,94 @@ function radioMatchesFilter(radioId, radioFilter) {
 
 function captureRows() {
   const radioFilter = captureRadioFilter();
+  const starlinkFilter = captureStarlinkFilter();
   return loadedCaptureBatches.flatMap((batch) =>
     (batch.attempts || [])
       .filter((attempt) => radioMatchesFilter(attempt.radio_id, radioFilter))
+      .filter((attempt) => {
+        if (starlinkFilter === "all") return true;
+        if (!attempt.recording_id) return false;
+        if (starlinkFilter === "detected") return false;
+        return starlinkRecordingStates.get(attempt.recording_id) === starlinkFilter;
+      })
       .map((attempt) => ({ batch, attempt })),
   );
+}
+
+function formatDurationNs(value) {
+  const seconds = Number(value) / 1_000_000_000;
+  if (!Number.isFinite(seconds)) return "Unavailable";
+  return seconds < 1 ? `${(seconds * 1000).toFixed(1)} ms` : `${seconds.toFixed(2)} s`;
+}
+
+function formatRate(value) {
+  return value === null || value === undefined ? "Calibration required" : `${(100 * value).toFixed(2)}%`;
+}
+
+async function loadObservationAggregate(bounds) {
+  setState("observation-aggregate-state", "loading", "Loading RF duty and Starlink evidence…");
+  let payload;
+  try {
+    payload = await fetchJson(`/api/v6/observation-aggregate?${timeQuery(bounds)}`);
+  } catch (error) {
+    if (error?.dashboardStatus === 404) {
+      starlinkRecordingStates = new Map();
+      byId("observation-metrics").hidden = true;
+      byId("duty-cycle-body").replaceChildren();
+      byId("starlink-rate-body").replaceChildren();
+      setState(
+        "observation-aggregate-state",
+        "missing",
+        "Aggregate view is unavailable from this older dashboard API.",
+      );
+      return;
+    }
+    throw error;
+  }
+  starlinkRecordingStates = new Map(
+    (payload.recording_states || []).map((item) => [item.recording_id, item.state]),
+  );
+  const metrics = byId("observation-metrics");
+  metrics.hidden = false;
+  metrics.replaceChildren();
+  for (const [label, value] of [
+    ["Recordings", payload.recording_count],
+    ["Starlink candidates", payload.candidate_recording_count],
+    ["Clipped / not evaluated", payload.not_evaluated_recording_count],
+    ["Analysis unavailable", payload.unavailable_recording_count],
+  ]) {
+    const item = document.createElement("div");
+    appendText(item, "span", label, "metric-label");
+    appendText(item, "strong", value, "metric-value");
+    metrics.append(item);
+  }
+  const dutyBody = byId("duty-cycle-body");
+  dutyBody.replaceChildren();
+  for (const item of payload.duty_cycles || []) {
+    const row = document.createElement("tr");
+    appendText(row, "td", item.dimension.toUpperCase());
+    appendText(row, "td", item.dimension === "radio" ? radioDisplayName(item.identity) : item.identity);
+    appendText(row, "td", formatDurationNs(item.active_ns));
+    appendText(row, "td", `${(100 * item.duty_cycle).toFixed(4)}%`);
+    dutyBody.append(row);
+  }
+  const evidenceBody = byId("starlink-rate-body");
+  evidenceBody.replaceChildren();
+  for (const item of payload.starlink_evidence || []) {
+    const row = document.createElement("tr");
+    appendText(row, "td", item.dimension.toUpperCase());
+    appendText(row, "td", item.identity);
+    appendText(row, "td", item.comparison_count);
+    appendText(row, "td", `${item.candidate_positive_count} (${formatRate(item.candidate_positive_rate)})`);
+    appendText(row, "td", formatRate(item.calibrated_detection_rate), "calibration-required");
+    evidenceBody.append(row);
+  }
+  setState(
+    "observation-aggregate-state",
+    "warning",
+    "Detection rates and the beacon-only filter require whole-search calibration. Candidate-positive means score > conditioned control; it is not a beacon detection.",
+  );
+  renderCaptureBatches();
 }
 
 function refreshCaptureRadioOptions() {
@@ -650,6 +738,7 @@ async function refreshDashboard() {
   byId("app-status-text").textContent = "Refreshing catalog views…";
   const results = await Promise.allSettled([
     loadActivity(currentBounds),
+    loadObservationAggregate(currentBounds),
     loadCaptureBatches(currentBounds, null, captureRadioFilter() !== ""),
     loadRecordings(currentBounds),
     loadTracks(currentBounds),
@@ -685,6 +774,10 @@ byId("capture-filters").addEventListener("submit", (event) => {
   event.preventDefault();
   const bounds = selectedCaptureBounds();
   loadCaptureBatches(bounds, null, captureRadioFilter() !== "").catch(() => {});
+});
+
+byId("capture-starlink-filter").addEventListener("change", () => {
+  renderCaptureBatches();
 });
 byId("capture-filters-clear").addEventListener("click", () => {
   byId("capture-radio-filter").value = "";

@@ -21,6 +21,7 @@ from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardQueryPortV0_1,
     CaptureBatchTimeRangeQuery,
 )
+from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
@@ -283,6 +284,38 @@ class DashboardJsonApplicationV5:
             return _error(400, "invalid_request", str(error))
         except DashboardNotFound as error:
             return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+
+class DashboardJsonApplicationV6:
+    """Add truthful RF-duty and candidate-evidence aggregates."""
+
+    _ROUTE = "/api/v6/observation-aggregate"
+
+    def __init__(
+        self,
+        v5: DashboardJsonApplicationV5,
+        aggregates: ObservationAggregateQueryPortV0_1,
+    ) -> None:
+        self._v5 = v5
+        self._aggregates = aggregates
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._ROUTE:
+            return self._v5.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            payload = self._aggregates.observation_aggregate(_time_query(request.query))
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
         except Exception:  # noqa: BLE001 - fixed external error contract
             return _error(500, "internal_error", "dashboard query failed")
         return JsonResponse(

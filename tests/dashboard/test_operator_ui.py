@@ -61,6 +61,24 @@ def test_static_routes_are_exact_allow_list_with_safe_content_and_cache_policy()
     assert traversal.body == b"Not found\n"
 
 
+def test_overview_discloses_duty_candidate_and_calibration_semantics() -> None:
+    app = application()
+    html = app.handle(JsonRequest("GET", "/", {})).body.decode()
+    javascript = app.handle(
+        JsonRequest("GET", "/assets/dashboard.js", {})
+    ).body.decode()
+    for required in (
+        'id="duty-cycle-table"',
+        'id="starlink-rate-table"',
+        'id="capture-starlink-filter"',
+        "Calibrated beacon detections unavailable",
+    ):
+        assert required in html
+    assert "/api/v6/observation-aggregate" in javascript
+    assert "Candidate-positive means score > conditioned control" in javascript
+    assert 'starlinkFilter === "detected"' in javascript
+
+
 def test_dedicated_recording_page_is_same_origin_bounded_and_path_validated() -> None:
     app = application()
     page = app.handle(JsonRequest("GET", "/recordings/rec_1", {}))

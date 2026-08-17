@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
 from leo_flow.contracts.dashboard_batch import CaptureBatchDashboardQueryPortV0_1
+from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
@@ -28,6 +29,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV3,
     DashboardJsonApplicationV4,
     DashboardJsonApplicationV5,
+    DashboardJsonApplicationV6,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -73,6 +75,7 @@ class DashboardV4QueryPort(
     DashboardV3QueryPort,
     RecordingStarlinkSuiteQueryPortV0_2,
     CaptureLifecycleDashboardQueryPortV0_1,
+    ObservationAggregateQueryPortV0_1,
     Protocol,
 ):
     """Exact Release B dashboard read surface, including detector-suite v0.2."""
@@ -170,15 +173,18 @@ def _build_dashboard(
         config,
         readiness_checked_server,
         DashboardUiApplication(
-            DashboardJsonApplicationV5(
-                DashboardJsonApplicationV4(
-                    DashboardJsonApplicationV3(
-                        queries, queries, queries, queries, queries
+            DashboardJsonApplicationV6(
+                DashboardJsonApplicationV5(
+                    DashboardJsonApplicationV4(
+                        DashboardJsonApplicationV3(
+                            queries, queries, queries, queries, queries
+                        ),
+                        queries,
                     ),
                     queries,
                 ),
                 queries,
-            )
+            ),
         ),
         diagnostics=diagnostics,
     )

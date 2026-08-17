@@ -87,6 +87,25 @@ and never opens report objects or invents values. Browser “stale” means no
 successful local refresh for two minutes; it is not a claim about projection
 age, which the current DTOs do not carry.
 
+The additive V6 overview route at
+`GET /api/v6/observation-aggregate?start_utc_ns=…&stop_utc_ns=…` powers the
+top-of-page RF and Starlink summary. Radio duty is the union of captured
+segment intervals for each radio divided by the selected interval; LNB duty is
+the same union grouped by receiver-chain identity. Simultaneous receivers and
+overlapping segments are therefore not double-counted. The response also
+groups Starlink comparisons by LNB, lower/upper pilot edge, and each of the
+eight report methods.
+
+Detector-suite v0.2 is candidate-only, so every calibrated detection count and
+rate in this view is null and the UI labels it `Calibration required`. The
+adjacent candidate-positive percentage means only `score > conditioned
+control`; it is not a beacon detection or an estimated probability. The
+capture filter can select candidate evidence or explicitly skipped recordings.
+Its calibrated-beacon option remains disabled until a future additive,
+versioned calibration product publishes valid decisions. Individual method
+scores remain available by opening a successful capture's recording detail
+page.
+
 The same composition preserves every V1 route and adds the compatible batch
 read API at `GET /api/v2/capture-batches` and
 `GET /api/v2/capture-batches/{batch_id}`. The operator interface labels each

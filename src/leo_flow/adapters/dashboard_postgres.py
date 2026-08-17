@@ -35,6 +35,7 @@ from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardView,
     CaptureBatchTimeRangeQuery,
 )
+from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
@@ -45,6 +46,7 @@ from leo_flow.dashboard import DashboardNotFound, InvalidCursor
 
 from . import dashboard_postgres_sql as sql
 from .dashboard_batch_postgres import PostgresCaptureBatchDashboardRepository
+from .dashboard_observation_postgres import PostgresObservationAggregateRepositoryV0_1
 from .dashboard_recording_postgres import PostgresRecordingDashboardRepository
 from .evaluation_dashboard_postgres import PostgresEvaluationDashboard
 from .radio_lifecycle_postgres import PostgresRadioLifecycleRepositoryV0_1
@@ -68,6 +70,14 @@ class PostgresDashboardRepository:
         )
         self._recording_pages = PostgresRecordingDashboardRepository(connect)
         self._radio_lifecycle = PostgresRadioLifecycleRepositoryV0_1(connect)
+        self._observation_aggregate = PostgresObservationAggregateRepositoryV0_1(
+            connect
+        )
+
+    def observation_aggregate(
+        self, query: TimeRangeQuery
+    ) -> ObservationAggregateViewV0_1:
+        return self._observation_aggregate.observation_aggregate(query)
 
     def capture_attempt_radio_lifecycle(
         self, attempt_id: CaptureAttemptId

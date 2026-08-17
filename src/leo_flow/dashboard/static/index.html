@@ -53,6 +53,24 @@
       </div>
       <p id="window-label" class="interval-label">UTC interval loading…</p>
       <div id="activity-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading radio activity…</div>
+      <div id="observation-aggregate-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading RF duty and Starlink evidence…</div>
+      <div id="observation-metrics" class="metric-strip" hidden></div>
+      <div class="aggregate-grid">
+        <div class="table-wrap">
+          <table id="duty-cycle-table">
+            <caption>RF-active duty cycle in the selected interval</caption>
+            <thead><tr><th scope="col">Dimension</th><th scope="col">Radio / LNB</th><th scope="col">Active</th><th scope="col">Duty cycle</th></tr></thead>
+            <tbody id="duty-cycle-body"></tbody>
+          </table>
+        </div>
+        <div class="table-wrap">
+          <table id="starlink-rate-table">
+            <caption>Starlink evidence by LNB, edge, and report method</caption>
+            <thead><tr><th scope="col">Dimension</th><th scope="col">Identity</th><th scope="col">Comparisons</th><th scope="col">Candidate-positive</th><th scope="col">Detection rate</th></tr></thead>
+            <tbody id="starlink-rate-body"></tbody>
+          </table>
+        </div>
+      </div>
       <div class="table-wrap">
         <table id="activity-table">
           <caption>Scan and dwell counts by radio in the selected UTC half-open interval</caption>
@@ -81,6 +99,14 @@
         <label for="capture-radio-filter">Radio
           <input id="capture-radio-filter" name="capture-radio-filter" type="search" list="capture-radio-options" placeholder="All radios" autocomplete="off">
           <datalist id="capture-radio-options"></datalist>
+        </label>
+        <label for="capture-starlink-filter">Starlink
+          <select id="capture-starlink-filter" name="capture-starlink-filter">
+            <option value="all" selected>All recordings</option>
+            <option value="candidates">Candidate evidence</option>
+            <option value="detected" disabled>Calibrated beacon detections unavailable</option>
+            <option value="not_evaluated">Not evaluated</option>
+          </select>
         </label>
         <button type="submit">Apply capture filters</button>
         <button id="capture-filters-clear" type="button">Clear radio</button>
