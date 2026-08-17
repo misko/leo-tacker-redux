@@ -2828,3 +2828,36 @@ The online-analysis runbook now distinguishes the active Release-F/0032
 same-campaign timer from future cross-campaign historical backfill. Only the
 latter requires a sealed release selecting the v2 gate plus live migration
 0033; Release F must never be used for that cross-campaign mode.
+
+Release G offline freeze (2026-08-17): pushed source commit
+`99b25fb279641c6c1a126a3659ee65c550bb3b4b` was sealed at
+`/home/mouse9911/.local/share/leo-flow/releases/qualification-release-g-b1af076f87c42698`.
+Its source-byte manifest is
+`b1af076f87c426988b0d3fc807caea06311c7efd8f4413d059b9650aff0e908b`
+(863 files), release manifest is
+`73ababffa8fa738bb2343605d805699eec2afaf30635187d6e29d72f5607bad0`,
+validation receipt is
+`b1b9c39757c4a0445a4bfb34dbe4fd410375ac2b80d9e8ce3a44d9253a6635ed`,
+and two independent wheels matched at
+`f54a6ab2bb6f00e279fb1b234b6cd262eaf39d3219c9f576321aed840f4f462f`.
+Both release-local station runtime validations passed; all imports and native
+paths resolve inside the final G root, all seven host ABI hashes match, and the
+7,503-entry closed inventory passes the hardened verifier with zero writable
+files or directories.
+
+A unique disposable PostgreSQL 16 database passed 17 focused 0033/online/
+production-path tests with exact 33-receipt head and migration SHA
+`511ddb95f85a1f20dc6405ab8b033732e104686f54ea38782b806087cb66c522`.
+The v2 function ownership, fixed search path, and capture-only execution grant
+were exact; the database was dropped afterward. Release G is offline-only and
+not live-authorized: live 0033 rollout plus fresh G radio qualification remain
+mandatory gates. Active V5 capture/online analysis continue unchanged on
+sealed Release F.
+
+The fourth V5 online-analysis window (`108..143`) subsequently closed with
+72/72 successful jobs and dashboard projections in each of the FeatureSet,
+waterfall, and Starlink v0.2 lanes. Its dashboard contains 3,456 feature rows,
+72 complete 16-tile/262,144-cell waterfalls, 24 clipped `not_evaluated`
+Starlink views, and 48 candidate views totaling 768 streams and 6,144 method
+outputs. Detection counts remain null. The slice exited zero and synchronized
+capture advanced to 164/936 without a halt during the analysis.
