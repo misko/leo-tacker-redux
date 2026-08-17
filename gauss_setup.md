@@ -2645,3 +2645,71 @@ closed, then fresh independent Release-E attestations passed for `.21` and
 `.20`: exact serial/V5/metadata, both TX gains below the passive ceiling, and
 all eight DDS scales zero. The final external-owner check and pipeline lock
 check were clear. The terminal canary remains halted and was not retried.
+
+Post-power capture and analysis promotion (2026-08-17): after both Plutos were
+power-cycled onto the replacement supplies, capture-only canary `c03` completed
+36/36 synchronized batches and 72/72 unique recordings. Its worst paired
+first-sample skew was 47,110,804 ns, and radio-local UDP sentinels preserved one
+unchanged boot identity and iiOD process identity per radio with both TX gains
+at `-89.75 dB` and all DDS scales zero. This passed the exact prior slot-32
+failure point without a reset.
+
+Main campaign `main_gauss_r20_r21_20260817_v3`, definition
+`sha256:70c5406edc828150195a417e95bc26877163fbd851fddb7db0e77a25c126cd92`,
+was then armed capture-only from sealed Release C. It carries 936 synchronized
+slots on the exact `400/13` second cadence, all nine rate/dwell cells and four
+same/opposite-edge geometries, with 40 ms hardware blocks and 1/2/4 verified
+refills. At the 2026-08-17T03:56:36Z checkpoint it had 309/936 durable batches
+and 618/618 unique successful recordings, no halt/replay/missed slot, a worst
+skew of 79,516,148 ns below the 100 ms gate, and continuous unchanged
+boot/iiOD/passive-state sentinels. Its final requested slot is
+2026-08-17T09:17:40.398Z; this entry is an in-progress checkpoint, not terminal
+evidence.
+
+The first 36 main-v3 batches were independently analyzed in an isolated
+PostgreSQL/CAS shadow. FeatureSet and waterfall compute/projection closed 72/72.
+Starlink detector-suite v0.2 closed 72/72: 24 clipped 1.25 MS/s recordings were
+terminal `not_evaluated`; 48 eligible 2.5/5 MS/s recordings produced 768 stream
+suites and 6,144 method rows, exactly 768 for each of the eight report methods.
+Pinned leo-tracker numerical-oracle comparisons agreed at floating precision
+(2.5 MS/s maximum delta `2.37e-14`; 5 MS/s score/control/margin delta
+`3.81e-14`, residual-CFO delta `4.15e-10 Hz`). These remain uncalibrated
+candidates, not beacon detections. Durable evidence is under
+`/home/mouse9911/.local/state/leo-flow/evidence/shadow-analysis-v3-20260817/`.
+
+Release F was sealed from pushed source commit
+`f34684c8427c7527fdbad9d61b6943a60380cd75` at
+`/home/mouse9911/.local/share/leo-flow/releases/qualification-release-f-6f6b7d8e7c6d`.
+Its closed manifest is
+`9b58f50dd62c8b579bc4535bc9596476546df386b68e0a1c3920d6b171ea49db`,
+validation receipt is
+`bd6da13f2c1991c68638623d70de509bc1c6dbf1e4e41234631a0129f139cccd`,
+and wheel is
+`d0ab4b65078dff84c662e460be38eeeab91254042e5f6cd43b3fef99edb4c912`.
+The 6,875-entry tree is read-only; two wheel builds matched; installed tests
+passed 96/96; disposable PostgreSQL-16 lifecycle/online-analysis tests passed
+22/22; both release-local station runtime validations and the exact 36-batch
+online-window isolation proof passed. No live service used F during its build.
+
+Live PostgreSQL was atomically promoted from exact head 0030 through
+`0031_radio_lifecycle_detection.sql` SHA-256
+`1716d173ef85e1e3ceaadd8dce5c0fbe4a018f4f9506a5bce081bbf05e8d7865`
+and `0032_campaign_online_analysis.sql` SHA-256
+`478dd1fb6e66745a94ca6208b02d6b4d6af23e2c7e0d11a4b6ccf8efab8f984a`.
+Replay was an exact no-op; 32 receipts are present; all four new tables were
+empty; routine ownership/search paths and capture/analysis gates passed. The
+Release-C capture advanced cleanly afterward. Only the dashboard was restarted
+onto committed main; inventory/detail/lifecycle routes were healthy. Current
+main recordings remain truthfully `pending`, and absent Starlink-suite products
+return `not_found`, never a false zero.
+
+Because Release F has new exact station/runtime digests, v8 cannot authorize an
+F capture. Fresh qualification `qual_gauss_r20_r21_20260817_f1` is therefore
+planned for 2026-08-17T09:19:30Z at definition SHA-256
+`a9a9aba6aad1eadbb4dc6efc7a7895d5c6028327dd9705ebb4421185b6cedbec`.
+The definition and offline validation are preserved mode 0600 under
+`/home/mouse9911/.local/state/leo-flow/plans/qual_gauss_r20_r21_20260817_f1/`;
+the live state namespace remains absent. It may arm only after exact main-v3
+terminal success and fresh Release-F, PG32, capacity, ownership, identity,
+both-TX, and DDS gates. No compatibility substitution or main-v3 replay is
+authorized.
