@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from leo_flow.adapters.focused_analysis_postgres import (
+    PostgresRegisteredAnalysisSafetyGateV3,
+)
 from leo_flow.capture.campaign import CampaignUnit
 from leo_flow.capture.focused_monitor import materialize_focused_monitor_station
 from leo_flow.capture.v5_station import load_v5_capture_station
@@ -213,6 +216,9 @@ def main(argv: list[str] | None = None) -> int:
             (_radio_address(first.radio.uri), _radio_address(second.radio.uri))
         ),
         station_materializer=lambda _unit, side: stations[side],
+        admission_builder=lambda dsn: PostgresRegisteredAnalysisSafetyGateV3(
+            dsn, definition.digest
+        ),
     )
     snapshot = capture.capture(
         cast(CampaignUnit, unit),
@@ -248,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         args.analysis_credential_directory,
         args.dashboard_credential_directory,
         deadline_utc_ns=UtcNs(time.time_ns() + ANALYSIS_DEADLINE_NS),
+        capture_definition_digest=definition.digest,
     )
     print(
         json.dumps(

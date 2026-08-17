@@ -109,7 +109,7 @@ def test_online_analysis_is_bounded_separate_and_periodic() -> None:
 
 def test_runbook_requires_linger_migration_and_offline_render_verification() -> None:
     runbook = _text(RUNBOOK)
-    assert "0036_starlink_pilot_constellation_catalog.sql" in runbook
+    assert "0037_focused_analysis_during_capture.sql" in runbook
     assert "75,966,218,240" in runbook
     assert "Linger=yes" in runbook
     assert "systemd-analyze --user verify" in runbook

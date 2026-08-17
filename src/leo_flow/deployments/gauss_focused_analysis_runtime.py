@@ -12,17 +12,21 @@ from leo_flow.adapters.campaign_scoped_claims_postgres import (
 from leo_flow.adapters.dashboard_batch_postgres import (
     PostgresCaptureBatchProjectionWriter,
 )
+from leo_flow.adapters.focused_analysis_postgres import (
+    PostgresFocusedAnalysisPairScopeRegistrarV0_1,
+)
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
 from leo_flow.application.capture_batch_dashboard import CaptureBatchDashboardPublisher
 from leo_flow.capture.campaign import CampaignAnalysisReceipt
 from leo_flow.contracts.capture_batch import CaptureBatchSnapshot
-from leo_flow.contracts.core import JobId, SchemaRef, UtcNs
+from leo_flow.contracts.core import Digest, JobId, SchemaRef, UtcNs
 from leo_flow.contracts.deferred_analysis import (
     DeferredAnalysisLaneState,
     DeferredAnalysisStage,
     DeferredAnalysisWindowV1,
 )
 from leo_flow.contracts.features import FeatureSetBundle
+from leo_flow.contracts.focused_analysis import FocusedAnalysisPairScopeV0_1
 from leo_flow.deployments.gauss_campaign_runtime import (
     build_gauss_campaign_analysis,
 )
@@ -108,20 +112,29 @@ def analyze_focused_pair(
     *,
     deadline_utc_ns: UtcNs,
     compute_workers: int = MAXIMUM_FOCUSED_COMPUTE_WORKERS,
+    capture_definition_digest: Digest | None = None,
+    capture_safe: bool = False,
 ) -> CampaignAnalysisReceipt:
     """Submit, drain, project, and prove one exact pair without radio contact."""
 
     if len(snapshot.successful_recordings) != 2 or not snapshot.terminal:
         raise ValueError("focused analysis requires one terminal successful pair")
-    scope = _prepare_scope(snapshot, analysis_credential_directory)
+    if capture_safe and capture_definition_digest is None:
+        raise ValueError("capture-safe focused analysis requires definition digest")
+    scope = _prepare_scope(
+        snapshot,
+        analysis_credential_directory,
+        capture_definition_digest=(capture_definition_digest if capture_safe else None),
+    )
     credentials = SystemdCredentialProvider(analysis_credential_directory)
     connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
     lane = BoundedSpawnDeferredAnalysisLaneV1(
         GaussCampaignScopedAnalysisWorkerV1(analysis_credential_directory),
         PostgresCampaignAnalysisLaneStateReaderV1(connect),
     )
-    lock = ExclusiveModeLock(MODE_LOCK_PATH)
-    lock.acquire()
+    lock = None if capture_safe else ExclusiveModeLock(MODE_LOCK_PATH)
+    if lock is not None:
+        lock.acquire()
     try:
         window = cast(DeferredAnalysisWindowV1, scope)
         for stage in DeferredAnalysisStage:
@@ -146,12 +159,15 @@ def analyze_focused_pair(
             lock_analysis=False,
         ).analyze(snapshot, deadline_utc_ns=deadline_utc_ns)
     finally:
-        lock.release()
+        if lock is not None:
+            lock.release()
 
 
 def _prepare_scope(
     snapshot: CaptureBatchSnapshot,
     credential_directory: Path,
+    *,
+    capture_definition_digest: Digest | None = None,
 ) -> FocusedAnalysisJobScopeV1:
     credentials = SystemdCredentialProvider(credential_directory)
     connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
@@ -211,11 +227,35 @@ def _prepare_scope(
                 )
             ).job_id
         )
-    return FocusedAnalysisJobScopeV1(
+    scope = FocusedAnalysisJobScopeV1(
         _pair(feature, "feature"),
         _pair(waterfalls, "waterfall"),
         _pair(suites, "Starlink-suite"),
     )
+    if capture_definition_digest is not None:
+        ordered = tuple(
+            sorted(
+                snapshot.successful_recordings,
+                key=lambda item: str(item.recording_id),
+            )
+        )
+        if len(ordered) != 2:
+            raise RuntimeError("focused registration requires two recordings")
+        PostgresFocusedAnalysisPairScopeRegistrarV0_1(connect).register(
+            FocusedAnalysisPairScopeV0_1(
+                capture_definition_digest,
+                snapshot.batch_id,
+                (ordered[0].recording_id, ordered[1].recording_id),
+                (
+                    ordered[0].recording_object.identity_digest(),
+                    ordered[1].recording_object.identity_digest(),
+                ),
+                scope.feature_job_ids,
+                scope.waterfall_job_ids,
+                scope.starlink_suite_job_ids,
+            )
+        )
+    return scope
 
 
 def _pair(values: list[JobId], name: str) -> tuple[JobId, JobId]:

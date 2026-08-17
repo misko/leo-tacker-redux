@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from leo_flow.adapters.capture_batch_sqlite import SQLiteCaptureBatchStateStore
-from leo_flow.contracts.core import CaptureBatchId, UtcNs
+from leo_flow.contracts.core import CaptureBatchId, Digest, DigestAlgorithm, UtcNs
 from leo_flow.deployments.gauss_focused_analysis_runtime import (
     MAXIMUM_FOCUSED_COMPUTE_WORKERS,
     analyze_focused_pair,
@@ -34,6 +34,8 @@ def _parser() -> argparse.ArgumentParser:
         default=MAXIMUM_FOCUSED_COMPUTE_WORKERS,
     )
     parser.add_argument("--arm", action="store_true")
+    parser.add_argument("--capture-safe", action="store_true")
+    parser.add_argument("--capture-definition-digest")
     return parser
 
 
@@ -45,6 +47,17 @@ def main(argv: list[str] | None = None) -> int:
         or ".." in args.batch_database.parts
         or not args.batch_database.is_file()
     ):
+        return 3
+    definition_digest: Digest | None = None
+    if args.capture_definition_digest is not None:
+        algorithm, separator, value = args.capture_definition_digest.partition(":")
+        if not separator:
+            return 3
+        try:
+            definition_digest = Digest(DigestAlgorithm(algorithm), value)
+        except ValueError:
+            return 3
+    if args.capture_safe and definition_digest is None:
         return 3
     snapshot = SQLiteCaptureBatchStateStore(args.batch_database).get(
         CaptureBatchId(args.batch_id)
@@ -65,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
         args.dashboard_credential_directory,
         deadline_utc_ns=UtcNs(time.time_ns() + ANALYSIS_DEADLINE_NS),
         compute_workers=args.compute_workers,
+        capture_definition_digest=definition_digest,
+        capture_safe=args.capture_safe,
     )
     print(
         json.dumps(

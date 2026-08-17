@@ -27,7 +27,7 @@ capture spool.
 | Source | Local CAS from the immutable 2026-08-14 qualified scan; both source objects are re-hashed through the public blob-reader port |
 | Output | New or empty absolute directory on an approved local filesystem: `ext2`, `ext3`, `ext4`, `xfs`, `btrfs`, `f2fs`, `bcachefs`, `zfs`, `tmpfs`, or `overlay` |
 | Database | Approved disposable PostgreSQL 16 database and owner on one exact pinned cluster system identifier; every application table must be empty |
-| Migrations | Private reviewed directory whose 36 exact file hashes match all database receipts through `0036_starlink_pilot_constellation_catalog.sql` |
+| Migrations | Private reviewed directory whose 37 exact file hashes match all database receipts through `0037_focused_analysis_during_capture.sql` |
 | Capture login | Authenticated non-owner, non-privileged login whose complete inherited-role closure is exactly `leo_capture` |
 | Analysis login | Authenticated non-owner, non-privileged login whose complete inherited-role closure is exactly `leo_analysis` |
 | Audit login | Disposable database owner, used only for read-only identity, migration, initial-closure, and final evidence queries |

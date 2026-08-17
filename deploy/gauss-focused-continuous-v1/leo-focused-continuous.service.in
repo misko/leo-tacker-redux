@@ -1,0 +1,43 @@
+[Unit]
+Description=Continuous synchronized CH4-lower capture with asynchronous analysis
+ConditionPathExists=@RELEASE_ROOT@/release.manifest.json
+ConditionPathExists=@RELEASE_ROOT@/validation.receipt.json
+ConditionPathExists=!/home/mouse9911/.local/state/leo-flow/focused-continuous-v1/failure-latch.json
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+WorkingDirectory=@RELEASE_ROOT@
+Environment="PYTHONNOUSERSITE=1"
+Environment="PYTHONPATH=@RELEASE_ROOT@/native/lib/python3.11/site-packages:@RELEASE_ROOT@/native/spf"
+Environment="LD_LIBRARY_PATH=@RELEASE_ROOT@/native/lib:@RELEASE_ROOT@/python/lib"
+Environment="OPENBLAS_NUM_THREADS=1"
+Environment="OMP_NUM_THREADS=1"
+Environment="MKL_NUM_THREADS=1"
+Environment="NUMEXPR_NUM_THREADS=1"
+ExecStartPre=@RELEASE_ROOT@/venv/bin/leo-verify-release --manifest @RELEASE_ROOT@/release.manifest.json --receipt @RELEASE_ROOT@/validation.receipt.json --expected-manifest-sha256 @RELEASE_MANIFEST_SHA256@ --expected-receipt-sha256 @RELEASE_RECEIPT_SHA256@
+ExecStart=@RELEASE_ROOT@/venv/bin/leo-gauss-focused-continuous --station-a @RELEASE_ROOT@/config/r20.station.json --station-b @RELEASE_ROOT@/config/r21.station.json --state-root /home/mouse9911/.local/state/leo-flow/focused-continuous-v1 --capture-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-capture --analysis-config @RELEASE_ROOT@/config/analysis.json --analysis-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis --dashboard-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-dashboard --compute-workers 8 --maximum-in-flight-analyses 8 --lead-seconds 30 --minimum-free-bytes 10737418240 --arm
+Restart=no
+TimeoutStartSec=30s
+TimeoutStopSec=2h
+MemoryHigh=96G
+MemoryMax=112G
+TasksMax=256
+LimitNOFILE=32768
+OOMPolicy=stop
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadOnlyPaths=@RELEASE_ROOT@
+ReadWritePaths=/home/mouse9911/.local/state/leo-flow /home/mouse9911/.local/share/leo-flow
+
+[Install]
+WantedBy=default.target
+

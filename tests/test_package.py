@@ -20,5 +20,6 @@ def test_operator_console_scripts_are_part_of_the_release_surface() -> None:
         "leo-verify-release": "leo_flow.deployments.release_verifier:main",
         "leo-gauss-focused-capture": "leo_flow.deployments.gauss_focused_capture_operator:main",
         "leo-gauss-focused-analysis": "leo_flow.deployments.gauss_focused_analysis_operator:main",
+        "leo-gauss-focused-continuous": "leo_flow.deployments.gauss_focused_continuous_operator:main",
         "leo-v5-supercycle-canary": "leo_flow.deployments.gauss_v5_supercycle_canary_operator:main",
     }
