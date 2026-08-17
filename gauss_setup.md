@@ -2861,3 +2861,15 @@ waterfall, and Starlink v0.2 lanes. Its dashboard contains 3,456 feature rows,
 Starlink views, and 48 candidate views totaling 768 streams and 6,144 method
 outputs. Detection counts remain null. The slice exited zero and synchronized
 capture advanced to 164/936 without a halt during the analysis.
+
+The fifth V5 online-analysis window (`144..179`) then closed under the same
+sealed Release-F timer with exact window digest
+`fc8fc8749aabe51507722ff0cfc7dff7080319b3579aff744db8efba1adfb02b`.
+The slice exited zero after 9m06s with no parked work. Independent live
+dashboard reads proved 72 complete FeatureSet projections with 3,456 feature
+rows, 72 complete waterfalls with 1,152 total tiles and 262,144 cells per
+recording, and 72 Starlink v0.2 views: 24 clipped `not_evaluated` and 48
+candidate views totaling 768 streams and 6,144 method outputs. Every
+calibrated-detection count remains null. Capture advanced from 182 to 199
+during the slice and to 206 during the dashboard audit, with 412/412 unique
+recordings, maximum observed skew 61,534,172 ns, and no campaign halt.
