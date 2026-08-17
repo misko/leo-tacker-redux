@@ -7,11 +7,19 @@
   <link rel="stylesheet" href="/assets/dashboard.css">
 </head>
 <body>
+  <a class="skip-link" href="#aggregate-doppler-main">Skip to aggregate Doppler analysis</a>
   <header class="site-header">
     <div><p class="eyebrow">leo-flow / aggregate analysis</p><h1>Doppler candidate explorer</h1></div>
-    <nav><a href="/">Recordings</a><a href="/aggregate-stats">Pilot statistics</a></nav>
   </header>
-  <main>
+  <nav class="section-nav" aria-label="Aggregate Doppler navigation">
+    <a href="/">Dashboard</a>
+    <a href="/aggregate-stats">Aggregate stats</a>
+    <a href="/aggregate-doppler" aria-current="page">Aggregate Doppler</a>
+    <a href="#filter-panel">Evidence filters</a>
+    <a href="#frequency-time">Frequency tracks</a>
+    <a href="#distributions">Distributions</a>
+  </nav>
+  <main id="aggregate-doppler-main" tabindex="-1">
     <aside class="candidate-warning" role="note">
       <strong>Candidate-only motion evidence.</strong> Tracks are not satellite detections.
       Overlapping track observations are not independent. Radios and receiver ports are never pooled.
@@ -31,7 +39,7 @@
       <p class="muted">These toggles only change visibility in the downloaded immutable response; they do not recompute or pool evidence.</p>
       <div id="source-filters" class="doppler-evidence-grid"></div>
     </section>
-    <section class="detail-card" aria-labelledby="time-series-heading">
+    <section id="frequency-time" class="detail-card" aria-labelledby="time-series-heading">
       <h2 id="time-series-heading">Physical frequency offset vs time</h2>
       <p class="muted">Each trace is one basic candidate path. Offset is relative to that path’s fitted reference frequency; advanced bin-only paths are excluded from this physical-frequency plot.</p>
       <label>Time axis
@@ -40,7 +48,7 @@
       <canvas id="frequency-time-canvas" width="1280" height="520" role="img" aria-label="Candidate frequency offset versus relative time, separated by radio and receiver"></canvas>
       <div id="series-legend" class="doppler-candidate-list"></div>
     </section>
-    <section class="doppler-summary-grid">
+    <section id="distributions" class="doppler-summary-grid">
       <article class="detail-card" aria-labelledby="drift-heading">
         <h2 id="drift-heading">Drift-rate distribution</h2>
         <canvas id="drift-canvas" width="720" height="480" role="img" aria-label="Physical Doppler drift rate histogram by radio and receiver"></canvas>

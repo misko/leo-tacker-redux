@@ -77,6 +77,7 @@ from leo_station.analysis_v1 import (
     WATERFALL_DOPPLER_PIPELINE,
     starlink_suite_profile_v0_2,
     starlink_surrogate_null_preparers_v0_1,
+    starlink_temporal_pilot_preparers_v0_1,
 )
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
@@ -489,6 +490,7 @@ def _suite_compute(
             STARLINK_SUITE_ANALYZER,
             starlink_surrogate_null_preparers_v0_1(reader),
             STARLINK_PILOT_CONSTELLATION_ANALYZER,
+            starlink_temporal_pilot_preparers_v0_1(),
         ),
         AtomicPostgresCombinedStarlinkSuiteCommitterV0_2(blobs, connect),
         worker_id=worker_id,
