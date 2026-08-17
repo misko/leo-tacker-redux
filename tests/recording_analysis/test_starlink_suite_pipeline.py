@@ -150,6 +150,44 @@ def test_submission_has_terminal_clipped_state_and_exact_full_band_profiles(
     assert lease is not None and lease.job_id == submitted.job_id
 
 
+def test_submission_accepts_additive_focused_monitor_geometry() -> None:
+    view, recording = make_view(SegmentFixture(b"\0" * 8 * 4, 2_500_000))
+    segment = view.manifest.segments[0]
+    manifest = replace(
+        view.manifest,
+        segments=(
+            replace(
+                segment,
+                requested=replace(
+                    segment.requested,
+                    tags=(
+                        ("edge", "lower"),
+                        ("pilot_band_fits", True),
+                        (
+                            "scan_schema",
+                            "org.leo-flow.starlink-focused-monitor/v1",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    jobs = InMemoryJobLeaseRepository()
+    submitted = StarlinkSuiteAnalysisSubmissionServiceV0_2(jobs).submit(
+        StarlinkSuiteAnalysisSubmissionV0_2(
+            PublishedRecordingRef(recording),
+            manifest,
+            starlink_detector_suite_algorithm_ref_v0_2(),
+            starlink_detector_suite_config_ref_v0_2(
+                StarlinkDetectorSuiteConfigV0_2((0,), (0.0,), (0.0,))
+            ),
+            1,
+        )
+    )
+
+    assert len(submitted.request.stream_selections) == 2
+
+
 def test_positive_and_negative_cfo_and_fractional_frame_cadence_are_searched() -> None:
     templates = qin_edge_pilot_template_pair_v0_1(2_500_000.0, StarlinkEdge.LOWER)
     analyzer = StarlinkDetectorSuiteV0_2(

@@ -20,6 +20,7 @@ from leo_flow.contracts.core import (
 )
 from leo_flow.contracts.starlink import StarlinkEdge
 from leo_flow.contracts.starlink_detector_suite import V0_2
+from leo_flow.contracts.starlink_scan import STARLINK_ANALYZABLE_SCAN_SCHEMAS_V1
 from leo_flow.contracts.starlink_suite_pipeline import (
     StarlinkDetectorSuiteRecordingBundleV0_2,
     StarlinkDetectorSuiteRequestV0_2,
@@ -78,7 +79,7 @@ class StarlinkSuiteAnalysisSubmissionServiceV0_2:
         if not clipped:
             for segment in manifest.segments:
                 tags = dict(segment.requested.tags)
-                if tags.get("scan_schema") != "org.leo-flow.starlink-edge-scan/v1":
+                if tags.get("scan_schema") not in STARLINK_ANALYZABLE_SCAN_SCHEMAS_V1:
                     raise ValueError("recording is not an exact Starlink edge scan")
                 if tags.get("pilot_band_fits") is not True:
                     raise ValueError("full-band recording contains a clipped segment")

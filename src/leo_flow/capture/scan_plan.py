@@ -24,6 +24,10 @@ from leo_flow.contracts.core import (
     SchemaRef,
     SegmentId,
 )
+from leo_flow.contracts.starlink_scan import (
+    STARLINK_EDGE_SCAN_SCHEMA_V1,
+    STARLINK_FOCUSED_MONITOR_SCHEMA_V1,
+)
 
 STARLINK_CHANNEL_BANDWIDTH_HZ = 240_000_000.0
 STARLINK_CHANNEL_SPACING_HZ = 250_000_000.0
@@ -42,7 +46,8 @@ EDGE_ORDERS = {
         (channel, edge) for channel in LOW_BAND_CHANNELS for edge in ("upper", "lower")
     ),
 }
-SCAN_EXPERIMENT_SCHEMA = "org.leo-flow.starlink-edge-scan/v1"
+SCAN_EXPERIMENT_SCHEMA = STARLINK_EDGE_SCAN_SCHEMA_V1
+FOCUSED_MONITOR_SCHEMA = STARLINK_FOCUSED_MONITOR_SCHEMA_V1
 CLIPPED_PILOT_NOTE = (
     "the sampled band does not contain the full edge-pilot band; do not pool "
     "this arm with arms whose pilot band fits"
@@ -239,4 +244,71 @@ def build_starlink_edge_scan_plan(spec: StarlinkEdgeScanSpec) -> CapturePlan:
             ),
         ),
         experiment_tags=tuple(sorted(experiment_tags.items())),
+    )
+
+
+def build_starlink_focused_monitor_plan(
+    spec: StarlinkEdgeScanSpec, *, channel: int, edge: str
+) -> CapturePlan:
+    """Return one explicit edge-pilot segment for sustained monitoring.
+
+    This is deliberately separate from the published eight-tuning scan plan:
+    narrowing a monitor must not change the meaning of an existing scan arm.
+    """
+
+    if channel not in LOW_BAND_CHANNELS:
+        raise ValueError("focused monitor channel must lie in [1, 4]")
+    if edge not in STARLINK_EDGE_PILOT_SUBCARRIERS:
+        raise ValueError("focused monitor edge must be lower or upper")
+    limiting_bandwidth_hz = min(spec.sample_rate_hz, spec.bandwidth_hz)
+    pilot_guard_hz = (limiting_bandwidth_hz - STARLINK_PILOT_BANDWIDTH_HZ) / 2
+    segment = SegmentRequest.create(
+        segment_id=SegmentId(f"seg_{spec.plan_id}_ch{channel}_{edge}"),
+        center_frequency_hz=starlink_edge_pilot_if_hz(
+            channel, edge, lnb_lo_hz=spec.lnb_lo_hz
+        ),
+        sample_rate_hz=spec.sample_rate_hz,
+        bandwidth_hz=spec.bandwidth_hz,
+        receiver_chain_ids=spec.receiver_chain_ids,
+        gain=spec.gain,
+        sample_count=spec.sample_count,
+        tags={
+            "scan_schema": FOCUSED_MONITOR_SCHEMA,
+            "tuning_index": 0,
+            "channel": channel,
+            "edge": edge,
+            "lnb_lo_hz": spec.lnb_lo_hz,
+            "rf_edge_pilot_center_hz": starlink_edge_pilot_rf_hz(channel, edge),
+            "arm_name": spec.arm_name,
+            "pilot_bandwidth_hz": STARLINK_PILOT_BANDWIDTH_HZ,
+            "pilot_guard_hz": pilot_guard_hz,
+            "pilot_band_fits": True,
+        },
+    )
+    return CapturePlan(
+        schema=SchemaRef(CapturePlan.SCHEMA_ID),
+        plan_id=spec.plan_id,
+        radio_id=spec.radio_id,
+        receiver_chain_ids=spec.receiver_chain_ids,
+        activities=(
+            ActivityRequest(
+                ActivityId(f"act_{spec.plan_id}_focused_monitor"),
+                ActivityKind.DWELL,
+                (segment,),
+            ),
+        ),
+        experiment_tags=tuple(
+            sorted(
+                {
+                    "scan_schema": FOCUSED_MONITOR_SCHEMA,
+                    "purpose": "raw-single-edge-pilot-monitor-for-offline-analysis",
+                    "channel": channel,
+                    "edge": edge,
+                    "arm_name": spec.arm_name,
+                    "lnb_lo_hz": spec.lnb_lo_hz,
+                    "analysis_on_capture_host": False,
+                    "automatic_dwell": False,
+                }.items()
+            )
+        ),
     )
