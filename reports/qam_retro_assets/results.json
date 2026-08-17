@@ -1,0 +1,216 @@
+{
+  "clip_sha256": "6d105ae645c0ac91e0e93ebc4ac5b456890025ebfb9bb9e1344423dc27c7c3fa",
+  "historical": {
+    "combined": {
+      "hard_symbol_accuracy": 0.88375,
+      "median_equalized_magnitude": 1.0987157316454725,
+      "observation_count": 2400,
+      "random_chance_accuracy": 0.25,
+      "receiver_weights": [
+        0.4080881628768023,
+        0.5919118371231977
+      ],
+      "rms_evm": 0.6380024919780618,
+      "soft_mean_confidence": 0.8936395049095154,
+      "soft_mean_entropy_bits": 0.4071769416332245,
+      "soft_mean_expected_probability": 0.8368601202964783,
+      "soft_noise_variance": 0.4070471797702168,
+      "temporal_qpsk": {
+        "frame_count": 6,
+        "hard_symbol_accuracy": [
+          0.6129166666666667,
+          0.5304166666666666,
+          0.5608333333333333,
+          0.62,
+          0.5420833333333334,
+          0.56875
+        ],
+        "mean_confidence": [
+          0.5604561567306519,
+          0.5593852996826172,
+          0.5653834342956543,
+          0.5644791722297668,
+          0.5623606443405151,
+          0.5652431845664978
+        ],
+        "mean_entropy_bits": [
+          1.4670555591583252,
+          1.4691990613937378,
+          1.453857660293579,
+          1.4609302282333374,
+          1.4608488082885742,
+          1.4510644674301147
+        ],
+        "mean_expected_probability": [
+          0.45991629362106323,
+          0.4146292507648468,
+          0.440342515707016,
+          0.46222254633903503,
+          0.4238116443157196,
+          0.43766239285469055
+        ],
+        "mean_state_probabilities": [
+          [
+            0.24704411625862122,
+            0.24676401913166046,
+            0.25038856267929077,
+            0.25580310821533203
+          ],
+          [
+            0.2572688162326813,
+            0.24737656116485596,
+            0.24553288519382477,
+            0.24982188642024994
+          ],
+          [
+            0.24271774291992188,
+            0.25218451023101807,
+            0.25851497054100037,
+            0.24658261239528656
+          ],
+          [
+            0.2519241273403168,
+            0.24870938062667847,
+            0.2494957447052002,
+            0.24987052381038666
+          ],
+          [
+            0.2536284923553467,
+            0.25065183639526367,
+            0.2475263923406601,
+            0.2481931746006012
+          ],
+          [
+            0.25088751316070557,
+            0.2539198696613312,
+            0.25126221776008606,
+            0.24393042922019958
+          ]
+        ]
+      }
+    },
+    "receivers": [
+      {
+        "carrier_offset_hz": 364150.8476787003,
+        "epoch_sample": 2063,
+        "frame_count": 6,
+        "hard_symbol_accuracy": 0.7483333333333333,
+        "rms_evm": 0.9425485730171204
+      },
+      {
+        "carrier_offset_hz": -194343.8743595247,
+        "epoch_sample": 2063,
+        "frame_count": 6,
+        "hard_symbol_accuracy": 0.7991666666666667,
+        "rms_evm": 0.7826223373413086
+      }
+    ],
+    "selected_observation": {
+      "candidate": true,
+      "duration_s": 0.01,
+      "epoch_difference_samples": 0,
+      "qualified": false,
+      "start_s": 68.7
+    }
+  },
+  "recording": "ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z",
+  "redux": [
+    {
+      "historical_winner_replay": {
+        "complete_frame_count": 6,
+        "hard_symbol_accuracy": 0.7483333333333333,
+        "model_snr_db": -6.411388089315816,
+        "residual_cfo_refinement_hz": -5.849247116792553,
+        "rms_evm": 0.9425485331718487,
+        "winning_coarse_cfo_hz": 364150.8476787003,
+        "winning_epoch_sample": 2063
+      },
+      "production": {
+        "complete_frame_count": 5,
+        "control_score": 0.024265392043072907,
+        "hard_symbol_accuracy": 0.25875,
+        "model_snr_db": -25.74765955513104,
+        "residual_cfo_refinement_hz": 2000.0,
+        "rms_evm": 18.28413072173357,
+        "search_score": 0.04514249473551692,
+        "winning_coarse_cfo_hz": -40000.0,
+        "winning_epoch_sample": 64,
+        "winning_residual_cfo_hz": 0.0
+      },
+      "receiver": 0,
+      "refined": {
+        "complete_frame_count": 5,
+        "control_score": 0.0191324633706363,
+        "hard_symbol_accuracy": 0.27166666666666667,
+        "model_snr_db": -27.11340202546159,
+        "residual_cfo_refinement_hz": 1664.7200492456159,
+        "rms_evm": 18.89182013593415,
+        "search_score": 0.046942316885554766,
+        "winning_coarse_cfo_hz": -60000.0,
+        "winning_epoch_sample": 84,
+        "winning_residual_cfo_hz": 0.0
+      },
+      "searches": {
+        "production_outer_cells": 583,
+        "refined_outer_cells": 5289,
+        "wide_outer_cells": 2173
+      },
+      "wide_coarse_winner": {
+        "search_score": 0.04514249473551692,
+        "winning_coarse_cfo_hz": -40000.0,
+        "winning_epoch_sample": 64,
+        "winning_residual_cfo_hz": 0.0
+      }
+    },
+    {
+      "historical_winner_replay": {
+        "complete_frame_count": 6,
+        "hard_symbol_accuracy": 0.7991666666666667,
+        "model_snr_db": -5.84632133835078,
+        "residual_cfo_refinement_hz": -1.2784418676749223,
+        "rms_evm": 0.782622376004657,
+        "winning_coarse_cfo_hz": -194343.8743595247,
+        "winning_epoch_sample": 2063
+      },
+      "production": {
+        "complete_frame_count": 5,
+        "control_score": 0.015465600628701903,
+        "hard_symbol_accuracy": 0.25458333333333333,
+        "model_snr_db": -28.520777288121067,
+        "residual_cfo_refinement_hz": -197.2500551363976,
+        "rms_evm": 19.614127094415437,
+        "search_score": 0.041972905181841845,
+        "winning_coarse_cfo_hz": -80000.0,
+        "winning_epoch_sample": 1984,
+        "winning_residual_cfo_hz": 0.0
+      },
+      "receiver": 1,
+      "refined": {
+        "complete_frame_count": 5,
+        "control_score": 0.026964030653552868,
+        "hard_symbol_accuracy": 0.24541666666666667,
+        "model_snr_db": -26.990099492121967,
+        "residual_cfo_refinement_hz": 2000.0,
+        "rms_evm": 21.2148163587716,
+        "search_score": 0.04801153430162127,
+        "winning_coarse_cfo_hz": 193000.0,
+        "winning_epoch_sample": 2040,
+        "winning_residual_cfo_hz": 0.0
+      },
+      "searches": {
+        "production_outer_cells": 583,
+        "refined_outer_cells": 5289,
+        "wide_outer_cells": 2173
+      },
+      "wide_coarse_winner": {
+        "search_score": 0.04325928452017676,
+        "winning_coarse_cfo_hz": 200000.0,
+        "winning_epoch_sample": 2048,
+        "winning_residual_cfo_hz": 0.0
+      }
+    }
+  ],
+  "selected_probe_duration_s": 0.008,
+  "selected_window_start_s": 68.7,
+  "source_clip": "/mnt/qnap01/mouse9911/leo-cropped/evidence-v2/ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z/clip-002.ci16"
+}
