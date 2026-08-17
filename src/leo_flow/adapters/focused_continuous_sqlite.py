@@ -18,6 +18,9 @@ class FocusedContinuousRecordV0_1:
     batch_id: str
     state: str
     error: str | None = None
+    analysis_pid: int | None = None
+    analysis_process_start_ticks: int | None = None
+    analysis_command_digest: str | None = None
 
 
 class SQLiteFocusedContinuousJournalV0_1:
@@ -58,6 +61,29 @@ class SQLiteFocusedContinuousJournalV0_1:
                 ) STRICT
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(focused_dwell)")
+            }
+            for name, declaration in (
+                ("analysis_pid", "INTEGER CHECK (analysis_pid > 0)"),
+                (
+                    "analysis_process_start_ticks",
+                    "INTEGER CHECK (analysis_process_start_ticks > 0)",
+                ),
+                (
+                    "analysis_command_digest",
+                    (
+                        "TEXT CHECK (analysis_command_digest IS NULL OR "
+                        "(analysis_command_digest GLOB 'sha256:[0-9a-f]*' AND "
+                        "length(analysis_command_digest)=71))"
+                    ),
+                ),
+            ):
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE focused_dwell ADD COLUMN {name} {declaration}"
+                    )
 
     def next_sequence(self) -> int:
         with self._connect() as connection:
@@ -99,6 +125,8 @@ class SQLiteFocusedContinuousJournalV0_1:
     ) -> None:
         if expected not in self._STATES or target not in self._STATES:
             raise ValueError("unknown focused journal state")
+        if expected == target:
+            raise ValueError("focused journal transitions must change state")
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -111,12 +139,59 @@ class SQLiteFocusedContinuousJournalV0_1:
             if cursor.rowcount != 1:
                 raise RuntimeError("focused journal transition conflict")
 
+    def claim_analysis_process(
+        self,
+        sequence: int,
+        *,
+        pid: int,
+        process_start_ticks: int,
+        command_digest: str,
+    ) -> None:
+        if pid <= 0 or process_start_ticks <= 0:
+            raise ValueError("analysis process identity must be positive")
+        if not command_digest.startswith("sha256:") or len(command_digest) != 71:
+            raise ValueError("analysis command digest is invalid")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE focused_dwell
+                   SET state='analysis_running',error=NULL,
+                       analysis_pid=?,analysis_process_start_ticks=?,
+                       analysis_command_digest=?,revision=revision+1
+                 WHERE sequence=? AND state='captured'
+                   AND analysis_pid IS NULL
+                   AND analysis_process_start_ticks IS NULL
+                   AND analysis_command_digest IS NULL
+                """,
+                (pid, process_start_ticks, command_digest, sequence),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("focused journal analysis claim conflict")
+
+    def abandon_analysis_process(self, sequence: int) -> None:
+        """Return one proven-dead analysis attempt to dispatchable state."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE focused_dwell
+                   SET state='captured',error=NULL,analysis_pid=NULL,
+                       analysis_process_start_ticks=NULL,
+                       analysis_command_digest=NULL,revision=revision+1
+                 WHERE sequence=? AND state='analysis_running'
+                """,
+                (sequence,),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("focused journal recovery conflict")
+
     def incomplete(self) -> tuple[FocusedContinuousRecordV0_1, ...]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT sequence,monitor_id,requested_start_utc_ns,
-                       definition_digest,state_root,batch_id,state,error
+                       definition_digest,state_root,batch_id,state,error,
+                       analysis_pid,analysis_process_start_ticks,
+                       analysis_command_digest
                   FROM focused_dwell
                  WHERE state NOT IN ('complete','failed')
                  ORDER BY sequence
@@ -129,7 +204,9 @@ class SQLiteFocusedContinuousJournalV0_1:
             row = connection.execute(
                 """
                 SELECT sequence,monitor_id,requested_start_utc_ns,
-                       definition_digest,state_root,batch_id,state,error
+                       definition_digest,state_root,batch_id,state,error,
+                       analysis_pid,analysis_process_start_ticks,
+                       analysis_command_digest
                   FROM focused_dwell WHERE sequence=?
                 """,
                 (sequence,),
@@ -154,4 +231,7 @@ class SQLiteFocusedContinuousJournalV0_1:
             str(row[5]),
             str(row[6]),
             None if row[7] is None else str(row[7]),
+            None if row[8] is None else int(str(row[8])),
+            None if row[9] is None else int(str(row[9])),
+            None if row[10] is None else str(row[10]),
         )

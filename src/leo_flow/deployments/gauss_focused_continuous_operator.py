@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
+from typing import Protocol
 
 from leo_flow.adapters.capture_batch_sqlite import SQLiteCaptureBatchStateStore
 from leo_flow.adapters.focused_continuous_sqlite import (
@@ -21,7 +22,10 @@ from leo_flow.adapters.focused_continuous_sqlite import (
 )
 from leo_flow.capture.v5_station import load_v5_capture_station
 from leo_flow.contracts.capture_batch import CaptureAttemptState
-from leo_flow.contracts.core import CaptureBatchId, UtcNs
+from leo_flow.contracts.core import CaptureBatchId, UtcNs, canonical_digest
+from leo_flow.contracts.focused_analysis_completion import (
+    decode_focused_analysis_completion,
+)
 from leo_flow.deployments.gauss_focused_capture_operator import (
     MINIMUM_LEAD_NS,
     FocusedCaptureDefinition,
@@ -36,7 +40,45 @@ DEFAULT_LEAD_SECONDS = MINIMUM_LEAD_NS // 1_000_000_000 + 15
 @dataclass(slots=True)
 class _AnalysisChild:
     record: FocusedContinuousRecordV0_1
-    process: subprocess.Popen[str]
+    process: _Process
+
+
+class _Process(Protocol):
+    pid: int
+
+    def poll(self) -> int | None: ...
+    def terminate(self) -> None: ...
+    def wait(self, timeout: float | None = None) -> int: ...
+    def kill(self) -> None: ...
+
+
+@dataclass(slots=True)
+class _RecoveredProcess:
+    pid: int
+    start_ticks: int
+    record: FocusedContinuousRecordV0_1
+
+    def poll(self) -> int | None:
+        if _completion_matches(self.record):
+            return 0
+        return None if _pid_start_ticks(self.pid) == self.start_ticks else 1
+
+    def terminate(self) -> None:
+        if _pid_start_ticks(self.pid) == self.start_ticks:
+            os.kill(self.pid, signal.SIGTERM)
+
+    def wait(self, timeout: float | None = None) -> int:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.poll() is None:
+            if deadline is not None and time.monotonic() >= deadline:
+                assert timeout is not None
+                raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            time.sleep(DEFAULT_POLL_INTERVAL_S)
+        return self.poll() or 0
+
+    def kill(self) -> None:
+        if _pid_start_ticks(self.pid) == self.start_ticks:
+            os.kill(self.pid, signal.SIGKILL)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -66,6 +108,11 @@ def _parser() -> argparse.ArgumentParser:
         "--minimum-free-bytes", type=int, default=DEFAULT_MINIMUM_FREE_BYTES
     )
     parser.add_argument("--arm", action="store_true")
+    parser.add_argument(
+        "--shutdown-protocol",
+        choices=("graceful-drain-v1",),
+        default="graceful-drain-v1",
+    )
     return parser
 
 
@@ -181,6 +228,7 @@ def _valid_args(args: argparse.Namespace) -> bool:
         and args.lead_seconds * 1_000_000_000 >= MINIMUM_LEAD_NS
         and args.maximum_dwells >= 0
         and args.minimum_free_bytes > 0
+        and args.shutdown_protocol == "graceful-drain-v1"
     )
 
 
@@ -267,6 +315,10 @@ def _analysis_command(
         str(args.compute_workers),
         "--capture-definition-digest",
         record.definition_digest,
+        "--completion-receipt",
+        str(_completion_path(record)),
+        "--analysis-attempt-lock",
+        str(record.state_root / "analysis-attempt.lock"),
         "--capture-safe",
         "--arm",
     ]
@@ -295,10 +347,26 @@ def _dispatch(
     journal: SQLiteFocusedContinuousJournalV0_1,
     children: dict[int, _AnalysisChild],
 ) -> None:
-    journal.transition(record.sequence, record.state, "analysis_running")
+    if record.state != "captured":
+        raise RuntimeError("only captured analysis may be dispatched")
+    command = _analysis_command(args, record)
+    process = subprocess.Popen(command, text=True)
+    try:
+        start_ticks = _pid_start_ticks(process.pid)
+        if start_ticks is None:
+            raise RuntimeError("analysis child process identity is unavailable")
+        journal.claim_analysis_process(
+            record.sequence,
+            pid=process.pid,
+            process_start_ticks=start_ticks,
+            command_digest=str(canonical_digest(tuple(command))),
+        )
+    except BaseException:
+        process.terminate()
+        process.wait(timeout=30)
+        raise
     running = journal.get(record.sequence)
     assert running is not None
-    process = subprocess.Popen(_analysis_command(args, running), text=True)
     children[record.sequence] = _AnalysisChild(running, process)
     print(
         json.dumps(
@@ -325,8 +393,18 @@ def _reap(
         if result is None:
             continue
         if result == 0:
-            journal.transition(sequence, "analysis_running", "complete")
-            event = "focused_continuous_analysis_complete"
+            if _completion_matches(child.record):
+                journal.transition(sequence, "analysis_running", "complete")
+                event = "focused_continuous_analysis_complete"
+            else:
+                journal.transition(
+                    sequence,
+                    "analysis_running",
+                    "failed",
+                    error="analysis-completion-evidence-missing-or-invalid",
+                )
+                event = "focused_continuous_analysis_failed"
+                healthy = False
         else:
             journal.transition(
                 sequence,
@@ -358,6 +436,18 @@ def _recover(
     children: dict[int, _AnalysisChild],
 ) -> bool:
     for record in journal.incomplete():
+        completion = _completion_state(record)
+        if completion == "valid":
+            journal.transition(record.sequence, record.state, "complete")
+            continue
+        if completion == "invalid":
+            journal.transition(
+                record.sequence,
+                record.state,
+                "failed",
+                error="analysis-completion-evidence-invalid",
+            )
+            return False
         if record.state == "planned":
             if not _capture_closed(record):
                 journal.transition(
@@ -371,11 +461,95 @@ def _recover(
             recovered = journal.get(record.sequence)
             assert recovered is not None
             _dispatch(args, recovered, journal, children)
-        elif record.state in {"captured", "analysis_running"}:
+        elif record.state == "captured":
             _dispatch(args, record, journal, children)
+        elif record.state == "analysis_running":
+            expected_command = str(
+                canonical_digest(tuple(_analysis_command(args, record)))
+            )
+            if (
+                record.analysis_pid is not None
+                and record.analysis_process_start_ticks is not None
+                and record.analysis_command_digest == expected_command
+                and _pid_start_ticks(record.analysis_pid)
+                == record.analysis_process_start_ticks
+            ):
+                children[record.sequence] = _AnalysisChild(
+                    record,
+                    _RecoveredProcess(
+                        record.analysis_pid,
+                        record.analysis_process_start_ticks,
+                        record,
+                    ),
+                )
+                continue
+            if record.analysis_command_digest not in (None, expected_command):
+                journal.transition(
+                    record.sequence,
+                    "analysis_running",
+                    "failed",
+                    error="analysis-process-identity-conflict",
+                )
+                return False
+            journal.abandon_analysis_process(record.sequence)
+            captured = journal.get(record.sequence)
+            assert captured is not None
+            _dispatch(args, captured, journal, children)
         else:
             return False
     return True
+
+
+def _completion_path(record: FocusedContinuousRecordV0_1) -> Path:
+    return record.state_root / "analysis-completion.v0.1.json"
+
+
+def _completion_state(record: FocusedContinuousRecordV0_1) -> str:
+    path = _completion_path(record)
+    if not path.exists():
+        return "absent"
+    try:
+        completion = decode_focused_analysis_completion(path.read_bytes())
+        snapshot = SQLiteCaptureBatchStateStore(
+            record.state_root / "capture-batches.sqlite3"
+        ).get(CaptureBatchId(record.batch_id))
+    except (OSError, ValueError):
+        return "invalid"
+    if snapshot is None or len(snapshot.successful_recordings) != 2:
+        return "invalid"
+    ordered = tuple(
+        sorted(snapshot.successful_recordings, key=lambda item: str(item.recording_id))
+    )
+    expected_ids = tuple(item.recording_id for item in ordered)
+    expected_digests = tuple(
+        item.recording_object.identity_digest() for item in ordered
+    )
+    return (
+        "valid"
+        if str(completion.batch_id) == record.batch_id
+        and str(completion.capture_definition_digest) == record.definition_digest
+        and completion.recording_ids == expected_ids
+        and completion.recording_identity_digests == expected_digests
+        else "invalid"
+    )
+
+
+def _completion_matches(record: FocusedContinuousRecordV0_1) -> bool:
+    return _completion_state(record) == "valid"
+
+
+def _pid_start_ticks(pid: int) -> int | None:
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+        _identity, separator, tail = raw.rpartition(") ")
+        if not separator:
+            return None
+        # Linux proc_pid_stat(5): tail begins at field 3 (state), so field 22
+        # (process start ticks) is zero-based tail index 19.
+        value = int(tail.split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+    return value if value > 0 else None
 
 
 def _write_failure_latch(path: Path, reason: str) -> None:

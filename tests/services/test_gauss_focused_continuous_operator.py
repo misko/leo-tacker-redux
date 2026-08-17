@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,11 +9,14 @@ from leo_flow.adapters.focused_continuous_sqlite import (
     FocusedContinuousRecordV0_1,
     SQLiteFocusedContinuousJournalV0_1,
 )
-from leo_flow.contracts.core import Digest
+from leo_flow.contracts.core import Digest, canonical_digest
 from leo_flow.deployments.gauss_focused_continuous_operator import (
     _analysis_command,
+    _AnalysisChild,
     _capture_command,
     _parser,
+    _reap,
+    _recover,
     main,
 )
 
@@ -72,6 +76,8 @@ def test_capture_child_is_capture_only_and_analysis_child_is_capture_safe(
     assert record.definition_digest in capture
     assert "--capture-safe" in analysis
     assert "--capture-definition-digest" in analysis
+    assert "--completion-receipt" in analysis
+    assert "--analysis-attempt-lock" in analysis
     assert record.definition_digest in analysis
     assert "--compute-workers" in analysis
 
@@ -102,6 +108,8 @@ def test_user_service_is_one_continuous_loop_without_timer_or_shell_engine() -> 
     assert "--maximum-in-flight-analyses 8" in unit
     assert "--compute-workers 8" in unit
     assert "Restart=no" in unit
+    assert "KillMode=process" in unit
+    assert "--shutdown-protocol graceful-drain-v1" in unit
     assert "RuntimeMaxSec" not in unit
     assert "PrivateDevices=yes" not in unit
     assert "bash" not in unit
@@ -161,6 +169,14 @@ def test_main_dispatches_analysis_then_captures_next_dwell_without_waiting(
         "leo_flow.deployments.gauss_focused_continuous_operator.time.sleep",
         lambda _seconds: None,
     )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._pid_start_ticks",
+        lambda _pid: 99,
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._completion_matches",
+        lambda _record: True,
+    )
 
     argv = [
         "--station-a",
@@ -193,3 +209,141 @@ def test_main_dispatches_analysis_then_captures_next_dwell_without_waiting(
     journal = SQLiteFocusedContinuousJournalV0_1(args.state_root / "continuous.sqlite3")
     assert journal.next_sequence() == 2
     assert journal.incomplete() == ()
+
+
+def test_recovery_adopts_only_the_exact_live_analysis_process(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    record = _record(tmp_path)
+    journal.insert_planned(replace(record, state="planned"))
+    journal.transition(0, "planned", "captured")
+    captured = journal.get(0)
+    assert captured is not None
+    command_digest = str(canonical_digest(tuple(_analysis_command(args, captured))))
+    journal.claim_analysis_process(
+        0, pid=4321, process_start_ticks=777, command_digest=command_digest
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._pid_start_ticks",
+        lambda pid: 777 if pid == 4321 else None,
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator.subprocess.Popen",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("live exact process must not be redispatched")
+        ),
+    )
+    children = {}
+    assert _recover(args, journal, children) is True
+    assert tuple(children) == (0,)
+    assert journal.get(0).state == "analysis_running"  # type: ignore[union-attr]
+
+
+def test_recovery_returns_proven_dead_attempt_to_captured_before_redispatch(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    record = _record(tmp_path)
+    journal.insert_planned(replace(record, state="planned"))
+    journal.transition(0, "planned", "captured")
+    captured = journal.get(0)
+    assert captured is not None
+    journal.claim_analysis_process(
+        0,
+        pid=111,
+        process_start_ticks=222,
+        command_digest=str(canonical_digest(tuple(_analysis_command(args, captured)))),
+    )
+
+    class NewProcess:
+        pid = 333
+
+        def poll(self):
+            return None  # type: ignore[no-untyped-def]
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0  # type: ignore[no-untyped-def]
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._pid_start_ticks",
+        lambda pid: 444 if pid == 333 else None,
+    )
+    monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_kw: NewProcess())
+    children = {}
+    assert _recover(args, journal, children) is True
+    running = journal.get(0)
+    assert running is not None
+    assert (running.state, running.analysis_pid) == ("analysis_running", 333)
+
+
+def test_recovery_closes_from_valid_receipt_without_dispatch(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    record = _record(tmp_path)
+    journal.insert_planned(replace(record, state="planned"))
+    journal.transition(0, "planned", "captured")
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._completion_state",
+        lambda _record: "valid",
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError("must not dispatch")),
+    )
+    assert _recover(args, journal, {}) is True
+    assert journal.get(0).state == "complete"  # type: ignore[union-attr]
+
+
+def test_zero_exit_without_exact_completion_evidence_fails_closed(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    record = _record(tmp_path)
+    journal.insert_planned(replace(record, state="planned"))
+    journal.transition(0, "planned", "captured")
+    journal.claim_analysis_process(
+        0,
+        pid=123,
+        process_start_ticks=456,
+        command_digest="sha256:" + "d" * 64,
+    )
+    running = journal.get(0)
+    assert running is not None
+
+    class Exited:
+        pid = 123
+
+        def poll(self):
+            return 0  # type: ignore[no-untyped-def]
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0  # type: ignore[no-untyped-def]
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._completion_matches",
+        lambda _record: False,
+    )
+    children = {0: _AnalysisChild(running, Exited())}
+    assert _reap(children, journal) is False
+    failed = journal.get(0)
+    assert failed is not None
+    assert failed.state == "failed"
+    assert failed.error == "analysis-completion-evidence-missing-or-invalid"
