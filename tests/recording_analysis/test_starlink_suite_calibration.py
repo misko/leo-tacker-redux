@@ -10,6 +10,7 @@ from leo_flow.analysis.recording.starlink_suite_calibration import (
     evaluate_starlink_suite_calibration_v0_1,
     one_sided_wilson_lower_bound,
     plan_starlink_suite_calibration_cell_v0_1,
+    starlink_suite_search_profile_v0_1,
 )
 from leo_flow.contracts.core import (
     V0_1,
@@ -150,7 +151,7 @@ def _plan(suite: StarlinkDetectorSuiteBundleV0_2):
         item.config_ref.digest,
         item.exact_template_ref.digest,
         item.conditioned_control_template_ref.digest,
-        item.search_identity_digest,
+        starlink_suite_search_profile_v0_1(suite, item).digest,
         "whole-search-reported-score",
         "strict-greater-than",
         0.2,
@@ -281,8 +282,25 @@ def test_default_planner_resolves_one_percent_whole_search_tail() -> None:
         conditioned_control_template_digest=(
             method.conditioned_control_template_ref.digest
         ),
-        search_identity_digest=method.search_identity_digest,
+        search_identity_digest=starlink_suite_search_profile_v0_1(suite, method).digest,
         positive_gates=(StarlinkSuitePositiveGateV0_1(-6.0, 100, 0.8, 0.95),),
     )
     assert plan.training_null_search_count == 10_000
     assert plan.holdout_null_search_count == 4_000
+
+
+def test_search_profile_excludes_per_observation_identity_but_binds_shape() -> None:
+    suite = _suite()
+    method = suite.methods[0]
+    first = starlink_suite_search_profile_v0_1(suite, method)
+    another_observation = replace(
+        method, search_identity_digest=_digest("another-observation")
+    )
+    assert method.search_identity_digest != another_observation.search_identity_digest
+    assert starlink_suite_search_profile_v0_1(suite, another_observation) == first
+    assert (
+        starlink_suite_search_profile_v0_1(
+            suite, replace(method, effective_search_cell_count=129)
+        ).digest
+        != first.digest
+    )

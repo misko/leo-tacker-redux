@@ -27,7 +27,34 @@ from leo_flow.contracts.starlink_suite_calibration import (
     StarlinkSuiteMethodDecisionV0_1,
     StarlinkSuitePositiveGateV0_1,
     StarlinkSuitePositivePerformanceV0_1,
+    StarlinkSuiteSearchProfileV0_1,
 )
+
+
+def starlink_suite_search_profile_v0_1(
+    suite: StarlinkDetectorSuiteBundleV0_2,
+    method: StarlinkDetectorMethodEvidenceV0_2,
+) -> StarlinkSuiteSearchProfileV0_1:
+    """Derive a reusable search profile without recording/segment identity."""
+
+    return StarlinkSuiteSearchProfileV0_1(
+        SchemaRef(StarlinkSuiteSearchProfileV0_1.SCHEMA_ID, V0_1),
+        method.method,
+        method.search_mode,
+        method.selection_method,
+        method.effective_search_cell_count,
+        suite.sample_rate_hz,
+        suite.probe_sample_count,
+        suite.edge,
+        method.pilot_symbol_indices,
+        method.symbol_set_role,
+        method.symbol_split_digest,
+        method.control_conditioning,
+        method.algorithm_ref.digest,
+        method.config_ref.digest,
+        method.exact_template_ref.digest,
+        method.conditioned_control_template_ref.digest,
+    )
 
 
 def plan_starlink_suite_calibration_cell_v0_1(
@@ -267,7 +294,11 @@ def decide_starlink_suite_method_v0_1(
             == plan.conditioned_control_template_digest,
             "control template",
         ),
-        (method.search_identity_digest == plan.search_identity_digest, "search"),
+        (
+            starlink_suite_search_profile_v0_1(suite, method).digest
+            == plan.search_identity_digest,
+            "search profile",
+        ),
     )
     for passed, label in checks:
         if not passed:

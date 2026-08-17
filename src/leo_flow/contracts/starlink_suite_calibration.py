@@ -15,7 +15,51 @@ from .core import (
     canonical_digest,
 )
 from .starlink import StarlinkEdge
-from .starlink_detector_suite import StarlinkDetectorMethod
+from .starlink_detector_suite import (
+    StarlinkDetectorMethod,
+    StarlinkSearchMode,
+)
+
+
+@dataclass(frozen=True)
+class StarlinkSuiteSearchProfileV0_1:
+    """Reusable statistical search identity, excluding observation identity."""
+
+    schema: SchemaRef
+    method: StarlinkDetectorMethod
+    search_mode: StarlinkSearchMode
+    selection_method: StarlinkDetectorMethod
+    effective_search_cell_count: int
+    sample_rate_hz: float
+    probe_sample_count: int
+    edge: StarlinkEdge
+    pilot_symbol_indices: tuple[int, ...]
+    symbol_set_role: str
+    symbol_split_digest: Digest | None
+    control_conditioning: str
+    algorithm_digest: Digest
+    config_digest: Digest
+    exact_template_digest: Digest
+    conditioned_control_template_digest: Digest
+
+    SCHEMA_ID = "org.leo-flow.starlink-suite-search-profile"
+
+    def __post_init__(self) -> None:
+        if self.schema != SchemaRef(self.SCHEMA_ID, V0_1):
+            raise ValueError("unsupported suite search-profile schema")
+        if self.effective_search_cell_count <= 0:
+            raise ValueError("search profile requires positive search cells")
+        require_positive(self.sample_rate_hz, "sample_rate_hz")
+        if self.probe_sample_count <= 0:
+            raise ValueError("search profile requires a positive probe")
+        if not self.pilot_symbol_indices:
+            raise ValueError("search profile requires pilot symbols")
+        require_token(self.symbol_set_role, "symbol_set_role")
+        require_token(self.control_conditioning, "control_conditioning")
+
+    @property
+    def digest(self) -> Digest:
+        return canonical_digest(self)
 
 
 @dataclass(frozen=True)

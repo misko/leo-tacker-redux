@@ -2904,3 +2904,23 @@ views containing 24 clipped `not_evaluated` and 48 candidate recordings, 768
 streams and 6,144 method outputs. All calibrated-detection counts remain null.
 Capture advanced from 252 to 269 during analysis and to 272 during the audit,
 with 544/544 unique recordings, maximum skew still 61,534,172 ns, and no halt.
+
+The suite-calibration inventory audit caught and corrected an identity-layer
+error before any corpus generation: v0.2 `search_identity_digest` is an
+immutable per-observation identity that closes over recording and segment, so
+it cannot key a reusable threshold. An additive stable search-profile contract
+now derives the statistical identity from method/selection mode, effective
+cell count, rate/probe, edge, symbols/split, conditioning, algorithm/config and
+templates while preserving the original observation digest unchanged.
+
+A read-only audit of V5 windows `0..251` found 43,008 distinct observation
+search identities but only 32 reusable search profiles and exactly 512 current
+radio/receiver/channel/edge/rate/method cells, with zero profile drift over the
+physical cells. The default one-percent plan therefore requires 5,120,000
+training-null and 2,048,000 disjoint holdout whole-search maxima (7,168,000
+total), plus declared positive injections—not the erroneous 602,112,000 count
+that direct observation-identity binding would imply. Full source verification
+after the correction was 886 passed/981 environment-skipped, strict mypy on
+311 source files, and clean Ruff/format on 573 source/test files. No live
+threshold, database, dashboard, service, capture journal, CAS object, or radio
+state was changed by this read-only inventory and source correction.

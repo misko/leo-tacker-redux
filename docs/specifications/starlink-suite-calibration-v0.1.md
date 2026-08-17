@@ -18,7 +18,14 @@ A calibration cell is the exact tuple of:
 - channel and edge;
 - sample rate and probe sample count;
 - algorithm, configuration, exact-template, conditioned-control-template and
-  complete-search identities.
+  reusable complete-search-profile identities.
+
+The reusable search profile contains the statistical search shape: method,
+selection mode, effective cell count, rate, probe length, edge, pilot symbols,
+symbol split, conditioning rule, algorithm/configuration and templates. The
+v0.2 evidence `search_identity_digest` remains an immutable per-observation
+identity and intentionally includes recording/segment provenance. It is
+retained in each result but is not used as the reusable calibration key.
 
 Cells are never pooled. Captures below 1.875 MS/s are the clipped-pilot-band
 stratum and cannot be calibrated by this contract.
