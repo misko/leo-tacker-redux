@@ -19,6 +19,7 @@ from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_score_distribution import (
+    PointScoreDistributionQueryPortV0_2,
     ScoreDistributionQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
@@ -34,6 +35,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV5,
     DashboardJsonApplicationV6,
     DashboardJsonApplicationV7,
+    DashboardJsonApplicationV8,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -81,6 +83,7 @@ class DashboardV4QueryPort(
     CaptureLifecycleDashboardQueryPortV0_1,
     ObservationAggregateQueryPortV0_1,
     ScoreDistributionQueryPortV0_1,
+    PointScoreDistributionQueryPortV0_2,
     Protocol,
 ):
     """Exact Release B dashboard read surface, including detector-suite v0.2."""
@@ -178,12 +181,15 @@ def _build_dashboard(
         config,
         readiness_checked_server,
         DashboardUiApplication(
-            DashboardJsonApplicationV7(
-                DashboardJsonApplicationV6(
-                    DashboardJsonApplicationV5(
-                        DashboardJsonApplicationV4(
-                            DashboardJsonApplicationV3(
-                                queries, queries, queries, queries, queries
+            DashboardJsonApplicationV8(
+                DashboardJsonApplicationV7(
+                    DashboardJsonApplicationV6(
+                        DashboardJsonApplicationV5(
+                            DashboardJsonApplicationV4(
+                                DashboardJsonApplicationV3(
+                                    queries, queries, queries, queries, queries
+                                ),
+                                queries,
                             ),
                             queries,
                         ),

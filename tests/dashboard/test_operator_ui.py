@@ -93,15 +93,20 @@ def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() 
     for required in (
         'id="density-window-hours"',
         'id="method-selector"',
+        'id="density-radio"',
+        'id="density-receiver"',
+        'id="density-edge"',
+        'id="show-control"',
         'id="density-canvas"',
         'id="score-summary-table"',
         "native score domain [0,1]",
         "not calibrated beacon detections",
     ):
         assert required in html
-    assert "/api/v7/score-distributions" in javascript
+    assert "/api/v8/score-distributions" in javascript
     assert "visibleMethods" in javascript
     assert "unit histogram area" in html
+    assert "recording + scan segment + radio + RX chain" in html
     assert "innerHTML" not in javascript
     assert "eval(" not in javascript
     assert "http://" not in html and "https://" not in html

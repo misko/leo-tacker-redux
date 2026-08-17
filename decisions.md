@@ -133,3 +133,12 @@ use an 8 ms prefix and different search multiplicity, whereas the frozen report
 thresholds require exact 80/160/640 ms report-era score semantics. The view is
 therefore labeled candidate-score density and cannot claim a beacon detection,
 detection rate, or calibrated false-alarm probability.
+
+The initial V7 aggregate pooled away scan-section provenance. V8 supersedes it for
+the operator page while preserving V7 unchanged. A V8 point has the exact identity
+`recording + segment + radio + receiver chain + edge + method`; source-row count
+must equal distinct-point count or the query fails closed. Candidate and conditioned
+same-section control scores are separate distributions. Radio, RX chain, and edge
+filters combine only disjoint server-produced strata. Each point still summarizes
+the method's 5–6 supported internal frames; it is not represented as an individual
+OFDM-frame score because the v0.2 product does not retain such a value.

@@ -101,3 +101,93 @@ class ScoreDistributionQueryPortV0_1(Protocol):
     def score_distributions(
         self, query: TimeRangeQuery
     ) -> ScoreDistributionViewV0_1: ...
+
+
+@dataclass(frozen=True)
+class PointScoreDistributionV0_2:
+    method: str
+    radio_id: str
+    receiver_chain_id: str
+    edge: str
+    score_kind: str
+    recording_count: int
+    point_count: int
+    mean: float
+    standard_deviation: float
+    minimum: float
+    maximum: float
+    bins: tuple[ScoreHistogramBinV0_1, ...]
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.method, "method"),
+            (self.radio_id, "radio_id"),
+            (self.receiver_chain_id, "receiver_chain_id"),
+        ):
+            require_token(value, name)
+        if self.edge not in {"lower", "upper"}:
+            raise ValueError("unsupported score edge")
+        if self.score_kind not in {"candidate", "conditioned-control"}:
+            raise ValueError("unsupported score kind")
+        if not 0 < self.recording_count <= self.point_count:
+            raise ValueError("point distribution counts are invalid")
+        for name in ("mean", "standard_deviation", "minimum", "maximum"):
+            require_finite(getattr(self, name), name)
+        if not 0.0 <= self.minimum <= self.mean <= self.maximum <= 1.0:
+            raise ValueError("point score summary is outside [0,1]")
+        if self.standard_deviation < 0.0:
+            raise ValueError("point score standard deviation must be non-negative")
+        if len(self.bins) != SCORE_HISTOGRAM_BIN_COUNT:
+            raise ValueError("point score histogram must contain every fixed bin")
+        if tuple(item.index for item in self.bins) != tuple(
+            range(SCORE_HISTOGRAM_BIN_COUNT)
+        ):
+            raise ValueError("point score histogram bins are not canonical")
+        if sum(item.count for item in self.bins) != self.point_count:
+            raise ValueError("point score histogram count differs")
+
+
+@dataclass(frozen=True)
+class PointScoreDistributionViewV0_2:
+    schema_version: int
+    start_utc_ns: UtcNs
+    stop_utc_ns: UtcNs
+    score_domain_lower: float
+    score_domain_upper: float
+    bin_count: int
+    point_identity: str
+    distributions: tuple[PointScoreDistributionV0_2, ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 2:
+            raise ValueError("unsupported point score-distribution schema")
+        require_utc_ns(self.start_utc_ns, "start_utc_ns")
+        require_utc_ns(self.stop_utc_ns, "stop_utc_ns")
+        if self.stop_utc_ns <= self.start_utc_ns:
+            raise ValueError("point score-distribution interval must be non-empty")
+        if (self.score_domain_lower, self.score_domain_upper) != (0.0, 1.0):
+            raise ValueError("point score distribution requires native [0,1]")
+        if self.bin_count != SCORE_HISTOGRAM_BIN_COUNT:
+            raise ValueError("unsupported point score histogram bin count")
+        if self.point_identity != (
+            "recording+segment+radio+receiver-chain+edge+method"
+        ):
+            raise ValueError("unsupported point identity")
+        keys = tuple(
+            (
+                item.method,
+                item.radio_id,
+                item.receiver_chain_id,
+                item.edge,
+                item.score_kind,
+            )
+            for item in self.distributions
+        )
+        if keys != tuple(sorted(set(keys))):
+            raise ValueError("point distributions must have unique sorted strata")
+
+
+class PointScoreDistributionQueryPortV0_2(Protocol):
+    def point_score_distributions(
+        self, query: TimeRangeQuery
+    ) -> PointScoreDistributionViewV0_2: ...

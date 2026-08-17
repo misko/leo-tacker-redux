@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from leo_flow.adapters.dashboard_score_distribution_postgres import (
+    point_score_distribution_view_v0_2,
     score_distribution_view_v0_1,
 )
 from leo_flow.contracts.core import UtcNs
@@ -41,3 +44,27 @@ def test_empty_rows_are_an_explicit_empty_distribution_view() -> None:
     assert view.distributions == ()
     assert view.score_domain_lower == 0.0
     assert view.score_domain_upper == 1.0
+
+
+def test_point_rows_preserve_exact_stratum_and_reject_duplicate_identity() -> None:
+    query = TimeRangeQuery(UtcNs(10), UtcNs(20))
+    row = {
+        "method": "glrt-32",
+        "radio_id": "radio_a",
+        "receiver_chain_id": "rx_lnb_a",
+        "edge": "upper",
+        "score_kind": "conditioned-control",
+        "source_row_count": 4,
+        "point_count": 4,
+        "recording_count": 1,
+        "mean": 0.01,
+        "standard_deviation": 0.0,
+        "minimum": 0.01,
+        "maximum": 0.01,
+        "bins": {"0": 4},
+    }
+    view = point_score_distribution_view_v0_2(query, [row])
+    assert view.point_identity == ("recording+segment+radio+receiver-chain+edge+method")
+    assert view.distributions[0].point_count == 4
+    with pytest.raises(ValueError, match="duplicated"):
+        point_score_distribution_view_v0_2(query, [{**row, "source_row_count": 5}])

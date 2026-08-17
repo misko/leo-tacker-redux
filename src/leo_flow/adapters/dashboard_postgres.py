@@ -37,7 +37,10 @@ from leo_flow.contracts.dashboard_batch import (
 )
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
-from leo_flow.contracts.dashboard_score_distribution import ScoreDistributionViewV0_1
+from leo_flow.contracts.dashboard_score_distribution import (
+    PointScoreDistributionViewV0_2,
+    ScoreDistributionViewV0_1,
+)
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.radio_lifecycle import CaptureAttemptLifecycleDashboardViewV0_1
@@ -86,6 +89,11 @@ class PostgresDashboardRepository:
 
     def score_distributions(self, query: TimeRangeQuery) -> ScoreDistributionViewV0_1:
         return self._score_distributions.score_distributions(query)
+
+    def point_score_distributions(
+        self, query: TimeRangeQuery
+    ) -> PointScoreDistributionViewV0_2:
+        return self._score_distributions.point_score_distributions(query)
 
     def capture_attempt_radio_lifecycle(
         self, attempt_id: CaptureAttemptId

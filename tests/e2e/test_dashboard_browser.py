@@ -35,38 +35,43 @@ def _distribution_payload() -> str:
     methods = ("anchor-8", "glrt-32")
     distributions = []
     for method_index, method in enumerate(methods):
-        counts = [0] * 40
-        counts[8 + method_index * 8] = 12
-        distributions.append(
-            {
-                "method": method,
-                "recording_count": 3,
-                "score_count": 12,
-                "mean": 0.2125 + method_index * 0.2,
-                "standard_deviation": 0.01,
-                "minimum": 0.2 + method_index * 0.2,
-                "maximum": 0.225 + method_index * 0.2,
-                "bins": [
-                    {
-                        "index": index,
-                        "lower": index / 40,
-                        "upper": (index + 1) / 40,
-                        "count": count,
-                        "density": count / 12 * 40,
-                    }
-                    for index, count in enumerate(counts)
-                ],
-            }
-        )
+        for kind_index, score_kind in enumerate(("candidate", "conditioned-control")):
+            counts = [0] * 40
+            counts[8 + method_index * 8 - kind_index * 4] = 12
+            distributions.append(
+                {
+                    "method": method,
+                    "radio_id": "radio_a",
+                    "receiver_chain_id": "rx_lnb_a",
+                    "edge": "upper",
+                    "score_kind": score_kind,
+                    "recording_count": 3,
+                    "point_count": 12,
+                    "mean": 0.2125 + method_index * 0.2 - kind_index * 0.1,
+                    "standard_deviation": 0.01,
+                    "minimum": 0.2 + method_index * 0.2 - kind_index * 0.1,
+                    "maximum": 0.225 + method_index * 0.2 - kind_index * 0.1,
+                    "bins": [
+                        {
+                            "index": index,
+                            "lower": index / 40,
+                            "upper": (index + 1) / 40,
+                            "count": count,
+                            "density": count / 12 * 40,
+                        }
+                        for index, count in enumerate(counts)
+                    ],
+                }
+            )
     return json.dumps(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "start_utc_ns": 1,
             "stop_utc_ns": 2,
             "score_domain_lower": 0.0,
             "score_domain_upper": 1.0,
             "bin_count": 40,
-            "semantics": "candidate-method-score-density",
+            "point_identity": "recording+segment+radio+receiver-chain+edge+method",
             "distributions": distributions,
         }
     )
@@ -360,14 +365,14 @@ def test_aggregate_score_density_page_in_a_real_browser() -> None:
                     body=_distribution_payload(),
                 )
 
-            page.route("**/api/v7/score-distributions?*", fulfill_distributions)
+            page.route("**/api/v8/score-distributions?*", fulfill_distributions)
             response = page.goto(f"{base_url}/aggregate-stats")
             assert response is not None and response.ok
             expect(page).to_have_title("LEO Flow · Aggregate statistics")
             expect(page.locator("#aggregate-status")).to_have_attribute(
                 "data-state", "ready"
             )
-            expect(page.locator("#score-summary-body tr")).to_have_count(2)
+            expect(page.locator("#score-summary-body tr")).to_have_count(4)
             expect(page.locator("#method-selector input:checked")).to_have_count(2)
             expect(page.locator("#density-canvas")).to_be_visible()
             assert page.locator("#density-canvas").evaluate(
@@ -375,6 +380,8 @@ def test_aggregate_score_density_page_in_a_real_browser() -> None:
             )
             page.get_by_label("anchor-8").uncheck()
             expect(page.locator("#method-selector input:checked")).to_have_count(1)
+            page.get_by_label("Conditioned null controls").uncheck()
+            expect(page.locator("#score-summary-body tr")).to_have_count(1)
             page.locator("#density-window-hours").select_option("24")
             page.get_by_role("button", name="Refresh").click()
             expect(page.locator("#aggregate-status")).to_have_attribute(

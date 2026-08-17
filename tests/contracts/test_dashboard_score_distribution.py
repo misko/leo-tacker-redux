@@ -6,6 +6,8 @@ from leo_flow.contracts.core import UtcNs
 from leo_flow.contracts.dashboard_score_distribution import (
     SCORE_HISTOGRAM_BIN_COUNT,
     MethodScoreDistributionV0_1,
+    PointScoreDistributionV0_2,
+    PointScoreDistributionViewV0_2,
     ScoreDistributionViewV0_1,
     ScoreHistogramBinV0_1,
 )
@@ -51,3 +53,31 @@ def test_distribution_rejects_missing_bins_and_non_unit_density() -> None:
         MethodScoreDistributionV0_1(
             "anchor-8", 1, 4, 0.1, 0.0, 0.1, 0.1, tuple(changed)
         )
+
+
+def test_v0_2_point_identity_preserves_radio_receiver_and_edge() -> None:
+    point = PointScoreDistributionV0_2(
+        "glrt-32",
+        "radio_a",
+        "rx_lnb_a",
+        "upper",
+        "candidate",
+        1,
+        4,
+        0.01,
+        0.0,
+        0.01,
+        0.01,
+        bins(),
+    )
+    view = PointScoreDistributionViewV0_2(
+        2,
+        UtcNs(1),
+        UtcNs(2),
+        0.0,
+        1.0,
+        40,
+        "recording+segment+radio+receiver-chain+edge+method",
+        (point,),
+    )
+    assert view.distributions[0].score_kind == "candidate"
