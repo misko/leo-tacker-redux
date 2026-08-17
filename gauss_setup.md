@@ -2713,3 +2713,28 @@ the live state namespace remains absent. It may arm only after exact main-v3
 terminal success and fresh Release-F, PG32, capacity, ownership, identity,
 both-TX, and DDS gates. No compatibility substitution or main-v3 replay is
 authorized.
+
+Expanded isolated main-v3 backfill (2026-08-17): batches `u036` through `u323`
+were snapshotted read-only and analyzed in a disposable PostgreSQL/CAS runtime.
+FeatureSet, waterfall, and Starlink v0.2 each closed 576/576 jobs, products, and
+projections; every clean projection succeeded on attempt one. The Starlink
+closure contains 384 eligible recordings, 6,144 stream suites, and 49,152
+eight-method rows. The 192 clipped 1.25 MS/s recordings are terminal
+`not_evaluated`. No live radio, PostgreSQL 55433, dashboard, campaign journal,
+or production CAS write occurred. The disposable runtime was removed after
+evidence publication. Durable evidence is at
+`/home/mouse9911/.local/state/leo-flow/evidence/shadow-analysis-v3-backfill-20260817/`;
+its 223 payloads pass their recorded checksums.
+
+The same evidence includes an independent `leo-tracker`-only reconstruction at
+revision `0bb80d14759fd8496b74e7d3219a690be18565a6`. It recovered all 96 frozen
+report thresholds from the exact 2,544-sidecar freeze and reproduced every
+published fire count. A full same-rule replay then covered all 256 compatible
+main-v3 recordings at 2.5/5 MS/s and 80/160 ms: 3,072 observations and 24,576
+complete method scores. Current candidate-fire rates were consistently
+2.27--2.88 percentage points below the matched frozen reference, with strong
+shared temporal variation across windows. Same-IQ numerical-oracle comparisons
+for all eight methods agree to floating-point precision (maximum
+score/control/margin delta `1.17e-13`). These are exploratory candidate fire
+rates, not calibrated beacon detections; no threshold or detection count was
+promoted.
