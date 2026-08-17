@@ -24,6 +24,7 @@ from leo_flow.analysis.recording import (
     AnalysisConfigurationError,
     AnalysisExecutionContext,
     BoundedWaterfallAnalyzerV0_1,
+    FullCoverageWaterfallAnalyzerV0_2,
     KnownCodePilotSearchConfigV0_1,
     KnownCodePilotSearchV0_1,
     QualityPsdAnalyzer,
@@ -31,6 +32,7 @@ from leo_flow.analysis.recording import (
     StarlinkDetectorSuiteConfigV0_2,
     StarlinkDetectorSuiteV0_2,
     WaterfallConfigV0_1,
+    WaterfallConfigV0_2,
     known_code_pilot_algorithm_ref_v0_1,
     known_code_pilot_config_ref_v0_1,
     qin_edge_pilot_template_pair_v0_1,
@@ -39,13 +41,30 @@ from leo_flow.analysis.recording import (
     starlink_detector_suite_algorithm_ref_v0_2,
     starlink_detector_suite_config_ref_v0_2,
     waterfall_algorithm_ref_v0_1,
+    waterfall_algorithm_ref_v0_2,
     waterfall_config_ref_v0_1,
+    waterfall_config_ref_v0_2,
+)
+from leo_flow.analysis.recording.starlink_pilot_constellation import (
+    StarlinkPilotConstellationAnalyzerV0_1,
+    StarlinkPilotConstellationConfigV0_1,
+    starlink_pilot_constellation_algorithm_ref_v0_1,
+    starlink_pilot_constellation_config_ref_v0_1,
 )
 from leo_flow.analysis.recording.starlink_recording import (
     ExactKnownCodeRecordingAnalyzerV0_1,
 )
 from leo_flow.analysis.recording.starlink_suite_recording import (
     ExactStarlinkDetectorSuiteRecordingAnalyzerV0_2,
+)
+from leo_flow.analysis.recording.starlink_surrogate_null import (
+    starlink_search_grid_v0_1,
+)
+from leo_flow.analysis.recording.starlink_surrogate_null_recording import (
+    ExactStarlinkSurrogateNullRecordingAnalyzerV0_1,
+)
+from leo_flow.analysis.recording.waterfall_doppler_pipeline import (
+    WaterfallDopplerPipelineV0_1,
 )
 from leo_flow.contracts.core import (
     ArtifactRef,
@@ -70,6 +89,7 @@ from leo_flow.contracts.waterfall import (
     WaterfallAnalysisRequestV0_1,
     WaterfallBundleV0_1,
 )
+from leo_flow.contracts.waterfall_v0_2 import WaterfallBundleV0_2
 from leo_flow.deployments.offline_analysis_v1 import (
     AlgorithmKey,
     StationScientificFactories,
@@ -78,7 +98,10 @@ from leo_flow.deployments.offline_analysis_v1 import (
 from leo_flow.services.bootstrap import AdapterSet, DeploymentPlugin, Process
 from leo_flow.services.config import ServiceConfig
 from leo_flow.services.lifecycle import DiagnosticSink, ServiceLoop
-from leo_flow.storage.ports import RecordingView
+from leo_flow.services.starlink_surrogate_null_analysis import (
+    StarlinkSurrogateNullAnalysisPreparerV0_1,
+)
+from leo_flow.storage.ports import RecordingObjectReader, RecordingView
 
 PLUGIN_ID: Final = "gauss-analysis-v1"
 SOURCE_COMMIT: Final = "292840bac9165317f67262895e1d5b1df5e74db0"
@@ -108,6 +131,7 @@ WATERFALL_CONFIG: Final = WaterfallConfigV0_1(
     maximum_total_cells=262_144,
     power_floor_counts_squared=1e-12,
 )
+WATERFALL_CONFIG_V0_2: Final = WaterfallConfigV0_2()
 _STARLINK_CFO_HYPOTHESES_HZ: Final = tuple(
     float(value) for value in range(-100_000, 100_001, 20_000)
 )
@@ -214,6 +238,8 @@ ENVIRONMENT_REF: Final = ArtifactRef(
             "science": (
                 str(quality_psd_algorithm_ref().digest),
                 str(waterfall_algorithm_ref_v0_1().digest),
+                str(waterfall_algorithm_ref_v0_2().digest),
+                str(waterfall_config_ref_v0_2(WATERFALL_CONFIG_V0_2).digest),
                 str(known_code_pilot_algorithm_ref_v0_1().digest),
                 _STARLINK_SCIENCE_APPROVAL,
                 str(starlink_detector_suite_algorithm_ref_v0_2().digest),
@@ -237,8 +263,11 @@ RECORDING_DEPENDENCY_REFS: Final = (ENVIRONMENT_REF, DEPENDENCY_LOCK_REF)
 WATERFALL_ALGORITHM_REF: Final = waterfall_algorithm_ref_v0_1()
 WATERFALL_CONFIG_REF: Final = waterfall_config_ref_v0_1(WATERFALL_CONFIG)
 WATERFALL_DEPENDENCY_REFS: Final = (ENVIRONMENT_REF, DEPENDENCY_LOCK_REF)
+WATERFALL_ALGORITHM_REF_V0_2: Final = waterfall_algorithm_ref_v0_2()
+WATERFALL_CONFIG_REF_V0_2: Final = waterfall_config_ref_v0_2(WATERFALL_CONFIG_V0_2)
 STARLINK_ALGORITHM_REF: Final = known_code_pilot_algorithm_ref_v0_1()
 STARLINK_SUITE_ALGORITHM_REF: Final = starlink_detector_suite_algorithm_ref_v0_2()
+STARLINK_PILOT_CONSTELLATION_CONFIG: Final = StarlinkPilotConstellationConfigV0_1()
 MODEL_ALGORITHM_REF: Final = receiver_quality_aggregate_algorithm_ref()
 MODEL_CONFIG_REF: Final = receiver_quality_aggregate_config_ref(MODEL_CONFIG)
 
@@ -327,6 +356,18 @@ def _waterfall_execution() -> AnalysisExecutionContext:
     )
 
 
+def _waterfall_v0_2_execution() -> AnalysisExecutionContext:
+    return AnalysisExecutionContext(
+        producer_name="leo-flow-gauss-full-coverage-waterfall-doppler",
+        producer_version="0.2.0",
+        git_commit=SOURCE_COMMIT,
+        environment_digest=ENVIRONMENT_REF.digest,
+        started_utc_ns=SOURCE_COMMIT_UTC_NS,
+        completed_utc_ns=SOURCE_COMMIT_UTC_NS,
+        host_class="gauss-x86_64-python31116",
+    )
+
+
 def _starlink_execution() -> AnalysisExecutionContext:
     return AnalysisExecutionContext(
         producer_name="leo-flow-gauss-starlink-known-code-candidates",
@@ -343,6 +384,18 @@ def _starlink_suite_execution() -> AnalysisExecutionContext:
     return AnalysisExecutionContext(
         producer_name="leo-flow-gauss-starlink-detector-suite",
         producer_version="0.2.0",
+        git_commit=SOURCE_COMMIT,
+        environment_digest=ENVIRONMENT_REF.digest,
+        started_utc_ns=SOURCE_COMMIT_UTC_NS,
+        completed_utc_ns=SOURCE_COMMIT_UTC_NS,
+        host_class="gauss-x86_64-python31116",
+    )
+
+
+def _starlink_pilot_constellation_execution() -> AnalysisExecutionContext:
+    return AnalysisExecutionContext(
+        producer_name="leo-flow-gauss-starlink-published-pilot-constellation",
+        producer_version="0.1.0",
         git_commit=SOURCE_COMMIT,
         environment_digest=ENVIRONMENT_REF.digest,
         started_utc_ns=SOURCE_COMMIT_UTC_NS,
@@ -384,6 +437,12 @@ class ExactGaussWaterfallAnalyzerV0_1:
 WATERFALL_ANALYZER: Final = ExactGaussWaterfallAnalyzerV0_1(
     BoundedWaterfallAnalyzerV0_1(WATERFALL_CONFIG, _waterfall_execution()),
     WATERFALL_DEPENDENCY_REFS,
+)
+WATERFALL_DOPPLER_PIPELINE: Final = WaterfallDopplerPipelineV0_1(
+    FullCoverageWaterfallAnalyzerV0_2(
+        WATERFALL_CONFIG_V0_2, _waterfall_v0_2_execution()
+    ),
+    WATERFALL_CONFIG_V0_2,
 )
 _STARLINK_ANALYZERS: Final = tuple(
     (
@@ -460,6 +519,30 @@ class ExactGaussStarlinkSuiteAnalyzerV0_2:
 
 
 STARLINK_SUITE_ANALYZER: Final = ExactGaussStarlinkSuiteAnalyzerV0_2()
+STARLINK_PILOT_CONSTELLATION_ANALYZER: Final = StarlinkPilotConstellationAnalyzerV0_1(
+    STARLINK_PILOT_CONSTELLATION_CONFIG,
+    _starlink_pilot_constellation_execution(),
+)
+
+
+def starlink_surrogate_null_preparers_v0_1(
+    reader: RecordingObjectReader,
+) -> tuple[tuple[ArtifactRef, StarlinkSurrogateNullAnalysisPreparerV0_1], ...]:
+    """Bind every exact suite profile to its paired-surrogate implementation."""
+
+    return tuple(
+        (
+            profile.config_ref,
+            StarlinkSurrogateNullAnalysisPreparerV0_1(
+                reader,
+                ExactStarlinkSurrogateNullRecordingAnalyzerV0_1(
+                    profile.config, _starlink_suite_execution()
+                ),
+                starlink_search_grid_v0_1(profile.config),
+            ),
+        )
+        for profile in STARLINK_SUITE_PROFILES
+    )
 
 
 def _model_fitter(dataset: FeatureDatasetSnapshot) -> ReceiverQualityAggregateModel:
@@ -579,6 +662,18 @@ def science_manifest() -> dict[str, object]:
                 "version": "0.1",
             },
         },
+        "waterfall_v0_2_doppler": {
+            "algorithm_ref": _artifact_document(WATERFALL_ALGORITHM_REF_V0_2),
+            "config_ref": _artifact_document(WATERFALL_CONFIG_REF_V0_2),
+            "dependency_refs": [
+                _artifact_document(ref) for ref in WATERFALL_DEPENDENCY_REFS
+            ],
+            "requested_output_schema": {
+                "schema_id": WaterfallBundleV0_2.SCHEMA_ID,
+                "version": "0.2",
+            },
+            "doppler_semantics": "candidate-only-no-calibrated-detection",
+        },
         "starlink_candidates": {
             "algorithm_ref": _artifact_document(STARLINK_ALGORITHM_REF),
             "profiles": [
@@ -611,6 +706,19 @@ def science_manifest() -> dict[str, object]:
                 "version": "0.2",
             },
         },
+        "starlink_pilot_constellation": {
+            "algorithm_ref": _artifact_document(
+                starlink_pilot_constellation_algorithm_ref_v0_1()
+            ),
+            "config_ref": _artifact_document(
+                starlink_pilot_constellation_config_ref_v0_1(
+                    STARLINK_PILOT_CONSTELLATION_CONFIG
+                )
+            ),
+            "source": "full-frame-acquire-winner-from-detector-suite-v0.2",
+            "scope": "published-edge-pilot-not-user-payload",
+            "decision_semantics": "candidate-evidence-not-calibrated-detection",
+        },
         "model": {
             "algorithm_ref": _artifact_document(MODEL_ALGORITHM_REF),
             "config_ref": _artifact_document(MODEL_CONFIG_REF),
@@ -624,6 +732,9 @@ def science_manifest() -> dict[str, object]:
                 "leo-flow-gauss-starlink-known-code-candidates/0.1.0"
             ),
             "starlink_suite_producer": ("leo-flow-gauss-starlink-detector-suite/0.2.0"),
+            "starlink_pilot_constellation_producer": (
+                "leo-flow-gauss-starlink-published-pilot-constellation/0.1.0"
+            ),
             "model_producer": ("leo-flow-gauss-receiver-quality-aggregate/0.1.0"),
             "host_class": "gauss-x86_64-python31116",
             "python": APPROVED_PYTHON_VERSION,

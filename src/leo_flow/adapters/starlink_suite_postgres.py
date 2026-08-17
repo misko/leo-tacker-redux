@@ -11,6 +11,14 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from leo_flow.analysis.recording.starlink_pilot_constellation_persistence import (
+    starlink_pilot_constellation_projection_v0_1,
+)
+from leo_flow.analysis.recording.starlink_pilot_constellation_recording_codec import (
+    STARLINK_PILOT_CONSTELLATION_RECORDING_FORMAT_ID,
+    STARLINK_PILOT_CONSTELLATION_RECORDING_MEDIA_TYPE,
+    encode_starlink_pilot_constellation_recording,
+)
 from leo_flow.analysis.recording.starlink_suite_codec import (
     STARLINK_SUITE_FORMAT_ID,
     STARLINK_SUITE_MEDIA_TYPE,
@@ -20,6 +28,14 @@ from leo_flow.analysis.recording.starlink_suite_persistence import (
     CatalogedStarlinkSuiteV0_2,
     StarlinkSuiteCatalogProjectionV0_2,
     starlink_suite_projection_v0_2,
+)
+from leo_flow.analysis.recording.starlink_surrogate_null_persistence import (
+    starlink_surrogate_null_projection_v0_1,
+)
+from leo_flow.analysis.recording.starlink_surrogate_null_recording_codec import (
+    STARLINK_SURROGATE_NULL_RECORDING_FORMAT_ID,
+    STARLINK_SURROGATE_NULL_RECORDING_MEDIA_TYPE,
+    encode_starlink_surrogate_null_recording,
 )
 from leo_flow.application.starlink_suite_projection_work import (
     StarlinkSuiteProjectionLeaseV0_2,
@@ -40,6 +56,9 @@ from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import StaleLeaseError
 from leo_flow.jobs.postgres_sql import COMPLETE_SQL, LOCK_ACTIVE_SQL
 from leo_flow.services.starlink_suite_analysis import PreparedStarlinkSuiteAnalysisV0_2
+from leo_flow.services.starlink_suite_surrogate_analysis import (
+    PreparedCombinedStarlinkSuiteAnalysisV0_2,
+)
 from leo_flow.storage.ports import BlobWriter
 from leo_flow.storage.postgres_catalog import PostgresRecordingCatalog
 
@@ -256,6 +275,164 @@ class AtomicPostgresStarlinkSuiteCommitterV0_2:
             if cursor.fetchone() is None:
                 raise StaleLeaseError("detector-suite lease became stale")
         return result
+
+
+class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
+    """Publish suite, surrogate and optional QAM before one fenced completion."""
+
+    def __init__(self, blobs: BlobWriter, connect: ConnectionFactory) -> None:
+        self._blobs, self._connect = blobs, connect
+
+    def commit_starlink_suite(
+        self, lease: JobLease, prepared: PreparedStarlinkSuiteAnalysisV0_2
+    ) -> ArtifactRef:
+        from leo_flow.adapters.starlink_pilot_constellation_postgres import (
+            publish_starlink_pilot_constellation_with_cursor,
+        )
+        from leo_flow.adapters.starlink_surrogate_null_postgres import (
+            publish_starlink_surrogate_null_with_cursor,
+        )
+
+        if lease.job_type is not JobType.STARLINK_SUITE_ANALYSIS or not isinstance(
+            prepared, PreparedCombinedStarlinkSuiteAnalysisV0_2
+        ):
+            raise ValueError("combined committer accepts prepared suite jobs only")
+        suite_projection = starlink_suite_projection_v0_2(
+            prepared.request, prepared.bundle
+        )
+        suite_payload = encode_starlink_suite_bundle(prepared.bundle)
+        suite_ref = self._put(
+            suite_payload,
+            STARLINK_SUITE_MEDIA_TYPE,
+            STARLINK_SUITE_FORMAT_ID,
+            f"starlink-suite:{lease.job_id}:bundle-v0.2",
+        )
+        surrogate_projection = starlink_surrogate_null_projection_v0_1(
+            prepared.surrogate_null.request, prepared.surrogate_null.bundle
+        )
+        surrogate_payload = encode_starlink_surrogate_null_recording(
+            prepared.surrogate_null.bundle
+        )
+        surrogate_ref = self._put(
+            surrogate_payload,
+            STARLINK_SURROGATE_NULL_RECORDING_MEDIA_TYPE,
+            STARLINK_SURROGATE_NULL_RECORDING_FORMAT_ID,
+            f"starlink-suite:{lease.job_id}:surrogate-null-bundle-v0.1",
+        )
+        constellation_projection = None
+        constellation_ref = None
+        if prepared.pilot_constellation is not None:
+            constellation_projection = starlink_pilot_constellation_projection_v0_1(
+                prepared.pilot_constellation.request,
+                prepared.pilot_constellation.bundle,
+            )
+            constellation_payload = encode_starlink_pilot_constellation_recording(
+                prepared.pilot_constellation.bundle
+            )
+            constellation_ref = self._put(
+                constellation_payload,
+                STARLINK_PILOT_CONSTELLATION_RECORDING_MEDIA_TYPE,
+                STARLINK_PILOT_CONSTELLATION_RECORDING_FORMAT_ID,
+                f"starlink-suite:{lease.job_id}:pilot-constellation-bundle-v0.1",
+            )
+        result = ArtifactRef(
+            prepared.bundle.analysis_id, suite_ref.digest, prepared.bundle.schema
+        )
+        lp = {
+            "job_id": str(lease.job_id),
+            "job_type": lease.job_type.value,
+            "lease_token": lease.lease_token,
+            "lease_generation": lease.lease_generation,
+        }
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            cursor.execute(LOCK_ACTIVE_SQL, lp)
+            if cursor.fetchone() is None:
+                raise StaleLeaseError("detector-suite lease is stale")
+            published_suite = publish_starlink_suite_with_cursor(
+                cursor,
+                suite_projection,
+                suite_ref,
+                prepared.request.recording_object_ref,
+                idempotency_key=f"starlink-suite:{lease.job_id}",
+            )
+            publish_starlink_surrogate_null_with_cursor(
+                cursor,
+                surrogate_projection,
+                surrogate_ref,
+                prepared.request.recording_object_ref,
+                idempotency_key=f"starlink-suite:{lease.job_id}:surrogate-null",
+            )
+            if constellation_projection is not None and constellation_ref is not None:
+                publish_starlink_pilot_constellation_with_cursor(
+                    cursor,
+                    constellation_projection,
+                    constellation_ref,
+                    prepared.request.recording_object_ref,
+                    idempotency_key=(
+                        f"starlink-suite:{lease.job_id}:pilot-constellation"
+                    ),
+                )
+            work_id = (
+                "slsuitework_"
+                + canonical_digest(
+                    {
+                        "source_job_id": str(lease.job_id),
+                        "analysis_id": published_suite.analysis_id,
+                        "bundle_digest": str(published_suite.bundle_ref.digest),
+                    }
+                ).value
+            )
+            cursor.execute(
+                "SELECT public.publish_starlink_detector_suite_projection_work(%(work_id)s,%(job_id)s,%(lease_token)s,%(lease_generation)s,%(analysis_id)s,%(recording_id)s,%(algorithm)s,%(digest)s) AS inserted",
+                {
+                    **lp,
+                    "work_id": work_id,
+                    "analysis_id": published_suite.analysis_id,
+                    "recording_id": str(published_suite.recording_id),
+                    "algorithm": published_suite.bundle_ref.digest.algorithm.value,
+                    "digest": published_suite.bundle_ref.digest.value,
+                },
+            )
+            row = cursor.fetchone()
+            if row is None or row["inserted"] is not True:
+                raise RuntimeError("detector-suite projection identity conflict")
+            cursor.execute(
+                COMPLETE_SQL,
+                {
+                    **lp,
+                    "result_ref": Jsonb(
+                        {
+                            "artifact_id": result.artifact_id,
+                            "digest_algorithm": result.digest.algorithm.value,
+                            "digest_value": result.digest.value,
+                            "schema_id": result.schema.schema_id
+                            if result.schema
+                            else None,
+                            "schema_version": str(result.schema.version)
+                            if result.schema
+                            else None,
+                        }
+                    ),
+                },
+            )
+            if cursor.fetchone() is None:
+                raise StaleLeaseError("detector-suite lease became stale")
+        return result
+
+    def _put(
+        self, payload: bytes, media_type: str, format_id: str, key: str
+    ) -> ObjectRef:
+        return self._blobs.put(
+            io.BytesIO(payload),
+            expected_digest=Digest.sha256(payload),
+            expected_bytes=len(payload),
+            media_type=media_type,
+            format_id=format_id,
+            idempotency_key=key,
+        )
 
 
 class PostgresStarlinkSuiteProjectionWorkRepositoryV0_2:

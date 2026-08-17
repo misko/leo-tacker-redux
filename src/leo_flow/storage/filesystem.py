@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 import threading
 import uuid
 from collections.abc import Iterator
@@ -34,10 +35,18 @@ class FileSystemBlobReader:
 
     def __init__(self, root: str | os.PathLike[str]) -> None:
         self._root = Path(root)
+        self._verification_lock = threading.RLock()
+        self._verified_files: dict[
+            tuple[Digest, int], tuple[int, int, int, int, int]
+        ] = {}
 
     def head(self, ref: ObjectRef) -> ObjectMetadata:
         path = self._resolve(ref)
-        self._verify_path(path, ref.digest, ref.byte_count)
+        stream, identity = self._open_verified(path, ref)
+        try:
+            self._require_unchanged(stream, identity)
+        finally:
+            stream.close()
         return ObjectMetadata(ref, verified=True)
 
     @contextmanager
@@ -45,8 +54,7 @@ class FileSystemBlobReader:
         self, ref: ObjectRef, byte_range: ByteRange | None = None
     ) -> Iterator[BinaryIO]:
         path = self._resolve(ref)
-        self._verify_path(path, ref.digest, ref.byte_count)
-        stream = path.open("rb", buffering=0)
+        stream, identity = self._open_verified(path, ref)
         try:
             if byte_range is None:
                 yield stream
@@ -58,7 +66,58 @@ class FileSystemBlobReader:
                     BinaryIO, _BoundedReader(stream, byte_range.stop - byte_range.start)
                 )
         finally:
+            self._require_unchanged(stream, identity)
             stream.close()
+
+    def _open_verified(
+        self, path: Path, ref: ObjectRef
+    ) -> tuple[BinaryIO, tuple[int, int, int, int, int]]:
+        try:
+            stream = path.open("rb", buffering=0)
+        except FileNotFoundError as error:
+            raise BlobIntegrityError("object is missing") from error
+        try:
+            before = os.fstat(stream.fileno())
+            identity = self._file_identity(before, ref.byte_count)
+            key = (ref.digest, ref.byte_count)
+            with self._verification_lock:
+                cached = self._verified_files.get(key)
+            if cached != identity:
+                hasher = hashlib.sha256()
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+                self._require_unchanged(stream, identity)
+                if hasher.hexdigest() != ref.digest.value:
+                    raise BlobIntegrityError("stored object digest differs")
+                stream.seek(0)
+                with self._verification_lock:
+                    self._verified_files[key] = identity
+            return stream, identity
+        except Exception:
+            stream.close()
+            raise
+
+    @staticmethod
+    def _file_identity(
+        details: os.stat_result, expected_bytes: int
+    ) -> tuple[int, int, int, int, int]:
+        if not stat.S_ISREG(details.st_mode) or details.st_size != expected_bytes:
+            raise BlobIntegrityError("stored object byte count differs")
+        return (
+            details.st_dev,
+            details.st_ino,
+            details.st_size,
+            details.st_mtime_ns,
+            details.st_ctime_ns,
+        )
+
+    @classmethod
+    def _require_unchanged(
+        cls, stream: BinaryIO, expected: tuple[int, int, int, int, int]
+    ) -> None:
+        details = os.fstat(stream.fileno())
+        if cls._file_identity(details, expected[2]) != expected:
+            raise BlobIntegrityError("stored object changed while it was open")
 
     def _resolve(self, ref: ObjectRef) -> Path:
         if ref.digest.algorithm is not DigestAlgorithm.SHA256:

@@ -120,7 +120,7 @@ from leo_flow.storage.recording_codec import (
 
 REPORT_SCHEMA = "org.leo-flow.v5-production-path-qualification/v2"
 EXPECTED_CLOCK_CONFIRMATION = "host-ntp-synchronized"
-EXPECTED_MIGRATION_HEAD = "0033_registered_analysis_during_capture.sql"
+EXPECTED_MIGRATION_HEAD = "0036_starlink_pilot_constellation_catalog.sql"
 EXPECTED_POSTGRES_MAJOR = 16
 MAX_DSN_BYTES = 4096
 _DATABASE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}")
@@ -187,7 +187,11 @@ _APPLICATION_TABLES = (
     "recording",
     "recording_starlink_candidate",
     "recording_starlink_detector_suite",
+    "recording_starlink_surrogate_null",
+    "recording_starlink_pilot_constellation",
+    "recording_doppler_analysis",
     "recording_waterfall",
+    "recording_waterfall_v0_2",
     "recording_ephemeris_link",
     "recording_hardware_link",
     "radio_lifecycle_interval_fact",
@@ -1251,9 +1255,9 @@ def _expected_migration_receipts(directory: Path) -> dict[str, str]:
                 "migration file cannot be read"
             ) from error
         receipts[path.name] = hashlib.sha256(payload).hexdigest()
-    if len(receipts) != 33 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
+    if len(receipts) != 36 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
         raise ProductionPathQualificationError(
-            "migration directory is not exactly the approved 0033 release"
+            "migration directory is not exactly the approved 0036 release"
         )
     return receipts
 

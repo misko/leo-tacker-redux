@@ -21,7 +21,7 @@
     "database_owner": "REPLACE_WITH_DATABASE_OWNER",
     "server_major": 16,
     "system_identifier": "REPLACE_WITH_PG_SYSTEM_IDENTIFIER",
-    "migration_head": "0033_registered_analysis_during_capture.sql",
+    "migration_head": "0036_starlink_pilot_constellation_catalog.sql",
     "login_names": {
       "leo_capture": "REPLACE_WITH_CAPTURE_LOGIN",
       "leo_analysis": "REPLACE_WITH_ANALYSIS_LOGIN",

@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 SCHEMA_ID: Final = "org.leo-flow.offhost-qualification"
 SCHEMA_VERSION: Final = "0.4"
-REQUIRED_MIGRATION_HEAD: Final = "0033_registered_analysis_during_capture.sql"
+REQUIRED_MIGRATION_HEAD: Final = "0036_starlink_pilot_constellation_catalog.sql"
 PROBE_FORMAT_ID: Final = "offhost-qualification-probe-v1"
 PROBE_MEDIA_TYPE: Final = "application/octet-stream"
 MAX_PROBE_BYTES: Final = 4096

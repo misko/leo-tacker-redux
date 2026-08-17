@@ -27,6 +27,9 @@
     <a href="#capture-facts">Capture facts</a>
     <a href="#segments">Segments &amp; tunings</a>
     <a href="#waterfall">Waterfall</a>
+    <a href="#doppler">Doppler explorer</a>
+    <a href="#surrogate-null">Surrogate controls</a>
+    <a href="#pilot-constellation">Pilot constellation</a>
     <a href="#analysis">Beacon decision</a>
   </nav>
 
@@ -73,9 +76,154 @@
       <p class="availability-note">The browser receives a bounded, downsampled analysis projection. It never opens raw IQ or constructs a CAS path.</p>
     </section>
 
+    <section id="doppler" aria-labelledby="doppler-heading">
+      <div class="section-heading">
+        <div><p class="section-index">04 / motion evidence</p><h2 id="doppler-heading">Doppler explorer</h2></div>
+        <div class="doppler-controls" aria-label="Doppler visualization controls">
+          <label for="doppler-tile">Segment / receiver
+            <select id="doppler-tile" disabled></select>
+          </label>
+          <label for="doppler-layer">Waterfall layer
+            <select id="doppler-layer">
+              <option value="average">Average power</option>
+              <option value="residual" selected>Temporal-median residual</option>
+              <option value="high-percentile">High percentile</option>
+            </select>
+          </label>
+          <label class="overlay-toggle" for="doppler-overlays">
+            <input id="doppler-overlays" type="checkbox" checked>
+            Candidate tracks
+          </label>
+        </div>
+      </div>
+      <div id="doppler-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading waterfall v0.2 and blind Doppler evidence…</div>
+      <aside id="doppler-warning" class="candidate-warning" role="note" hidden>
+        <strong>Candidate-only evidence.</strong>
+        Blind Doppler tracks are uncalibrated motion candidates, not confirmed Starlink pilot detections. No calibrated detection count is produced here.
+      </aside>
+      <figure id="doppler-figure" class="waterfall-figure doppler-figure" hidden>
+        <div class="waterfall-canvas-wrap">
+          <canvas id="doppler-canvas" width="1280" height="640" role="img" aria-label="Doppler waterfall power over capture time and frequency with candidate track overlays"></canvas>
+        </div>
+        <figcaption>
+          <span id="doppler-time-axis"></span>
+          <span id="doppler-frequency-axis"></span>
+          <span id="doppler-power-axis"></span>
+        </figcaption>
+      </figure>
+      <div class="doppler-summary-grid">
+        <article class="detail-card" aria-labelledby="doppler-coverage-heading">
+          <h3 id="doppler-coverage-heading">Coverage &amp; provenance</h3>
+          <dl id="doppler-coverage-facts" class="fact-grid"></dl>
+          <details id="doppler-provenance" hidden>
+            <summary>Show immutable product provenance</summary>
+            <dl id="doppler-provenance-facts" class="fact-grid"></dl>
+          </details>
+        </article>
+        <article class="detail-card" aria-labelledby="doppler-candidates-heading">
+          <div class="decision-heading">
+            <h3 id="doppler-candidates-heading">Blind candidates</h3>
+            <span id="doppler-candidate-count" class="status-badge" data-tone="warning">Loading</span>
+          </div>
+          <div id="doppler-candidate-list" class="doppler-candidate-list"></div>
+        </article>
+      </div>
+      <div id="doppler-advanced" hidden>
+        <h3>Advanced control evidence</h3>
+        <p class="availability-note">Held-out scores are shown beside conditioned stationary, opposite-motion, and time-shuffled structural controls. These controls are not an independently sampled null distribution and do not establish a calibrated detection. Optional structure, receiver-consensus, and post-blind association evidence appears only when explicitly projected.</p>
+        <div id="doppler-advanced-list" class="doppler-evidence-grid"></div>
+      </div>
+    </section>
+
+    <section id="surrogate-null" aria-labelledby="surrogate-null-heading">
+      <div class="section-heading">
+        <div><p class="section-index">05 / paired controls</p><h2 id="surrogate-null-heading">Starlink surrogate controls</h2></div>
+        <div class="surrogate-controls" aria-label="Surrogate-control filters">
+          <label for="surrogate-method">Method
+            <select id="surrogate-method">
+              <option value="anchor-8">Anchor-8</option>
+              <option value="differential-16">Differential-16</option>
+              <option value="differential-32">Differential-32</option>
+              <option value="glrt-32">GLRT-32</option>
+              <option value="glrt-64">GLRT-64</option>
+              <option value="full-frame-acquire">Full-frame acquire</option>
+              <option value="full-frame-verify">Full-frame verify</option>
+              <option value="full-frame-full">Full-frame full</option>
+            </select>
+          </label>
+          <label for="surrogate-radio">Radio
+            <select id="surrogate-radio"><option value="">All radios</option></select>
+          </label>
+          <label for="surrogate-channel">Channel
+            <select id="surrogate-channel">
+              <option value="">All channels</option>
+              <option value="1">CH1</option>
+              <option value="2">CH2</option>
+              <option value="3">CH3</option>
+              <option value="4">CH4</option>
+            </select>
+          </label>
+          <label for="surrogate-edge">Edge
+            <select id="surrogate-edge">
+              <option value="">Both edges</option>
+              <option value="lower">Lower</option>
+              <option value="upper">Upper</option>
+            </select>
+          </label>
+          <label for="surrogate-start">From UTC
+            <input id="surrogate-start" type="datetime-local" step="0.001">
+          </label>
+          <label for="surrogate-stop">Until UTC
+            <input id="surrogate-stop" type="datetime-local" step="0.001">
+          </label>
+          <button id="surrogate-apply-time" type="button">Apply time</button>
+        </div>
+      </div>
+      <div id="surrogate-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Paired surrogate evidence is pending while the recording projection loads…</div>
+      <aside id="surrogate-warning" class="candidate-warning" role="note" hidden>
+        <strong>Finite candidate evidence, not a detection.</strong>
+        The upper-tail rank compares Qin against this finite, precommitted surrogate set. It is not a calibrated p-value, and candidate evidence is not a Starlink detection.
+      </aside>
+      <article id="surrogate-summary" class="detail-card" hidden aria-labelledby="surrogate-summary-heading">
+        <div class="decision-heading">
+          <h3 id="surrogate-summary-heading">Selected-method aggregate</h3>
+          <span id="surrogate-row-count" class="status-badge" data-tone="warning">Pending</span>
+        </div>
+        <dl id="surrogate-summary-facts" class="fact-grid"></dl>
+      </article>
+      <div id="surrogate-rows" class="surrogate-row-list"></div>
+    </section>
+
+    <section id="pilot-constellation" aria-labelledby="pilot-constellation-heading">
+      <div class="section-heading">
+        <div><p class="section-index">06 / known sync pilot</p><h2 id="pilot-constellation-heading">Starlink edge-pilot constellation</h2></div>
+        <div class="constellation-controls" aria-label="Pilot constellation filters">
+          <label for="constellation-segment">Segment
+            <select id="constellation-segment"><option value="">All segments</option></select>
+          </label>
+          <label for="constellation-receiver">Receiver
+            <select id="constellation-receiver"><option value="">All receivers</option></select>
+          </label>
+          <label for="constellation-edge">Edge
+            <select id="constellation-edge">
+              <option value="">Both edges</option>
+              <option value="lower">Lower</option>
+              <option value="upper">Upper</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="constellation-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Published edge-pilot constellation evidence is pending while the recording projection loads…</div>
+      <aside id="constellation-warning" class="candidate-warning" role="note" hidden>
+        <strong>Known synchronization pilot candidate, not payload or detection.</strong>
+        The points are 4QAM/QPSK coefficients from the published Qin edge pilot, conditioned on a full-frame-acquire winner. No user payload is decoded, and this candidate-only diagnostic is not a calibrated Starlink detection.
+      </aside>
+      <div id="constellation-streams" class="constellation-stream-list"></div>
+    </section>
+
     <section id="analysis" aria-labelledby="analysis-heading">
       <div class="section-heading">
-        <div><p class="section-index">04 / scientific decision</p><h2 id="analysis-heading">Starlink beacon decision</h2></div>
+        <div><p class="section-index">07 / scientific decision</p><h2 id="analysis-heading">Starlink beacon decision</h2></div>
       </div>
       <article id="starlink-decision" class="decision-card" data-state="loading" aria-labelledby="starlink-decision-title">
         <div class="decision-heading">

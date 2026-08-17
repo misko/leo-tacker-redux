@@ -12,15 +12,52 @@ projection-write capability.
 | default HTTP server | `dashboard.stdlib-loopback-http-v1` |
 | checked Gauss HTTP server | `dashboard.stdlib-explicit-remote-http-v1` |
 | secret provider | `systemd-credential` |
-| credential name | `catalog-dsn` |
+| credential names | `catalog-dsn`, `analysis-cas-root` |
 
 The example [configuration](../../deploy/dashboard-v1/dashboard.json) contains
-only the named credential reference. The DSN belongs in the source file named
-by `LoadCredential` in the example
+only named credential references. The DSN and the absolute read-only CAS root
+belong in the distinct source files named by `LoadCredential` in the example
 [systemd unit](../../deploy/dashboard-v1/leo-dashboard.service); it must never
 be placed in JSON, command-line arguments, or logs. systemd exposes the loaded
 file through its process-specific `CREDENTIALS_DIRECTORY`. The provider has no
 fallback to a general environment variable or conventional secret directory.
+The `analysis-cas-root` file contains `/var/lib/leo-flow/objects` in this
+example; it is a path configuration credential, not a secret, and the service
+binds that exact tree read-only. The dashboard uses it only through the public
+blob-reader port to verify and decode cataloged waterfall v0.2 and Doppler
+artifacts and paired Starlink surrogate-control evidence. Database locators
+remain opaque and are never rendered to clients.
+
+The additive Doppler route is
+`GET /api/v9/recordings/{recording_id}/doppler-visualization?layer=residual`.
+The layer may be `average`, `residual`, or `high-percentile`. Responses remain
+candidate-only and cannot contain a calibrated detection count.
+
+The additive paired-surrogate route is
+`GET /api/v10/recordings/{recording_id}/starlink-surrogate-null`. Its bounded
+query accepts `methods`, `radio_ids`, `channel_numbers`, `edges`, optional
+`interval_start_utc_ns` / `interval_stop_utc_ns`, and `maximum_rows`. The
+dashboard shows the exact Qin score beside every precommitted surrogate score,
+the finite upper-tail rank, aggregates, pattern identities, and immutable
+provenance. The finite rank is not a calibrated p-value and this candidate
+evidence is not a detection. A missing durable product maps to HTTP 404;
+integrity or query failures remain HTTP 500.
+The additive published-pilot constellation route is
+`GET /api/v11/recordings/{recording_id}/starlink-pilot-constellation`. It accepts
+bounded `segment_ids`, `receiver_chain_ids`, `edges`, `maximum_streams`, and
+`maximum_points_per_stream` selectors. The response is a presentation-only DTO:
+expected-Qin-state plot points, immutable evidence identity, aggregate accuracy,
+EVM, model-SNR diagnostic, residual-CFO refinement, confidence and entropy, plus
+eight per-subcarrier summaries. The recording page plots the selected streams
+with ideal rotated-QPSK crosses. These are published synchronization-pilot
+candidate diagnostics, not payload decoding or a calibrated Starlink detection.
+A missing durable product maps to HTTP 404; integrity or query failures remain
+HTTP 500.
+
+Production readiness for these routes requires the reviewed migration chain
+through `0036_starlink_pilot_constellation_catalog.sql`, the `leo_dashboard`
+execute grants on the fixed read routines, and read access to the configured CAS
+root. The dashboard CAS adapter is reader-only and cannot publish products.
 
 Install the package with its `server` optional dependency, install the example
 configuration at `/etc/leo-flow/dashboard.json`, and adjust the credential

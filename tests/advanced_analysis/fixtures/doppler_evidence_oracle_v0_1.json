@@ -1,0 +1,40 @@
+{
+  "fixture_schema": "leo-flow.advanced-doppler-oracle/v0.1",
+  "oracle": {
+    "repository": "/home/mouse9911/gits/leo-tracker",
+    "commit": "0bb80d14759fd8496b74e7d3219a690be18565a6",
+    "reference_files": [
+      "src/leo_tracker/radio/tracking/dedoppler.py",
+      "src/leo_tracker/radio/tracking/viterbi.py",
+      "src/leo_tracker/radio/blind_comb.py",
+      "src/leo_tracker/radio/tracking/broadband.py",
+      "src/leo_tracker/radio/tracking/association.py",
+      "src/leo_tracker/radio/tracking/tle_match.py"
+    ]
+  },
+  "synthetic_linear_case": {
+    "rows": 12,
+    "columns": 24,
+    "intercept_bin": 4,
+    "slope_bins_per_row": 1.0,
+    "signal_power": 8.0,
+    "expected_heldout_score": 8.0,
+    "expected_stationary_improvement": 8.0,
+    "maximum_slope_error_bins_per_row": 0.0
+  },
+  "dual_receiver_case": {
+    "first_bins": [10, 11, 13, 14, 16, 17, 19, 20],
+    "second_bins": [47, 48, 50, 51, 53, 54, 56, 57],
+    "expected_offset_bins": 37.0,
+    "expected_slope_difference": 0.0,
+    "expected_offset_removed_rms_bins": 0.0
+  },
+  "tle_case": {
+    "observed_bins": [111, 113, 116, 120, 125, 131, 138, 146],
+    "correct_shape": [0, 2, 5, 9, 14, 20, 27, 35],
+    "wrong_shape": [0, 3, 6, 9, 12, 15, 18, 21],
+    "expected_name": "correct",
+    "expected_offset_bins": 111.0,
+    "expected_heldout_rms_bins": 0.0
+  }
+}

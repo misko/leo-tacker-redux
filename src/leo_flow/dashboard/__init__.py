@@ -1,6 +1,13 @@
 """Read-only dashboard projection queries and framework-neutral JSON API."""
 
-from .api import DashboardJsonApplication, JsonRequest, JsonResponse
+from .api import (
+    DashboardJsonApplication,
+    DashboardJsonApplicationV9,
+    DashboardJsonApplicationV10,
+    DashboardJsonApplicationV11,
+    JsonRequest,
+    JsonResponse,
+)
 from .repository import (
     ActivityProjection,
     DashboardNotFound,
@@ -8,6 +15,7 @@ from .repository import (
     InMemoryDashboardRepository,
     InvalidCursor,
     ModelProjection,
+    RecordingDopplerVisualizationProjection,
     RecordingProjection,
     TrackProjection,
 )
@@ -15,6 +23,9 @@ from .repository import (
 __all__ = [
     "ActivityProjection",
     "DashboardJsonApplication",
+    "DashboardJsonApplicationV9",
+    "DashboardJsonApplicationV10",
+    "DashboardJsonApplicationV11",
     "DashboardNotFound",
     "FeatureProjection",
     "InMemoryDashboardRepository",
@@ -22,6 +33,7 @@ __all__ = [
     "JsonRequest",
     "JsonResponse",
     "ModelProjection",
+    "RecordingDopplerVisualizationProjection",
     "RecordingProjection",
     "TrackProjection",
 ]

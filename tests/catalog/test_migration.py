@@ -295,3 +295,19 @@ def test_registered_analysis_gate_accepts_only_scoped_terminal_work() -> None:
     assert "starlink_projection_work AS w" in migration
     assert "TO leo_capture;" in migration
     assert "TO leo_analysis;" not in migration
+
+
+def test_waterfall_v0_2_and_doppler_products_are_fenced_and_read_through_ports() -> (
+    None
+):
+    migration = Path("migrations/0034_waterfall_v0_2_doppler_analysis.sql").read_text()
+    assert "CREATE TABLE public.recording_waterfall_v0_2" in migration
+    assert "CREATE TABLE public.recording_doppler_analysis" in migration
+    assert "j.job_type='waterfall_analysis' AND j.state='leased'" in migration
+    assert "CREATE FUNCTION public.read_recording_doppler_analysis" in migration
+    assert "CREATE FUNCTION public.read_recording_waterfall_v0_2" in migration
+    assert "TO leo_analysis,leo_dashboard;" in migration
+    assert (
+        "FROM PUBLIC,leo_capture,leo_analysis,leo_dashboard,leo_maintenance;"
+        in migration
+    )

@@ -12,7 +12,9 @@ from leo_flow.contracts.core import (
     DetectorEvaluationId,
     EvaluationRunId,
     RadioId,
+    ReceiverChainId,
     RecordingId,
+    SegmentId,
     UtcNs,
     canonical_json_bytes,
 )
@@ -20,6 +22,10 @@ from leo_flow.contracts.dashboard import TimeRangeQuery
 from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardQueryPortV0_1,
     CaptureBatchTimeRangeQuery,
+)
+from leo_flow.contracts.dashboard_doppler import (
+    DopplerWaterfallLayer,
+    RecordingDopplerVisualizationQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_recording import (
@@ -33,12 +39,35 @@ from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.ports import DashboardQueryPort
 from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPortV0_1
+from leo_flow.contracts.starlink import StarlinkEdge
+from leo_flow.contracts.starlink_detector_suite import (
+    REPORT_METHOD_ORDER,
+    StarlinkDetectorMethod,
+)
+from leo_flow.contracts.starlink_pilot_constellation import MAX_CONSTELLATION_POINTS
+from leo_flow.contracts.starlink_pilot_constellation_pipeline import (
+    MAX_CONSTELLATION_QUERY_STREAMS,
+    RecordingStarlinkPilotConstellationQueryPortV0_1,
+    StarlinkPilotConstellationQueryV0_1,
+)
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
 from leo_flow.contracts.starlink_suite_pipeline import (
     RecordingStarlinkSuiteQueryPortV0_2,
 )
+from leo_flow.contracts.starlink_surrogate_null_pipeline import (
+    MAXIMUM_SURROGATE_NULL_QUERY_ROWS,
+    RecordingStarlinkSurrogateNullQueryPortV0_1,
+    StarlinkSurrogateNullQueryV0_1,
+)
 
 from .repository import DashboardNotFound, InvalidCursor
+
+_MAX_SURROGATE_QUERY_TEXT_BYTES = 8_192
+_MAX_SURROGATE_RADIO_FILTERS = 64
+_MAX_CONSTELLATION_QUERY_TEXT_BYTES = 8_192
+_MAX_CONSTELLATION_SEGMENT_FILTERS = 64
+_MAX_CONSTELLATION_RECEIVER_FILTERS = 16
+_MAX_CONSTELLATION_RESPONSE_BYTES = 16 * 1_024 * 1_024
 
 
 @dataclass(frozen=True)
@@ -395,6 +424,286 @@ class DashboardJsonApplicationV8:
             (("content-type", "application/json; charset=utf-8"),),
             canonical_json_bytes(payload),
         )
+
+
+class DashboardJsonApplicationV9:
+    """Add a bounded waterfall v0.2 and blind-Doppler presentation route."""
+
+    _PREFIX = "/api/v9/recordings/"
+
+    def __init__(
+        self,
+        v8: DashboardJsonApplicationV8,
+        visualizations: RecordingDopplerVisualizationQueryPortV0_1,
+    ) -> None:
+        self._v8 = v8
+        self._visualizations = visualizations
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._v8.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "doppler-visualization":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._visualizations.recording_doppler_visualization(
+                RecordingId(unquote(parts[0])),
+                DopplerWaterfallLayer(
+                    request.query.get("layer", DopplerWaterfallLayer.RESIDUAL.value)
+                ),
+            )
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+
+class DashboardJsonApplicationV10:
+    """Add bounded paired-surrogate evidence without changing V1--V9 routes."""
+
+    _PREFIX = "/api/v10/recordings/"
+
+    def __init__(
+        self,
+        v9: DashboardJsonApplicationV9,
+        surrogate_nulls: RecordingStarlinkSurrogateNullQueryPortV0_1,
+    ) -> None:
+        self._v9 = v9
+        self._surrogate_nulls = surrogate_nulls
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._v9.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-surrogate-null":
+                raise DashboardNotFound(f"route {path} was not found")
+            query = _starlink_surrogate_null_query(
+                RecordingId(unquote(parts[0])), request.query
+            )
+            payload = self._surrogate_nulls.recording_starlink_surrogate_null(query)
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+
+class DashboardJsonApplicationV11:
+    """Add bounded published-pilot constellation evidence without changing V1--V10."""
+
+    _PREFIX = "/api/v11/recordings/"
+
+    def __init__(
+        self,
+        v10: DashboardJsonApplicationV10,
+        constellations: RecordingStarlinkPilotConstellationQueryPortV0_1,
+    ) -> None:
+        self._v10 = v10
+        self._constellations = constellations
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._v10.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-pilot-constellation":
+                raise DashboardNotFound(f"route {path} was not found")
+            query = _starlink_pilot_constellation_query(
+                RecordingId(unquote(parts[0])), request.query
+            )
+            payload = self._constellations.recording_starlink_pilot_constellation(query)
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > _MAX_CONSTELLATION_RESPONSE_BYTES:
+                raise RuntimeError("constellation response exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _starlink_pilot_constellation_query(
+    recording_id: RecordingId, query: dict[str, str]
+) -> StarlinkPilotConstellationQueryV0_1:
+    allowed = {
+        "segment_ids",
+        "receiver_chain_ids",
+        "edges",
+        "maximum_streams",
+        "maximum_points_per_stream",
+    }
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    query_text_bytes = sum(
+        len(name.encode("utf-8")) + len(value.encode("utf-8"))
+        for name, value in query.items()
+    )
+    if query_text_bytes > _MAX_CONSTELLATION_QUERY_TEXT_BYTES:
+        raise ValueError("constellation query text exceeds its bound")
+
+    segment_values = _comma_values(
+        query, "segment_ids", _MAX_CONSTELLATION_SEGMENT_FILTERS
+    )
+    receiver_values = _comma_values(
+        query, "receiver_chain_ids", _MAX_CONSTELLATION_RECEIVER_FILTERS
+    )
+    edge_values = _comma_values(query, "edges", len(StarlinkEdge))
+    return StarlinkPilotConstellationQueryV0_1(
+        recording_id=recording_id,
+        segment_ids=(
+            ()
+            if segment_values is None
+            else tuple(SegmentId(item) for item in segment_values)
+        ),
+        receiver_chain_ids=(
+            ()
+            if receiver_values is None
+            else tuple(ReceiverChainId(item) for item in receiver_values)
+        ),
+        edges=(
+            ()
+            if edge_values is None
+            else tuple(StarlinkEdge(item) for item in edge_values)
+        ),
+        maximum_streams=_optional_positive_int(
+            query, "maximum_streams", MAX_CONSTELLATION_QUERY_STREAMS
+        ),
+        maximum_points_per_stream=_optional_positive_int(
+            query, "maximum_points_per_stream", MAX_CONSTELLATION_POINTS
+        ),
+    )
+
+
+def _starlink_surrogate_null_query(
+    recording_id: RecordingId, query: dict[str, str]
+) -> StarlinkSurrogateNullQueryV0_1:
+    allowed = {
+        "methods",
+        "radio_ids",
+        "channel_numbers",
+        "edges",
+        "interval_start_utc_ns",
+        "interval_stop_utc_ns",
+        "maximum_rows",
+    }
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    query_text_bytes = sum(
+        len(name.encode("utf-8")) + len(value.encode("utf-8"))
+        for name, value in query.items()
+    )
+    if query_text_bytes > _MAX_SURROGATE_QUERY_TEXT_BYTES:
+        raise ValueError("surrogate-null query text exceeds its bound")
+
+    method_values = _comma_values(query, "methods", len(REPORT_METHOD_ORDER))
+    if method_values is None:
+        methods = REPORT_METHOD_ORDER
+    else:
+        requested_methods = tuple(
+            StarlinkDetectorMethod(item) for item in method_values
+        )
+        if len(set(requested_methods)) != len(requested_methods):
+            raise ValueError("methods must be unique")
+        methods = tuple(
+            method for method in REPORT_METHOD_ORDER if method in requested_methods
+        )
+
+    radio_values = _comma_values(query, "radio_ids", _MAX_SURROGATE_RADIO_FILTERS)
+    radios = (
+        () if radio_values is None else tuple(RadioId(item) for item in radio_values)
+    )
+    channel_values = _comma_values(query, "channel_numbers", 4)
+    channels = (
+        ()
+        if channel_values is None
+        else tuple(sorted(int(item) for item in channel_values))
+    )
+    edge_values = _comma_values(query, "edges", len(StarlinkEdge))
+    edges = (
+        () if edge_values is None else tuple(StarlinkEdge(item) for item in edge_values)
+    )
+    return StarlinkSurrogateNullQueryV0_1(
+        recording_id=recording_id,
+        methods=methods,
+        radio_ids=radios,
+        channel_numbers=channels,
+        edges=edges,
+        interval_start_utc_ns=_optional_utc_ns(query, "interval_start_utc_ns"),
+        interval_stop_utc_ns=_optional_utc_ns(query, "interval_stop_utc_ns"),
+        maximum_rows=_optional_positive_int(
+            query,
+            "maximum_rows",
+            MAXIMUM_SURROGATE_NULL_QUERY_ROWS,
+        ),
+    )
+
+
+def _comma_values(
+    query: dict[str, str], name: str, maximum_count: int
+) -> tuple[str, ...] | None:
+    if name not in query:
+        return None
+    values = tuple(query[name].split(","))
+    if not values or any(not value for value in values):
+        raise ValueError(f"{name} must be a non-empty comma-separated list")
+    if len(values) > maximum_count:
+        raise ValueError(f"{name} exceeds its item bound")
+    return values
+
+
+def _optional_utc_ns(query: dict[str, str], name: str) -> UtcNs | None:
+    if name not in query:
+        return None
+    try:
+        return UtcNs(int(query[name]))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be an integer") from error
+
+
+def _optional_positive_int(query: dict[str, str], name: str, default: int) -> int:
+    if name not in query:
+        return default
+    try:
+        value = int(query[name])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be an integer") from error
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
 
 
 def _time_query(query: dict[str, str]) -> TimeRangeQuery:

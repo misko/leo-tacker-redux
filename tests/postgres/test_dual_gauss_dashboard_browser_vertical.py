@@ -542,11 +542,17 @@ def test_dual_capture_exact_gauss_analysis_projection_and_browser_replay(
             expect(page.locator("#app-status")).to_have_attribute("data-state", "ready")
             batch = page.locator(f'[data-batch-id="{snapshot.batch_id}"]')
             expect(batch).to_have_count(2)
-            expect(batch.first).to_contain_text(
-                "Independent — no synchronization claim"
+            expect(batch.locator(".capture-status-icon")).to_have_count(2)
+            expect(
+                batch.locator('.capture-status-icon[data-state="succeeded"]')
+            ).to_have_count(2)
+            expect(batch.locator(".analysis-status-icon")).to_have_count(2)
+            expect(
+                batch.locator('.analysis-status-icon[data-state="complete"]')
+            ).to_have_count(2)
+            expect(batch.locator(".pilot-detection-counts")).to_have_text(
+                ["— / —", "— / —"]
             )
-            expect(batch.first).to_contain_text("Paired analysis eligible")
-            expect(batch.first).to_contain_text("Results ready")
 
             expect(page.locator("#recordings-table tbody tr")).to_have_count(2)
             for fixture in fixtures:

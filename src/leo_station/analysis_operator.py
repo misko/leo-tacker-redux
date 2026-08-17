@@ -72,6 +72,7 @@ from .analysis_v1 import (
     SCIENCE_MANIFEST_DIGEST,
     STARLINK_ALGORITHM_REF,
     STARLINK_ANALYZER,
+    STARLINK_PILOT_CONSTELLATION_ANALYZER,
     STARLINK_SUITE_ALGORITHM_REF,
     STARLINK_SUITE_ANALYZER,
     WATERFALL_ALGORITHM_REF,
@@ -83,6 +84,7 @@ from .analysis_v1 import (
     science_manifest,
     starlink_search_profile_v0_1,
     starlink_suite_profile_v0_2,
+    starlink_surrogate_null_preparers_v0_1,
 )
 
 MAX_MANIFEST_BYTES = 64 * 1024
@@ -536,24 +538,30 @@ def _submit_starlink_suite(
 
 def _process_starlink_suite_one(credentials: SecretProvider) -> bool:
     from leo_flow.adapters.starlink_suite_postgres import (
-        AtomicPostgresStarlinkSuiteCommitterV0_2,
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2,
     )
     from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
     from leo_flow.services.starlink_suite_analysis import (
         FencedStarlinkSuiteAnalysisWorkerV0_2,
-        StarlinkSuiteAnalysisJobPreparerV0_2,
+    )
+    from leo_flow.services.starlink_suite_surrogate_analysis import (
+        CombinedStarlinkSuiteAnalysisJobPreparerV0_2,
     )
     from leo_flow.storage.filesystem import FileSystemBlobStore
     from leo_flow.storage.recording_codec import SigMFRecordingObjectReader
 
     connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
     blobs = FileSystemBlobStore(CAS_ROOT)
+    reader = SigMFRecordingObjectReader(blobs)
     return FencedStarlinkSuiteAnalysisWorkerV0_2(
         PostgresJobLeaseRepository(connect),
-        StarlinkSuiteAnalysisJobPreparerV0_2(
-            SigMFRecordingObjectReader(blobs), STARLINK_SUITE_ANALYZER
+        CombinedStarlinkSuiteAnalysisJobPreparerV0_2(
+            reader,
+            STARLINK_SUITE_ANALYZER,
+            starlink_surrogate_null_preparers_v0_1(reader),
+            STARLINK_PILOT_CONSTELLATION_ANALYZER,
         ),
-        AtomicPostgresStarlinkSuiteCommitterV0_2(blobs, connect),
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2(blobs, connect),
         worker_id="gauss-starlink-suite-analysis-1",
         lease_ttl_s=900.0,
     ).process_one_job()

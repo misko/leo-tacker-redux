@@ -67,13 +67,16 @@ from leo_station.analysis_v1 import (
     RECORDING_CONFIG_REF,
     RECORDING_DEPENDENCY_REFS,
     SCIENTIFIC,
+    STARLINK_PILOT_CONSTELLATION_ANALYZER,
     STARLINK_SUITE_ALGORITHM_REF,
     STARLINK_SUITE_ANALYZER,
     WATERFALL_ALGORITHM_REF,
     WATERFALL_ANALYZER,
     WATERFALL_CONFIG_REF,
     WATERFALL_DEPENDENCY_REFS,
+    WATERFALL_DOPPLER_PIPELINE,
     starlink_suite_profile_v0_2,
+    starlink_surrogate_null_preparers_v0_1,
 )
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
@@ -392,12 +395,12 @@ def _waterfall_compute(
     window: DeferredAnalysisWindowV1,
     worker_id: str,
 ) -> bool:
-    from leo_flow.adapters.waterfall_analysis_postgres import (
-        AtomicPostgresWaterfallCommitterV0_1,
+    from leo_flow.adapters.waterfall_doppler_postgres import (
+        AtomicPostgresWaterfallDopplerCommitterV0_1,
     )
-    from leo_flow.services.waterfall_analysis import (
-        FencedWaterfallAnalysisWorkerV0_1,
-        WaterfallAnalysisJobPreparerV0_1,
+    from leo_flow.services.waterfall_analysis import FencedWaterfallAnalysisWorkerV0_1
+    from leo_flow.services.waterfall_doppler_analysis import (
+        CombinedWaterfallAnalysisJobPreparerV0_1,
     )
 
     lease = _claims(
@@ -408,10 +411,12 @@ def _waterfall_compute(
     blobs = FileSystemBlobStore(CAS_ROOT)
     FencedWaterfallAnalysisWorkerV0_1(
         PostgresJobLeaseRepository(connect),
-        WaterfallAnalysisJobPreparerV0_1(
-            SigMFRecordingObjectReader(blobs), WATERFALL_ANALYZER
+        CombinedWaterfallAnalysisJobPreparerV0_1(
+            SigMFRecordingObjectReader(blobs),
+            WATERFALL_ANALYZER,
+            WATERFALL_DOPPLER_PIPELINE,
         ),
-        AtomicPostgresWaterfallCommitterV0_1(blobs, connect),
+        AtomicPostgresWaterfallDopplerCommitterV0_1(blobs, connect),
         worker_id=worker_id,
         lease_ttl_s=900.0,
     ).execute(lease)
@@ -457,11 +462,13 @@ def _suite_compute(
     worker_id: str,
 ) -> bool:
     from leo_flow.adapters.starlink_suite_postgres import (
-        AtomicPostgresStarlinkSuiteCommitterV0_2,
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2,
     )
     from leo_flow.services.starlink_suite_analysis import (
         FencedStarlinkSuiteAnalysisWorkerV0_2,
-        StarlinkSuiteAnalysisJobPreparerV0_2,
+    )
+    from leo_flow.services.starlink_suite_surrogate_analysis import (
+        CombinedStarlinkSuiteAnalysisJobPreparerV0_2,
     )
 
     lease = _claims(
@@ -474,12 +481,16 @@ def _suite_compute(
     if lease is None:
         return False
     blobs = FileSystemBlobStore(CAS_ROOT)
+    reader = SigMFRecordingObjectReader(blobs)
     FencedStarlinkSuiteAnalysisWorkerV0_2(
         PostgresJobLeaseRepository(connect),
-        StarlinkSuiteAnalysisJobPreparerV0_2(
-            SigMFRecordingObjectReader(blobs), STARLINK_SUITE_ANALYZER
+        CombinedStarlinkSuiteAnalysisJobPreparerV0_2(
+            reader,
+            STARLINK_SUITE_ANALYZER,
+            starlink_surrogate_null_preparers_v0_1(reader),
+            STARLINK_PILOT_CONSTELLATION_ANALYZER,
         ),
-        AtomicPostgresStarlinkSuiteCommitterV0_2(blobs, connect),
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2(blobs, connect),
         worker_id=worker_id,
         lease_ttl_s=900.0,
     ).execute(lease)

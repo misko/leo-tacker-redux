@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING, Protocol, cast
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
 from leo_flow.contracts.dashboard_batch import CaptureBatchDashboardQueryPortV0_1
+from leo_flow.contracts.dashboard_doppler import (
+    RecordingDopplerVisualizationQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
@@ -25,9 +28,15 @@ from leo_flow.contracts.dashboard_score_distribution import (
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.ports import DashboardQueryPort
 from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPortV0_1
+from leo_flow.contracts.starlink_pilot_constellation_pipeline import (
+    RecordingStarlinkPilotConstellationQueryPortV0_1,
+)
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
 from leo_flow.contracts.starlink_suite_pipeline import (
     RecordingStarlinkSuiteQueryPortV0_2,
+)
+from leo_flow.contracts.starlink_surrogate_null_pipeline import (
+    RecordingStarlinkSurrogateNullQueryPortV0_1,
 )
 from leo_flow.dashboard.api import (
     DashboardJsonApplicationV3,
@@ -36,6 +45,9 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV6,
     DashboardJsonApplicationV7,
     DashboardJsonApplicationV8,
+    DashboardJsonApplicationV9,
+    DashboardJsonApplicationV10,
+    DashboardJsonApplicationV11,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -59,6 +71,7 @@ SERVER_REF = "dashboard.stdlib-loopback-http-v1"
 REMOTE_SERVER_REF = "dashboard.stdlib-explicit-remote-http-v1"
 SECRET_PROVIDER = "systemd-credential"
 DATABASE_SECRET = SecretRef(SECRET_PROVIDER, "catalog-dsn")
+CAS_ROOT_SECRET = SecretRef(SECRET_PROVIDER, "analysis-cas-root")
 _POSTGRES_TIMEOUT_S = 5
 
 
@@ -87,6 +100,30 @@ class DashboardV4QueryPort(
     Protocol,
 ):
     """Exact Release B dashboard read surface, including detector-suite v0.2."""
+
+
+class DashboardV9QueryPort(
+    DashboardV4QueryPort,
+    RecordingDopplerVisualizationQueryPortV0_1,
+    Protocol,
+):
+    """Additive Doppler visualization read surface."""
+
+
+class DashboardV10QueryPort(
+    DashboardV9QueryPort,
+    RecordingStarlinkSurrogateNullQueryPortV0_1,
+    Protocol,
+):
+    """Additive paired-surrogate evidence read surface."""
+
+
+class DashboardV11QueryPort(
+    DashboardV10QueryPort,
+    RecordingStarlinkPilotConstellationQueryPortV0_1,
+    Protocol,
+):
+    """Additive published edge-pilot constellation read surface."""
 
 
 class _ReadinessCheckedDashboardServer:
@@ -118,7 +155,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV4QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV11QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -146,7 +183,72 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV4Query
         connection.execute("SET ROLE leo_dashboard")
         return connection
 
-    return PostgresDashboardRepository(connect)
+    doppler = None
+    surrogate_nulls = None
+    pilot_constellations = None
+    cas_root = context.secrets.get(CAS_ROOT_SECRET)
+    if cas_root is not None:
+        from leo_flow.adapters.dashboard_doppler_projection import (
+            DurableDashboardDopplerProjectionV0_1,
+        )
+        from leo_flow.adapters.starlink_pilot_constellation_postgres import (
+            PostgresStarlinkPilotConstellationCatalogV0_1,
+        )
+        from leo_flow.adapters.starlink_surrogate_null_postgres import (
+            PostgresStarlinkSurrogateNullCatalogV0_1,
+        )
+        from leo_flow.adapters.waterfall_doppler_postgres import (
+            PostgresWaterfallDopplerQueryV0_1,
+        )
+        from leo_flow.analysis.recording.starlink_pilot_constellation_persistence import (
+            DurableRecordingStarlinkPilotConstellationQueryV0_1,
+            DurableStarlinkPilotConstellationStoreV0_1,
+            StarlinkPilotConstellationBlobStore,
+        )
+        from leo_flow.analysis.recording.starlink_surrogate_null_persistence import (
+            DurableRecordingStarlinkSurrogateNullQueryV0_1,
+            DurableStarlinkSurrogateNullStoreV0_1,
+            StarlinkSurrogateNullBlobStore,
+        )
+        from leo_flow.analysis.recording.waterfall_v0_2_persistence import (
+            DurableWaterfallReaderV0_2,
+        )
+        from leo_flow.analysis.tracking.doppler_persistence import (
+            DurableDopplerReaderV0_1,
+        )
+        from leo_flow.storage.filesystem import FileSystemBlobReader
+
+        query = PostgresWaterfallDopplerQueryV0_1(connect)
+        blobs = FileSystemBlobReader(cas_root)
+        doppler = DurableDashboardDopplerProjectionV0_1(
+            query,
+            DurableWaterfallReaderV0_2(blobs, query),
+            DurableDopplerReaderV0_1(blobs, query),
+        )
+        surrogate_catalog = PostgresStarlinkSurrogateNullCatalogV0_1(connect)
+        surrogate_store = DurableStarlinkSurrogateNullStoreV0_1(
+            cast(StarlinkSurrogateNullBlobStore, blobs),
+            surrogate_catalog,
+        )
+        surrogate_nulls = DurableRecordingStarlinkSurrogateNullQueryV0_1(
+            surrogate_store,
+            surrogate_catalog,
+        )
+        constellation_catalog = PostgresStarlinkPilotConstellationCatalogV0_1(connect)
+        constellation_store = DurableStarlinkPilotConstellationStoreV0_1(
+            cast(StarlinkPilotConstellationBlobStore, blobs),
+            constellation_catalog,
+        )
+        pilot_constellations = DurableRecordingStarlinkPilotConstellationQueryV0_1(
+            constellation_store,
+            constellation_catalog,
+        )
+    return PostgresDashboardRepository(
+        connect,
+        doppler=doppler,
+        surrogate_nulls=surrogate_nulls,
+        pilot_constellations=pilot_constellations,
+    )
 
 
 def _stdlib_loopback_server(
@@ -170,7 +272,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV4QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV11QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -181,13 +283,26 @@ def _build_dashboard(
         config,
         readiness_checked_server,
         DashboardUiApplication(
-            DashboardJsonApplicationV8(
-                DashboardJsonApplicationV7(
-                    DashboardJsonApplicationV6(
-                        DashboardJsonApplicationV5(
-                            DashboardJsonApplicationV4(
-                                DashboardJsonApplicationV3(
-                                    queries, queries, queries, queries, queries
+            DashboardJsonApplicationV11(
+                DashboardJsonApplicationV10(
+                    DashboardJsonApplicationV9(
+                        DashboardJsonApplicationV8(
+                            DashboardJsonApplicationV7(
+                                DashboardJsonApplicationV6(
+                                    DashboardJsonApplicationV5(
+                                        DashboardJsonApplicationV4(
+                                            DashboardJsonApplicationV3(
+                                                queries,
+                                                queries,
+                                                queries,
+                                                queries,
+                                                queries,
+                                            ),
+                                            queries,
+                                        ),
+                                        queries,
+                                    ),
+                                    queries,
                                 ),
                                 queries,
                             ),

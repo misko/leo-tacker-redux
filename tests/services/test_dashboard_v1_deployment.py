@@ -213,8 +213,9 @@ def test_complete_plugin_assembles_without_database_or_network_io(
     postgres_adapter = ModuleType("leo_flow.adapters.dashboard_postgres")
 
     class FakeRepository:
-        def __init__(self, connect) -> None:
+        def __init__(self, connect, **kwargs) -> None:
             self.connect = connect
+            self.kwargs = kwargs
 
     postgres_adapter.PostgresDashboardRepository = FakeRepository
     monkeypatch.setitem(sys.modules, "psycopg", psycopg)
@@ -332,6 +333,18 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
             assert recording_id == RECORDING_ID
             raise DashboardNotFound("suite projection absent")
 
+        def recording_starlink_surrogate_null(self, query):
+            assert query.recording_id == RECORDING_ID
+            from tests.dashboard.test_starlink_surrogate_null_api import view
+
+            return view(query)
+
+        def recording_starlink_pilot_constellation(self, query):
+            assert query.recording_id == RECORDING_ID
+            from tests.dashboard.test_starlink_pilot_constellation_api import view
+
+            return view(query)
+
     class CapturingServer(_Server):
         handler = None
 
@@ -372,6 +385,28 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
         JsonRequest("GET", f"/api/v4/recordings/{RECORDING_ID}/starlink-suite", {})
     )
     assert suite_response.status == 404
+    surrogate_response = server.handler.handle(
+        JsonRequest(
+            "GET",
+            f"/api/v10/recordings/{RECORDING_ID}/starlink-surrogate-null",
+            {"methods": "glrt-32", "maximum_rows": "8"},
+        )
+    )
+    assert surrogate_response.status == 200
+    surrogate_payload = json.loads(surrogate_response.body)
+    assert surrogate_payload["query"]["methods"] == ["glrt-32"]
+    assert surrogate_payload["calibrated_detection_count"] is None
+    constellation_response = server.handler.handle(
+        JsonRequest(
+            "GET",
+            f"/api/v11/recordings/{RECORDING_ID}/starlink-pilot-constellation",
+            {"edges": "lower", "maximum_points_per_stream": "600"},
+        )
+    )
+    assert constellation_response.status == 200
+    constellation_payload = json.loads(constellation_response.body)
+    assert constellation_payload["streams"][0]["edge"] == "lower"
+    assert len(constellation_payload["streams"][0]["display_points"]) == 600
     v1 = server.handler.handle(JsonRequest("GET", "/api/storage-health", {}))
     assert v1.status == 200
     assert v1.body == b'{"available":false,"free_bytes":null,"total_bytes":null}'
@@ -425,6 +460,47 @@ def test_missing_optional_postgres_dependency_has_an_actionable_error(
         dashboard_v1._postgres_query_projection(context)
 
 
+def test_postgres_projection_composes_read_only_analysis_product_readers(
+    tmp_path: Path,
+) -> None:
+    from leo_flow.adapters.dashboard_postgres import PostgresDashboardRepository
+    from leo_flow.analysis.recording.starlink_pilot_constellation_persistence import (
+        DurableRecordingStarlinkPilotConstellationQueryV0_1,
+    )
+    from leo_flow.analysis.recording.starlink_surrogate_null_persistence import (
+        DurableRecordingStarlinkSurrogateNullQueryV0_1,
+    )
+    from leo_flow.storage.filesystem import FileSystemBlobReader
+
+    context = AdapterBuildContext(
+        Process.DASHBOARD,
+        Capability.QUERY_PROJECTION,
+        dashboard_v1.QUERY_PROJECTION_REF,
+        {
+            dashboard_v1.DATABASE_SECRET: "not-contacted",
+            dashboard_v1.CAS_ROOT_SECRET: str(tmp_path / "objects"),
+        },
+    )
+
+    projection = dashboard_v1._postgres_query_projection(context)
+
+    assert isinstance(projection, PostgresDashboardRepository)
+    assert isinstance(
+        projection._surrogate_nulls,
+        DurableRecordingStarlinkSurrogateNullQueryV0_1,
+    )
+    store = projection._surrogate_nulls._store
+    assert isinstance(store._blobs, FileSystemBlobReader)
+    assert not hasattr(store._blobs, "put")
+    assert isinstance(
+        projection._pilot_constellations,
+        DurableRecordingStarlinkPilotConstellationQueryV0_1,
+    )
+    constellation_store = projection._pilot_constellations._store
+    assert isinstance(constellation_store._blobs, FileSystemBlobReader)
+    assert not hasattr(constellation_store._blobs, "put")
+
+
 def test_checked_gauss_dashboard_is_a_frozen_all_interface_read_only_unit() -> None:
     root = Path(__file__).resolve().parents[2]
     config = json.loads(
@@ -449,6 +525,8 @@ def test_checked_gauss_dashboard_is_a_frozen_all_interface_read_only_unit() -> N
     for directive in (
         "DynamicUser=yes",
         "LoadCredential=catalog-dsn:/etc/leo-flow/secrets/dashboard-catalog-dsn",
+        "LoadCredential=analysis-cas-root:/etc/leo-flow/secrets/dashboard-analysis-cas-root",
+        "ReadOnlyPaths=/var/lib/leo-flow/objects",
         "NoNewPrivileges=yes",
         "PrivateTmp=yes",
         "PrivateDevices=yes",

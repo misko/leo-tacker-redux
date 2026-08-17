@@ -17,6 +17,7 @@ from leo_flow.contracts.core import (
     ModelSnapshotId,
     RadioId,
     RecordingId,
+    SchemaRef,
     UtcNs,
 )
 from leo_flow.contracts.dashboard import (
@@ -35,6 +36,12 @@ from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardView,
     CaptureBatchTimeRangeQuery,
 )
+from leo_flow.contracts.dashboard_doppler import (
+    DopplerVisualizationState,
+    DopplerWaterfallLayer,
+    RecordingDopplerVisualizationQueryPortV0_1,
+    RecordingDopplerVisualizationViewV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
 from leo_flow.contracts.dashboard_score_distribution import (
@@ -44,8 +51,18 @@ from leo_flow.contracts.dashboard_score_distribution import (
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.radio_lifecycle import CaptureAttemptLifecycleDashboardViewV0_1
+from leo_flow.contracts.starlink_pilot_constellation_pipeline import (
+    RecordingStarlinkPilotConstellationQueryPortV0_1,
+    RecordingStarlinkPilotConstellationViewV0_1,
+    StarlinkPilotConstellationQueryV0_1,
+)
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkCandidateViewV0_1
 from leo_flow.contracts.starlink_suite_pipeline import RecordingStarlinkSuiteViewV0_2
+from leo_flow.contracts.starlink_surrogate_null_pipeline import (
+    RecordingStarlinkSurrogateNullQueryPortV0_1,
+    RecordingStarlinkSurrogateNullViewV0_1,
+    StarlinkSurrogateNullQueryV0_1,
+)
 from leo_flow.dashboard import DashboardNotFound, InvalidCursor
 
 from . import dashboard_postgres_sql as sql
@@ -66,7 +83,16 @@ ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 class PostgresDashboardRepository:
     """Query normalized projections without gaining any write capability."""
 
-    def __init__(self, connect: ConnectionFactory, *, page_size: int = 50) -> None:
+    def __init__(
+        self,
+        connect: ConnectionFactory,
+        *,
+        page_size: int = 50,
+        doppler: RecordingDopplerVisualizationQueryPortV0_1 | None = None,
+        surrogate_nulls: RecordingStarlinkSurrogateNullQueryPortV0_1 | None = None,
+        pilot_constellations: RecordingStarlinkPilotConstellationQueryPortV0_1
+        | None = None,
+    ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
         self._connect = connect
@@ -81,6 +107,64 @@ class PostgresDashboardRepository:
             connect
         )
         self._score_distributions = PostgresScoreDistributionRepositoryV0_1(connect)
+        self._doppler = doppler
+        self._surrogate_nulls = surrogate_nulls
+        self._pilot_constellations = pilot_constellations
+
+    def recording_starlink_pilot_constellation(
+        self, query: StarlinkPilotConstellationQueryV0_1
+    ) -> RecordingStarlinkPilotConstellationViewV0_1:
+        if self._pilot_constellations is None:
+            raise DashboardNotFound(
+                f"pilot-constellation evidence for recording {query.recording_id} "
+                "is unavailable"
+            )
+        try:
+            return self._pilot_constellations.recording_starlink_pilot_constellation(
+                query
+            )
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"pilot-constellation evidence for recording {query.recording_id} "
+                "was not found"
+            ) from error
+
+    def recording_starlink_surrogate_null(
+        self, query: StarlinkSurrogateNullQueryV0_1
+    ) -> RecordingStarlinkSurrogateNullViewV0_1:
+        if self._surrogate_nulls is None:
+            raise DashboardNotFound(
+                f"surrogate-null evidence for recording {query.recording_id} "
+                "is unavailable"
+            )
+        try:
+            return self._surrogate_nulls.recording_starlink_surrogate_null(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"surrogate-null evidence for recording {query.recording_id} "
+                "was not found"
+            ) from error
+
+    def recording_doppler_visualization(
+        self, recording_id: RecordingId, layer: DopplerWaterfallLayer
+    ) -> RecordingDopplerVisualizationViewV0_1:
+        if self._doppler is not None:
+            return self._doppler.recording_doppler_visualization(recording_id, layer)
+        return RecordingDopplerVisualizationViewV0_1(
+            SchemaRef(RecordingDopplerVisualizationViewV0_1.SCHEMA_ID),
+            recording_id,
+            DopplerVisualizationState.UNAVAILABLE,
+            layer,
+            True,
+            None,
+            None,
+            (),
+            (),
+            (),
+            (),
+            (RecordingDopplerVisualizationViewV0_1.CANDIDATE_WARNING,),
+            ("doppler-analysis-unavailable",),
+        )
 
     def observation_aggregate(
         self, query: TimeRangeQuery

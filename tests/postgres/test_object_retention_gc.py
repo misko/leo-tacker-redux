@@ -95,6 +95,30 @@ def test_reference_inventory_matches_every_current_object_blob_fk(
             "recording_starlink_detector_suite",
             ("bundle_digest_algorithm", "bundle_digest_value"),
         ),
+        (
+            "recording_starlink_surrogate_null",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_starlink_pilot_constellation",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_waterfall_v0_2",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_doppler_analysis",
+            ("waterfall_bundle_digest_algorithm", "waterfall_bundle_digest_value"),
+        ),
+        (
+            "recording_doppler_analysis",
+            ("basic_bundle_digest_algorithm", "basic_bundle_digest_value"),
+        ),
+        (
+            "recording_doppler_analysis",
+            ("advanced_bundle_digest_algorithm", "advanced_bundle_digest_value"),
+        ),
         ("object_retention_assignment", ("digest_algorithm", "digest_value")),
     }
     with psycopg.connect(postgres_dsn) as connection:
@@ -119,7 +143,11 @@ def test_reference_inventory_matches_every_current_object_blob_fk(
                AND NOT tgisinternal
             """
         ).fetchone()[0]
-        assert trigger_count == len(expected) - 1
+        # The retention assignment is not a live product reference. The Doppler
+        # row's waterfall bundle identity is derived from, and constrained by,
+        # its referenced v0.2 waterfall in the only publishing routine; that
+        # source row owns the direct live-reference trigger.
+        assert trigger_count == len(expected) - 2
 
 
 def test_explicit_policy_and_zero_references_are_required(postgres_dsn: str) -> None:

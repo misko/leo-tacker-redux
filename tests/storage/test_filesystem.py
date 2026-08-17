@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import io
+import os
 from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
 
@@ -111,3 +114,41 @@ def test_reader_opens_existing_objects_without_creating_store_state(tmp_path) ->
         assert stream.read() == b"read-only"
 
     assert not (tmp_path / ".tmp").exists()
+
+
+def test_reader_hashes_unchanged_object_once_across_bounded_reads(tmp_path) -> None:
+    writer = FileSystemBlobStore(tmp_path)
+    ref = put(writer, bytes(range(128)))
+    reader = FileSystemBlobReader(tmp_path)
+
+    with patch(
+        "leo_flow.storage.filesystem.hashlib.sha256", wraps=hashlib.sha256
+    ) as sha256:
+        with reader.open(ref, ByteRange(0, 32)) as stream:
+            assert stream.read() == bytes(range(32))
+        with reader.open(ref, ByteRange(32, 64)) as stream:
+            assert stream.read() == bytes(range(32, 64))
+        assert reader.head(ref).verified
+
+    assert sha256.call_count == 1
+
+
+def test_reader_invalidates_cached_verification_when_file_identity_changes(
+    tmp_path,
+) -> None:
+    writer = FileSystemBlobStore(tmp_path)
+    ref = put(writer, b"original")
+    reader = FileSystemBlobReader(tmp_path)
+    with reader.open(ref, ByteRange(0, 4)) as stream:
+        assert stream.read() == b"orig"
+
+    path = tmp_path / "sha256" / ref.digest.value[:2] / ref.digest.value
+    original_stat = path.stat()
+    path.write_bytes(b"changed!")
+    os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    with (
+        pytest.raises(BlobIntegrityError, match="digest"),
+        reader.open(ref, ByteRange(0, 4)),
+    ):
+        pass

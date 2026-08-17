@@ -51,6 +51,10 @@ class StarlinkSuiteAnalysisCommitterV0_2(Protocol):
     ) -> ArtifactRef: ...
 
 
+class StarlinkSuiteAnalysisPreparerV0_2(Protocol):
+    def prepare(self, lease: JobLease) -> PreparedStarlinkSuiteAnalysisV0_2: ...
+
+
 class StarlinkSuiteAnalysisJobPreparerV0_2:
     def __init__(
         self,
@@ -75,7 +79,7 @@ class FencedStarlinkSuiteAnalysisWorkerV0_2:
     def __init__(
         self,
         jobs: JobLeaseRepository,
-        preparer: StarlinkSuiteAnalysisJobPreparerV0_2,
+        preparer: StarlinkSuiteAnalysisPreparerV0_2,
         committer: StarlinkSuiteAnalysisCommitterV0_2,
         *,
         worker_id: str,

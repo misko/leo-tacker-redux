@@ -50,6 +50,9 @@ _EXPECTED_MIGRATIONS = (
     "0031_radio_lifecycle_detection.sql",
     "0032_campaign_online_analysis.sql",
     "0033_registered_analysis_during_capture.sql",
+    "0034_waterfall_v0_2_doppler_analysis.sql",
+    "0035_starlink_surrogate_null_catalog.sql",
+    "0036_starlink_pilot_constellation_catalog.sql",
 )
 
 
@@ -178,7 +181,11 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE campaign_analysis_job_scope,
+            TRUNCATE recording_starlink_pilot_constellation,
+                     recording_starlink_surrogate_null,
+                     recording_doppler_analysis,
+                     recording_waterfall_v0_2,
+                     campaign_analysis_job_scope,
                      campaign_analysis_window_scope,
                      dashboard_recording_starlink_detector_suite_projection,
                      radio_lifecycle_interval_fact,

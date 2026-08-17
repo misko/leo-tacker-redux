@@ -1,5 +1,79 @@
 # Decisions
 
+## 2026-08-17 — Full-coverage spectrogram and blind Doppler evidence
+
+**Status:** accepted for additive analysis and dashboard integration; candidate
+evidence only, not a calibrated signal or Starlink-beacon decision.
+
+### Decision
+
+Redux will retain waterfall v0.1 unchanged and add the independent
+`org.leo-flow.waterfall-bundle/v0.2` product for long-dwell visualization and
+blind motion analysis. The v0.2 producer processes every complete,
+non-overlapping 32,768-sample FFT frame in each verified contiguous RF span and
+records exact analyzed samples, discarded tails, frame starts, span counts, and
+coverage fraction. Its bounded display product contains 512 frequency bins and
+up to 200 temporal rows per tile, with three separately selectable layers:
+
+- linear-power mean converted to dB;
+- per-frequency temporal-median residual in dB; and
+- nearest-rank 95th-percentile linear power converted to dB.
+
+The blind Doppler tracker consumes a producer-neutral spectrogram slice through
+a narrow public port. The integration adapter selects the v0.2
+`temporal_median_residual_db` layer and preserves the exact waterfall input
+identity, segment, receiver, frequency axis, time axis, and power-reference
+label. Analysis code does not import dashboard or persistence implementations,
+and the waterfall producer does not import the tracker.
+
+The basic tracker extracts bounded sub-bin peaks, links them with explicit
+time/frequency continuity and gap limits, fits robust constant, linear, and
+quadratic paths, and publishes only a bounded top-K candidate set. Advanced
+evidence may add held-out de-Doppler scores, stationary/opposite/time-shuffle
+controls, multi-track peeling, held-out comb support, broadband edge/texture
+motion, and dual-receiver common-motion evidence. Missing advanced inputs are
+represented as unavailable evidence; they are never synthesized.
+
+TLE association is a separate post-blind step. The immutable blind-evidence
+identity must be closed before ephemeris candidates are introduced, ambiguous
+matches remain explicit, and no TLE match may retroactively change the blind
+candidate or its controls.
+
+### Dashboard semantics
+
+The recording view and API will expose one selected waterfall layer at a time
+(`average`, `residual`, or `high-percentile`), overlay the bounded Doppler paths,
+and show frequency, time, drift rate, acceleration, duration, SNR, residual,
+coverage, and stationary-control facts. Layer changes fetch a separately bounded
+projection; the API does not duplicate all three durable matrices in one response.
+The UI must say
+**candidate Doppler evidence** and must not call a ridge, threshold crossing, or
+TLE association a confirmed Starlink beacon. Existing waterfall v0.1 and V1–V5
+dashboard routes remain immutable; the new view is additive.
+
+### Promotion gates
+
+Production promotion requires all of the following:
+
+- exact codec round trips and immutable replay/conflict rejection;
+- component tests for stationary, positive/negative linear, quadratic,
+  intermittent, crossing, broadband, edge-truncated, AGC-step, and noise cases;
+- a real-recording back-process proving bounded runtime, memory, coverage, and
+  cancellation behavior;
+- dashboard browser tests for all layers, overlays, empty evidence, malformed
+  evidence, and candidate-only language;
+- independently calibrated null and injected-signal corpora before any
+  detection threshold is introduced; and
+- integration-steward review of migration, deployment, dependency, and release
+  changes.
+
+### Reference boundary
+
+`leo-tracker` revision
+`0bb80d14759fd8496b74e7d3219a690be18565a6` remains a numerical oracle only.
+Redux may freeze derived test expectations with provenance, but no Redux runtime
+module imports or executes `leo-tracker`.
+
 ## 2026-08-17 — Provisional reproduction of the leo-tracker report fire rule
 
 **Status:** accepted for historical comparison and compatible Redux back-processing;

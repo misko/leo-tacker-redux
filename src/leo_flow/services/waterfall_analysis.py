@@ -49,6 +49,12 @@ class WaterfallAnalysisCommitterV0_1(Protocol):
     ) -> ArtifactRef: ...
 
 
+class WaterfallAnalysisPreparerV0_1(Protocol):
+    """Narrow worker port; enhanced preparations remain a v0.1 subtype."""
+
+    def prepare(self, lease: JobLease) -> PreparedWaterfallAnalysisV0_1: ...
+
+
 class WaterfallAnalysisJobPreparerV0_1:
     def __init__(
         self, reader: RecordingObjectReader, analyzer: WaterfallAnalyzerV0_1
@@ -71,7 +77,7 @@ class FencedWaterfallAnalysisWorkerV0_1:
     def __init__(
         self,
         jobs: JobLeaseRepository,
-        preparer: WaterfallAnalysisJobPreparerV0_1,
+        preparer: WaterfallAnalysisPreparerV0_1,
         committer: WaterfallAnalysisCommitterV0_1,
         *,
         worker_id: str,

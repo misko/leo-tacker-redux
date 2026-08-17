@@ -33,7 +33,7 @@
       "config": {
         "source_path": "deploy/dashboard-v1/dashboard.json",
         "destination_path": "/etc/leo-flow/dashboard.json",
-        "sha256": "sha256:7ac86f5ddbc0daf02ec3ba023755b45d15ebaf1adc355b0c61639db0ed5f0028"
+        "sha256": "sha256:4a7fa67fe8fc218a3ef2eabf812b27c848b816eaa9577312532c8dcb4b3ff30e"
       }
     },
     "ephemeris": {
@@ -53,7 +53,7 @@
       "offhost_config": {
         "source_path": "deploy/offhost-qualification/qualification.example.json",
         "destination_path": "/etc/leo-flow/offhost-qualification.json",
-        "sha256": "sha256:5708984144788d39a75b89bd630b8d026a28d0cd2963a1581309908dd6c502d3"
+        "sha256": "sha256:1d6ad0cc1a455dee7beaf50cae1c84566c76c94b66fd5502da3f16fd97144c4b"
       }
     },
     "health": {
@@ -98,7 +98,7 @@
         "unit": "leo-dashboard.service",
         "source_path": "deploy/dashboard-v1/leo-dashboard.service",
         "destination_path": "/etc/systemd/system/leo-dashboard.service",
-        "sha256": "sha256:84ea70efec799165a2d25a508928d95efa42b52fc2239fc769754ef485b11152"
+        "sha256": "sha256:2539f64d26301307d27163154e4b2d0576d678d015b4b61d25d86c617064c43b"
       },
       {
         "unit": "leo-storage-capacity.service",

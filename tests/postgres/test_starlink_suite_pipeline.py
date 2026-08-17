@@ -11,12 +11,15 @@ from leo_flow.adapters.dashboard_recording_postgres import (
     PostgresRecordingStarlinkSuiteProjectionWriterV0_2,
 )
 from leo_flow.adapters.starlink_suite_postgres import (
-    AtomicPostgresStarlinkSuiteCommitterV0_2,
+    AtomicPostgresCombinedStarlinkSuiteCommitterV0_2,
     PostgresStarlinkSuiteCatalogV0_2,
     PostgresStarlinkSuiteProjectionWorkRepositoryV0_2,
 )
 from leo_flow.analysis.recording.starlink_suite_persistence import (
     DurableStarlinkSuiteStoreV0_2,
+)
+from leo_flow.analysis.recording.starlink_surrogate_null import (
+    starlink_search_grid_v0_1,
 )
 from leo_flow.application.starlink_suite_projection_work import (
     StarlinkSuiteDashboardProjectionWorkerV0_2,
@@ -28,11 +31,22 @@ from leo_flow.contracts.starlink_suite_pipeline import (
     StarlinkDetectorSuiteRequestV0_2,
     StarlinkSuiteRecordingState,
 )
+from leo_flow.contracts.starlink_surrogate_null import V0_1
+from leo_flow.contracts.starlink_surrogate_null_pipeline import (
+    StarlinkSurrogateNullRecordingBundleV0_1,
+    StarlinkSurrogateNullRecordingState,
+)
 from leo_flow.jobs import JobType, StaleLeaseError
 from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
 from leo_flow.services.starlink_suite_analysis import (
-    PreparedStarlinkSuiteAnalysisV0_2,
     starlink_suite_analysis_payload,
+)
+from leo_flow.services.starlink_suite_surrogate_analysis import (
+    PreparedCombinedStarlinkSuiteAnalysisV0_2,
+)
+from leo_flow.services.starlink_surrogate_null_analysis import (
+    PreparedStarlinkSurrogateNullAnalysisV0_1,
+    starlink_surrogate_null_request_v0_1,
 )
 from leo_flow.storage.filesystem import FileSystemBlobStore
 from leo_station.analysis_v1 import (
@@ -93,15 +107,39 @@ def test_clipped_suite_is_durable_fenced_projected_and_explicit(
     assert lease is not None
     blobs = FileSystemBlobStore(tmp_path / "cas")
     analysis_connect = _connect(postgres_dsn, "leo_analysis")
-    committer = AtomicPostgresStarlinkSuiteCommitterV0_2(blobs, analysis_connect)
-    result = committer.commit_starlink_suite(
-        lease, PreparedStarlinkSuiteAnalysisV0_2(request, bundle)
+    profile = starlink_suite_profile_v0_2(1_250_000.0)
+    surrogate_request = starlink_surrogate_null_request_v0_1(
+        request, bundle, starlink_search_grid_v0_1(profile.config)
     )
+    surrogate_token = canonical_digest(
+        {"request_digest": surrogate_request.digest, "state": "not_evaluated"}
+    ).value
+    surrogate_bundle = StarlinkSurrogateNullRecordingBundleV0_1(
+        SchemaRef(StarlinkSurrogateNullRecordingBundleV0_1.SCHEMA_ID, V0_1),
+        f"slsnullrec_{surrogate_token[:32]}",
+        recording.recording_id,
+        recording.identity_digest(),
+        surrogate_request.source_suite_ref,
+        surrogate_request.source_suite_request_digest,
+        surrogate_request.digest,
+        StarlinkSurrogateNullRecordingState.NOT_EVALUATED,
+        (),
+        ("clipped-pilot-band",),
+        None,
+    )
+    prepared = PreparedCombinedStarlinkSuiteAnalysisV0_2(
+        request,
+        bundle,
+        PreparedStarlinkSurrogateNullAnalysisV0_1(surrogate_request, surrogate_bundle),
+        None,
+    )
+    committer = AtomicPostgresCombinedStarlinkSuiteCommitterV0_2(
+        blobs, analysis_connect
+    )
+    result = committer.commit_starlink_suite(lease, prepared)
     assert jobs.snapshot(job_id).result_ref == result
     with pytest.raises(StaleLeaseError):
-        committer.commit_starlink_suite(
-            lease, PreparedStarlinkSuiteAnalysisV0_2(request, bundle)
-        )
+        committer.commit_starlink_suite(lease, prepared)
 
     catalog = PostgresStarlinkSuiteCatalogV0_2(analysis_connect)
     durable = DurableStarlinkSuiteStoreV0_2(blobs, catalog)
@@ -133,9 +171,23 @@ def test_clipped_suite_is_durable_fenced_projected_and_explicit(
         work_row = connection.execute(
             "SELECT state,attempt FROM starlink_detector_suite_projection_work"
         ).fetchone()
+        surrogate_row = connection.execute(
+            "SELECT result_state,stream_count,method_count,surrogate_score_count "
+            "FROM recording_starlink_surrogate_null"
+        ).fetchone()
+        qam_count = connection.execute(
+            "SELECT count(*) AS count FROM recording_starlink_pilot_constellation"
+        ).fetchone()["count"]
     assert catalog_row == {
         "result_state": "not_evaluated",
         "suite_count": 0,
         "method_count": 0,
     }
     assert work_row == {"state": "succeeded", "attempt": 1}
+    assert surrogate_row == {
+        "result_state": "not_evaluated",
+        "stream_count": 0,
+        "method_count": 0,
+        "surrogate_score_count": 0,
+    }
+    assert qam_count == 0

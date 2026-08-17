@@ -963,9 +963,15 @@ def _qualify_units(
     }
     for unit, source in runtime_credentials.items():
         values = _directive_values(texts.get(unit, ""), "Service", "LoadCredential")
+        expected_credentials: tuple[str, ...] = (f"catalog-dsn:{source}",)
+        if unit == "leo-dashboard.service":
+            expected_credentials = (
+                f"catalog-dsn:{source}",
+                "analysis-cas-root:/etc/leo-flow/secrets/dashboard-analysis-cas-root",
+            )
         gate(
             f"wiring.{unit}.credential",
-            values == (f"catalog-dsn:{source}",),
+            values == expected_credentials,
             source.name,
         )
 
@@ -981,6 +987,15 @@ def _qualify_units(
             == {manifest.cas_group_name},
             str(cas_root) if cas_root is not None else "missing",
         )
+    dashboard_text = texts.get("leo-dashboard.service", "")
+    gate(
+        "wiring.leo-dashboard.service.cas",
+        cas_root is not None
+        and _directive_words(dashboard_text, "Service", "ReadOnlyPaths")
+        == {str(cas_root)}
+        and not _directive_words(dashboard_text, "Service", "ReadWritePaths"),
+        str(cas_root) if cas_root is not None else "missing",
+    )
 
     health_exec = _exec_arguments(texts.get("leo-flow-health.service", ""))
     gate(
@@ -1017,13 +1032,19 @@ def _qualify_units(
 
 def _credential_ref_gate(identity: str, config: object, gate: Any) -> None:
     refs: object = getattr(getattr(config, "runtime", None), "secret_refs", None)
+    expected_names = (
+        ("catalog-dsn", "analysis-cas-root")
+        if identity == "dashboard"
+        else ("catalog-dsn",)
+    )
     passed = (
         isinstance(refs, tuple)
-        and len(refs) == 1
-        and getattr(refs[0], "provider", None) == "systemd-credential"
-        and getattr(refs[0], "name", None) == "catalog-dsn"
+        and tuple(getattr(item, "name", None) for item in refs) == expected_names
+        and all(
+            getattr(item, "provider", None) == "systemd-credential" for item in refs
+        )
     )
-    gate(f"{identity}.credential_reference", passed, "catalog-dsn")
+    gate(f"{identity}.credential_reference", passed, ",".join(expected_names))
 
 
 def _directive_values(text: str, section: str, key: str) -> tuple[str, ...]:

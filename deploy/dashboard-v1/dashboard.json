@@ -6,7 +6,8 @@
     "poll_interval_s": 0.1,
     "shutdown_timeout_s": 5.0,
     "secret_refs": [
-      {"provider": "systemd-credential", "name": "catalog-dsn"}
+      {"provider": "systemd-credential", "name": "catalog-dsn"},
+      {"provider": "systemd-credential", "name": "analysis-cas-root"}
     ]
   },
   "adapters": {

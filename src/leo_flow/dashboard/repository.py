@@ -27,6 +27,10 @@ from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardView,
     CaptureBatchTimeRangeQuery,
 )
+from leo_flow.contracts.dashboard_doppler import (
+    DopplerWaterfallLayer,
+    RecordingDopplerVisualizationViewV0_1,
+)
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
@@ -131,6 +135,16 @@ class RecordingWaterfallProjection:
             raise ValueError("projection sequence must be non-negative")
 
 
+@dataclass(frozen=True)
+class RecordingDopplerVisualizationProjection:
+    view: RecordingDopplerVisualizationViewV0_1
+    projection_sequence: int
+
+    def __post_init__(self) -> None:
+        if self.projection_sequence < 0:
+            raise ValueError("projection sequence must be non-negative")
+
+
 class InMemoryDashboardRepository:
     """DTO-only projection reader.
 
@@ -152,6 +166,9 @@ class InMemoryDashboardRepository:
         capture_batches: Sequence[CaptureBatchProjection] = (),
         recording_capture_details: Sequence[RecordingCaptureDetailProjection] = (),
         recording_waterfalls: Sequence[RecordingWaterfallProjection] = (),
+        recording_doppler_visualizations: Sequence[
+            RecordingDopplerVisualizationProjection
+        ] = (),
         storage_health: StorageHealth = _UNAVAILABLE_STORAGE,
         page_size: int = 50,
     ) -> None:
@@ -166,6 +183,7 @@ class InMemoryDashboardRepository:
         self._capture_batches = capture_batches
         self._recording_capture_details = recording_capture_details
         self._recording_waterfalls = recording_waterfalls
+        self._recording_doppler_visualizations = recording_doppler_visualizations
         self._storage_health = storage_health
         self._page_size = page_size
 
@@ -257,6 +275,27 @@ class InMemoryDashboardRepository:
                 f"waterfall for recording {recording_id} was not found"
             )
         return max(matches, key=lambda item: item.projection_sequence).view
+
+    def recording_doppler_visualization(
+        self, recording_id: RecordingId, layer: DopplerWaterfallLayer
+    ) -> RecordingDopplerVisualizationViewV0_1:
+        matches = [
+            row
+            for row in self._recording_doppler_visualizations
+            if row.view.recording_id == recording_id
+            and row.view.selected_layer is layer
+        ]
+        if not matches:
+            raise DashboardNotFound(
+                f"Doppler visualization for recording {recording_id} was not found"
+            )
+        latest = max(matches, key=lambda item: item.projection_sequence)
+        if any(
+            row != latest and row.projection_sequence == latest.projection_sequence
+            for row in matches
+        ):
+            raise RuntimeError("projection sequence collision")
+        return latest.view
 
     def recording_features(
         self, recording_id: RecordingId, selector: str, cursor: str | None = None
