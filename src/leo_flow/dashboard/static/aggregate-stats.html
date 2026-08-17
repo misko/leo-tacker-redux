@@ -14,7 +14,7 @@
     <div>
       <p class="eyebrow"><a href="/">LEO Flow / dashboard</a></p>
       <h1>Aggregate score statistics</h1>
-      <p class="lede">Observed Redux detector-suite candidate scores on their native bounded domain.</p>
+      <p class="lede">Exact Qin pilot scores compared with identically searched precommitted surrogate patterns from the new continuous dwell stream.</p>
     </div>
     <div id="aggregate-status" class="system-state" data-state="loading" role="status" aria-live="polite">
       <span class="state-dot" aria-hidden="true"></span>
@@ -38,9 +38,10 @@
         <form id="density-window-form" class="window-controls">
           <label for="density-window-hours">UTC time window</label>
           <select id="density-window-hours" name="density-window-hours">
+            <option value="continuous" selected>All new continuous samples</option>
             <option value="2">Past 2 hours</option>
             <option value="6">Past 6 hours</option>
-            <option value="8" selected>Past 8 hours</option>
+            <option value="8">Past 8 hours</option>
             <option value="24">Past 24 hours</option>
             <option value="168">Past 7 days</option>
             <option value="720">Past 30 days</option>
@@ -49,8 +50,7 @@
         </form>
       </div>
       <p id="density-window-label" class="interval-label">UTC interval loading…</p>
-      <p class="availability-note">One point is exactly one recording + scan segment + radio + RX chain + upper/lower edge + method. A point is not a whole recording and is not duplicated across strata. The candidate score summarizes the detector's 5–6 supported internal frames for that single scan section. The dashed v0.2 statistic evaluates the rolled template only at the target-selected epoch/CFO; it is not an independently searched null distribution. The x-axis is the native score domain [0,1], and each visible series is normalized to unit histogram area. These are not calibrated beacon detections.</p>
-      <p class="availability-note">The additive symmetric rolled-template full-search statistic is not present in historical v0.2 rows; it will be shown only after a recording has been explicitly backprocessed and projected. This page never substitutes the older target-conditioned value for that missing product.</p>
+      <p class="availability-note">The earliest possible sample is the first successful dwell from the continuous service; historical recordings are excluded. One Qin point is one recording + segment + radio + RX chain + edge + method. Each surrogate point has that same identity plus one precommitted pattern. Qin and every surrogate run the identical bounded search. Each visible series is normalized independently to unit histogram area on [0,1]. The finite surrogate ensemble is useful comparative evidence, but it is not yet a calibrated population null and does not produce a beacon verdict.</p>
       <fieldset id="method-selector" class="method-selector">
         <legend>Visible algorithms</legend>
       </fieldset>
@@ -64,15 +64,15 @@
         <label for="density-edge">Pilot edge
           <select id="density-edge"><option value="all">Upper + lower</option><option value="lower">Lower</option><option value="upper">Upper</option></select>
         </label>
-        <label class="score-kind-toggle"><input id="show-candidate" type="checkbox" checked> Candidate scores</label>
-        <label class="score-kind-toggle"><input id="show-control" type="checkbox" checked> Rolled template at target-selected hypothesis</label>
+        <label class="score-kind-toggle"><input id="show-qin" type="checkbox" checked> Exact Qin scores</label>
+        <label class="score-kind-toggle"><input id="show-surrogate" type="checkbox" checked> Precommitted surrogate scores</label>
       </form>
       <div id="density-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading normalized histograms…</div>
       <figure class="density-figure">
         <div class="density-canvas-wrap">
           <canvas id="density-canvas" width="1200" height="560" aria-describedby="density-caption"></canvas>
         </div>
-        <figcaption id="density-caption">Density per unit score. Solid lines are candidate scores; dashed lines are conditioned same-section controls. Curves with equal area may have different point counts.</figcaption>
+        <figcaption id="density-caption">Density per unit score. Solid lines are exact Qin scores; dashed lines are independently searched surrogate-pattern scores. Curves have equal area but may have different point counts.</figcaption>
       </figure>
     </section>
 

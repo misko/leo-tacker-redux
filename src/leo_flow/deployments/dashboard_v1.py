@@ -25,6 +25,9 @@ from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionQueryPortV0_2,
     ScoreDistributionQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_surrogate_distribution import (
+    SurrogateScoreDistributionQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.ports import DashboardQueryPort
 from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPortV0_1
@@ -48,6 +51,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV9,
     DashboardJsonApplicationV10,
     DashboardJsonApplicationV11,
+    DashboardJsonApplicationV12,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -126,6 +130,14 @@ class DashboardV11QueryPort(
     """Additive published edge-pilot constellation read surface."""
 
 
+class DashboardV12QueryPort(
+    DashboardV11QueryPort,
+    SurrogateScoreDistributionQueryPortV0_1,
+    Protocol,
+):
+    """Additive aggregate Qin-versus-surrogate read surface."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -155,7 +167,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV11QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV12QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -186,6 +198,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV11Quer
     doppler = None
     surrogate_nulls = None
     pilot_constellations = None
+    surrogate_distributions = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
         from leo_flow.adapters.dashboard_doppler_projection import (
@@ -243,11 +256,19 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV11Quer
             constellation_store,
             constellation_catalog,
         )
+        from leo_flow.adapters.dashboard_surrogate_distribution import (
+            DurableDashboardSurrogateDistributionV0_1,
+        )
+
+        surrogate_distributions = DurableDashboardSurrogateDistributionV0_1(
+            connect, blobs
+        )
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
         surrogate_nulls=surrogate_nulls,
         pilot_constellations=pilot_constellations,
+        surrogate_distributions=surrogate_distributions,
     )
 
 
@@ -272,7 +293,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV11QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV12QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -283,19 +304,22 @@ def _build_dashboard(
         config,
         readiness_checked_server,
         DashboardUiApplication(
-            DashboardJsonApplicationV11(
-                DashboardJsonApplicationV10(
-                    DashboardJsonApplicationV9(
-                        DashboardJsonApplicationV8(
-                            DashboardJsonApplicationV7(
-                                DashboardJsonApplicationV6(
-                                    DashboardJsonApplicationV5(
-                                        DashboardJsonApplicationV4(
-                                            DashboardJsonApplicationV3(
-                                                queries,
-                                                queries,
-                                                queries,
-                                                queries,
+            DashboardJsonApplicationV12(
+                DashboardJsonApplicationV11(
+                    DashboardJsonApplicationV10(
+                        DashboardJsonApplicationV9(
+                            DashboardJsonApplicationV8(
+                                DashboardJsonApplicationV7(
+                                    DashboardJsonApplicationV6(
+                                        DashboardJsonApplicationV5(
+                                            DashboardJsonApplicationV4(
+                                                DashboardJsonApplicationV3(
+                                                    queries,
+                                                    queries,
+                                                    queries,
+                                                    queries,
+                                                    queries,
+                                                ),
                                                 queries,
                                             ),
                                             queries,

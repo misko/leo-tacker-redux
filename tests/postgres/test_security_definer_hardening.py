@@ -82,6 +82,7 @@ DEFINER_FUNCTIONS = {
     "read_latest_recording_starlink_surrogate_null",
     "read_recording_starlink_pilot_constellation",
     "read_latest_recording_starlink_pilot_constellation",
+    "read_dashboard_surrogate_null_interval_v1",
     "publish_tracking_input_snapshot",
     "publish_tracking_model_snapshot",
     "publish_dwell_request",
@@ -180,6 +181,7 @@ CAPTURE_FUNCTIONS = {
     "register_live_object_blob",
 }
 DASHBOARD_FUNCTIONS = {
+    "read_dashboard_surrogate_null_interval_v1",
     "read_capture_attempt_radio_lifecycle_fact",
     "read_recording_doppler_analysis",
     "read_recording_waterfall_v0_2",

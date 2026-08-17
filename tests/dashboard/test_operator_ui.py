@@ -96,20 +96,20 @@ def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() 
         'id="density-radio"',
         'id="density-receiver"',
         'id="density-edge"',
-        'id="show-control"',
+        'id="show-surrogate"',
         'id="density-canvas"',
         'id="score-summary-table"',
-        "native score domain [0,1]",
-        "not calibrated beacon detections",
-        "not an independently searched null distribution",
-        "Rolled template at target-selected hypothesis",
-        "shown only after a recording has been explicitly backprocessed",
+        "first successful dwell from the continuous service",
+        "identical bounded search",
+        "not yet a calibrated population null",
+        "Precommitted surrogate scores",
     ):
         assert required in html
-    assert "/api/v8/score-distributions" in javascript
+    assert "/api/v12/surrogate-score-distributions" in javascript
+    assert "CONTINUOUS_SAMPLE_START_UTC_NS" in javascript
     assert "visibleMethods" in javascript
     assert "unit histogram area" in html
-    assert "recording + scan segment + radio + RX chain" in html
+    assert "recording + segment + radio + RX chain" in html
     assert "innerHTML" not in javascript
     assert "eval(" not in javascript
     assert "http://" not in html and "https://" not in html

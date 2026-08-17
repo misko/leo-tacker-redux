@@ -1,6 +1,7 @@
 "use strict";
 
 const HOUR_NS = 3_600_000_000_000n;
+const CONTINUOUS_SAMPLE_START_UTC_NS = 1_786_999_786_798_682_805n;
 const METHOD_COLORS = Object.freeze([
   "#84e6b0", "#ffca6b", "#73b7ff", "#f28cb1",
   "#c6a0f6", "#8bd5ca", "#ed8796", "#a6da95",
@@ -20,9 +21,7 @@ function appendText(parent, tag, text, className = "") {
 }
 
 function scoreKindLabel(scoreKind) {
-  return scoreKind === "conditioned-control"
-    ? "rolled template at target-selected hypothesis"
-    : scoreKind;
+  return scoreKind === "qin" ? "exact Qin" : "precommitted surrogates";
 }
 
 function formatUtcNs(value) {
@@ -32,7 +31,11 @@ function formatUtcNs(value) {
 
 function selectedBounds() {
   const stop = BigInt(Date.now()) * 1_000_000n;
-  return { start: stop - BigInt(byId("density-window-hours").value) * HOUR_NS, stop };
+  const selection = byId("density-window-hours").value;
+  const requested = selection === "continuous"
+    ? CONTINUOUS_SAMPLE_START_UTC_NS
+    : stop - BigInt(selection) * HOUR_NS;
+  return { start: requested < CONTINUOUS_SAMPLE_START_UTC_NS ? CONTINUOUS_SAMPLE_START_UTC_NS : requested, stop };
 }
 
 async function fetchJson(path) {
@@ -96,8 +99,8 @@ function filteredStrata() {
   const receiver = byId("density-receiver").value;
   const edge = byId("density-edge").value;
   const kinds = new Set();
-  if (byId("show-candidate").checked) kinds.add("candidate");
-  if (byId("show-control").checked) kinds.add("conditioned-control");
+  if (byId("show-qin").checked) kinds.add("qin");
+  if (byId("show-surrogate").checked) kinds.add("surrogate");
   return strata.filter((item) =>
     visibleMethods.has(item.method)
       && (radio === "all" || item.radio_id === radio)
@@ -218,9 +221,9 @@ function renderPlot(series) {
       context.lineTo(right, y);
     });
     context.strokeStyle = color;
-    context.lineWidth = item.score_kind === "candidate" ? 2.3 : 1.7;
-    context.setLineDash(item.score_kind === "candidate" ? [] : [7, 5]);
-    context.globalAlpha = item.score_kind === "candidate" ? 0.95 : 0.75;
+    context.lineWidth = item.score_kind === "qin" ? 2.3 : 1.7;
+    context.setLineDash(item.score_kind === "qin" ? [] : [7, 5]);
+    context.globalAlpha = item.score_kind === "qin" ? 0.95 : 0.75;
     context.stroke();
   }
   context.setLineDash([]);
@@ -231,16 +234,16 @@ function renderAll() {
   const series = aggregateSeries();
   renderSummary(series);
   renderPlot(series);
-  const candidatePoints = series
-    .filter((item) => item.score_kind === "candidate")
+  const qinPoints = series
+    .filter((item) => item.score_kind === "qin")
     .reduce((total, item) => total + item.point_count, 0);
-  const controls = series
-    .filter((item) => item.score_kind === "conditioned-control")
+  const surrogatePoints = series
+    .filter((item) => item.score_kind === "surrogate")
     .reduce((total, item) => total + item.point_count, 0);
   setAppState(
     series.length ? "ready" : "empty",
     series.length
-      ? `${candidatePoints.toLocaleString()} candidate points and ${controls.toLocaleString()} target-conditioned rolled-template points in ${series.length} visible series.`
+      ? `${qinPoints.toLocaleString()} exact Qin points and ${surrogatePoints.toLocaleString()} identically searched surrogate points in ${series.length} visible series.`
       : "No score series match the selected strata.",
   );
 }
@@ -250,8 +253,8 @@ async function refresh() {
   byId("density-window-label").textContent = `UTC [${formatUtcNs(bounds.start)}, ${formatUtcNs(bounds.stop)})`;
   setAppState("loading", "Loading exact scan-section distributions…");
   try {
-    const payload = await fetchJson(`/api/v8/score-distributions?start_utc_ns=${bounds.start}&stop_utc_ns=${bounds.stop}`);
-    if (payload.point_identity !== "recording+segment+radio+receiver-chain+edge+method") {
+    const payload = await fetchJson(`/api/v12/surrogate-score-distributions?start_utc_ns=${bounds.start}&stop_utc_ns=${bounds.stop}`);
+    if (payload.point_identity !== "recording+segment+radio+receiver-chain+edge+method+pattern") {
       throw new Error("Dashboard returned an unsupported score-point identity");
     }
     strata = payload.distributions || [];
@@ -271,7 +274,7 @@ async function refresh() {
 }
 
 byId("density-window-form").addEventListener("submit", (event) => { event.preventDefault(); refresh(); });
-for (const id of ["density-radio", "density-receiver", "density-edge", "show-candidate", "show-control"]) {
+for (const id of ["density-radio", "density-receiver", "density-edge", "show-qin", "show-surrogate"]) {
   byId(id).addEventListener("change", renderAll);
 }
 window.addEventListener("resize", () => renderPlot(aggregateSeries()));

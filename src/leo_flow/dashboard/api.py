@@ -35,6 +35,9 @@ from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionQueryPortV0_2,
     ScoreDistributionQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_surrogate_distribution import (
+    SurrogateScoreDistributionQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.ports import DashboardQueryPort
@@ -551,6 +554,40 @@ class DashboardJsonApplicationV11:
             200,
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
+        )
+
+
+class DashboardJsonApplicationV12:
+    """Add bounded aggregate Qin-versus-surrogate distributions."""
+
+    _ROUTE = "/api/v12/surrogate-score-distributions"
+
+    def __init__(
+        self,
+        v11: DashboardJsonApplicationV11,
+        distributions: SurrogateScoreDistributionQueryPortV0_1,
+    ) -> None:
+        self._v11 = v11
+        self._distributions = distributions
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._ROUTE:
+            return self._v11.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            payload = self._distributions.surrogate_score_distributions(
+                _time_query(request.query)
+            )
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
         )
 
 

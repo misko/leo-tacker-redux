@@ -48,6 +48,10 @@ from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionViewV0_2,
     ScoreDistributionViewV0_1,
 )
+from leo_flow.contracts.dashboard_surrogate_distribution import (
+    SurrogateScoreDistributionQueryPortV0_1,
+    SurrogateScoreDistributionViewV0_1,
+)
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.radio_lifecycle import CaptureAttemptLifecycleDashboardViewV0_1
@@ -92,6 +96,7 @@ class PostgresDashboardRepository:
         surrogate_nulls: RecordingStarlinkSurrogateNullQueryPortV0_1 | None = None,
         pilot_constellations: RecordingStarlinkPilotConstellationQueryPortV0_1
         | None = None,
+        surrogate_distributions: SurrogateScoreDistributionQueryPortV0_1 | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -110,6 +115,14 @@ class PostgresDashboardRepository:
         self._doppler = doppler
         self._surrogate_nulls = surrogate_nulls
         self._pilot_constellations = pilot_constellations
+        self._surrogate_distributions = surrogate_distributions
+
+    def surrogate_score_distributions(
+        self, query: TimeRangeQuery
+    ) -> SurrogateScoreDistributionViewV0_1:
+        if self._surrogate_distributions is None:
+            raise DashboardNotFound("surrogate score distributions are unavailable")
+        return self._surrogate_distributions.surrogate_score_distributions(query)
 
     def recording_starlink_pilot_constellation(
         self, query: StarlinkPilotConstellationQueryV0_1

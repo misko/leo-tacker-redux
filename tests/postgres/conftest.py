@@ -54,6 +54,7 @@ _EXPECTED_MIGRATIONS = (
     "0035_starlink_surrogate_null_catalog.sql",
     "0036_starlink_pilot_constellation_catalog.sql",
     "0037_focused_analysis_during_capture.sql",
+    "0038_dashboard_surrogate_score_distributions.sql",
 )
 
 
