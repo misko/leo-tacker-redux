@@ -40,5 +40,8 @@ not campaign evidence or replay policy.
 
 The user timer runs one bounded slice per minute. Exit 75 means the bounded
 slice has retryable work and is considered a successful timer invocation;
-parked work exits 4 and requires operator inspection. The timer must only be
-enabled from a sealed release containing migration 0033.
+parked work exits 4 and requires operator inspection. A same-campaign timer
+may run from sealed Release F against migration 0032. Processing a historical
+campaign while another campaign captures requires both a sealed release that
+selects the v2 gate and live migration 0033; never enable that cross-campaign
+mode from Release F.

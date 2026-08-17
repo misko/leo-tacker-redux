@@ -2810,3 +2810,21 @@ the function owner was `leo_routine_owner`, its search path was fixed to
 The disposable database was dropped and verified absent. No live migration,
 release, service, database, dashboard, radio, campaign journal, or CAS state
 was changed by this source audit.
+
+V5 recurring online-analysis checkpoint (2026-08-17): the sealed Release-F
+timer completed its third exact window, success indices `72..107`, while the
+synchronized capture service remained active. All 72 FeatureSet, 72 waterfall,
+and 72 Starlink-suite compute jobs succeeded. Dashboard closure independently
+proved 72 complete recording details with 3,456 feature rows, 72 complete
+waterfalls with 16 tiles and 262,144 cells each, and 72 Starlink v0.2 views.
+The latter contain exactly 24 clipped `not_evaluated` recordings and 48
+candidate recordings with 768 streams and 6,144 method outputs; every
+calibrated-detection count remains null. The analysis slice exited zero, with
+no failed job, and capture had advanced beyond 117/936 with no halt. Durable
+window evidence is maintained at
+`/home/mouse9911/.local/state/leo-flow/evidence/main-gauss-r20-r21-v5-online-analysis/FIRST_WINDOW_VALIDATION.md`.
+
+The online-analysis runbook now distinguishes the active Release-F/0032
+same-campaign timer from future cross-campaign historical backfill. Only the
+latter requires a sealed release selecting the v2 gate plus live migration
+0033; Release F must never be used for that cross-campaign mode.
