@@ -2924,3 +2924,13 @@ after the correction was 886 passed/981 environment-skipped, strict mypy on
 311 source files, and clean Ruff/format on 573 source/test files. No live
 threshold, database, dashboard, service, capture journal, CAS object, or radio
 state was changed by this read-only inventory and source correction.
+
+The eighth V5 online-analysis window (`252..287`) closed with exact digest
+`c09b374be988c5014f4f4bab9d0e595298c14ca6d90d7267725b4667cfc441fc`.
+The sealed Release-F slice exited zero after 9m27s with no parked work.
+Independent dashboard reads proved 72 complete FeatureSet projections with
+3,456 rows, 72 complete 16-tile/262,144-cell waterfalls, and 72 Starlink v0.2
+views containing 24 clipped `not_evaluated` and 48 candidate recordings, 768
+streams and 6,144 method outputs. All calibrated-detection counts remain null.
+Capture advanced from 289 to 307 during analysis and to 310 during the audit,
+with 620/620 unique recordings, maximum skew still 61,534,172 ns, and no halt.
