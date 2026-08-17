@@ -1,0 +1,134 @@
+{
+  "archive": {
+    "root": "/mnt/qnap01/mouse9911/leo-store/2026_08_17_RETRO_QAM",
+    "sha256sums_sha256": "546f9eb3b94968aecc06a530cbd063166860e91bce2185200b48446a4a280c10"
+  },
+  "archive_objects": [
+    {
+      "relative_path": "oracle/ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z.json",
+      "sha256": "4fb035977fa7f124176449ff8ca72200edd2c95a61b629e56ff2ab8f64eb163b"
+    },
+    {
+      "relative_path": "oracle/ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z.npz",
+      "sha256": "9b2a463f591e815799d8e5ddb2e932d0126aed20e08c447ac826b31aee6038bb"
+    },
+    {
+      "relative_path": "oracle/ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z.png",
+      "sha256": "753e1f63ccaa9f6086e1f4009c339c3a0ddeeae59b191f99a49bc9a6439cb841"
+    },
+    {
+      "relative_path": "oracle/followup.json",
+      "sha256": "89b901207ed6e3c3dbde531d6dc60b9b0a498677065e51c8cbe6fa71a3b37002"
+    },
+    {
+      "relative_path": "provenance/manifest.json",
+      "sha256": "37500e3620fc9795eca3847626e308a24def601bfafa50f8311d868b465b0236"
+    },
+    {
+      "relative_path": "provenance/source-manifest.json",
+      "sha256": "6972b083a51c0e23c38d747145d665bc9d2572cacf52e5df08623880099cc38a"
+    },
+    {
+      "relative_path": "provenance/verification.json",
+      "sha256": "ea638a69cdeeaee2009ff3b0d61d705eadbefb155aea754ccde33961ef126720"
+    },
+    {
+      "relative_path": "raw/clip-002.ci16",
+      "sha256": "6d105ae645c0ac91e0e93ebc4ac5b456890025ebfb9bb9e1344423dc27c7c3fa"
+    },
+    {
+      "relative_path": "redux/qam_retro_analysis.py",
+      "sha256": "35b59fe28c7852f271b68e3404cf3e587d11670de20aef2f00d23c7e72de9d85"
+    },
+    {
+      "relative_path": "redux/qam_retro_investigation.md",
+      "sha256": "8af4b6447f460cec490ec2141bd9b67bd5a1b79797393e363b09349c975a2ea5"
+    },
+    {
+      "relative_path": "redux/redux_accuracy_comparison.png",
+      "sha256": "f70ccc502bac62ade9c074825581ed5013f04d8521c7b953ffba4a8ea78fb46b"
+    },
+    {
+      "relative_path": "redux/redux_production_vs_refined.png",
+      "sha256": "bce5434affc4c1957dd3230b59b7784acca2d8e11855c35fae34667ccabb9837"
+    },
+    {
+      "relative_path": "redux/results.json",
+      "sha256": "a8cb42f29107698c3c0b01e612107ce6bf489f44dfb6a7f8aef131c1944d5ff8"
+    }
+  ],
+  "fixture_id": "retro-qam-ch4-lower-edge-2026-08-13",
+  "format": {
+    "byte_order": "little",
+    "component_dtype": "int16",
+    "component_order": [
+      "i",
+      "q"
+    ],
+    "layout": [
+      "sample",
+      "receiver",
+      "component"
+    ],
+    "receiver_count": 2,
+    "sample_rate_hz": 2500000
+  },
+  "historical_conditioned_expectations": [
+    {
+      "complete_frame_count": 6,
+      "hard_symbol_accuracy": 0.7483333333333333,
+      "receiver_index": 0,
+      "rms_evm": 0.9425485730171204,
+      "winning_cfo_hz": 364150.8476787003,
+      "winning_epoch_sample": 2063
+    },
+    {
+      "complete_frame_count": 6,
+      "hard_symbol_accuracy": 0.7991666666666667,
+      "receiver_index": 1,
+      "rms_evm": 0.7826223373413086,
+      "winning_cfo_hz": -194343.8743595247,
+      "winning_epoch_sample": 2063
+    }
+  ],
+  "iq_object": {
+    "byte_count": 500200000,
+    "bytes_per_sample": 8,
+    "relative_path": "raw/clip-002.ci16",
+    "sample_count": 62525000,
+    "sha256": "6d105ae645c0ac91e0e93ebc4ac5b456890025ebfb9bb9e1344423dc27c7c3fa"
+  },
+  "recording_id": "ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z",
+  "schema": "org.leo-flow.external-retro-qam-corpus/v1",
+  "scope": {
+    "calibrated_detection": false,
+    "known_published_pilot": true,
+    "payload_decoded": false
+  },
+  "selected_window": {
+    "byte_count": 200000,
+    "byte_offset": 304000000,
+    "clip_start_s": 53.5,
+    "duration_s": 0.01,
+    "sample_count": 25000,
+    "sample_offset": 38000000,
+    "sha256": "a80c3b0d94b95548d9ae0ab5d8243fee8cf6c760ccb6fa4ca4efeb6351176e50",
+    "start_s_in_original_recording": 68.7
+  },
+  "future_revised_search_acceptance": {
+    "asserted_by_current_regression": false,
+    "expected_receiver_winners": [
+      {
+        "receiver_index": 0,
+        "winning_cfo_hz": 364150.8476787003,
+        "winning_epoch_sample": 2063
+      },
+      {
+        "receiver_index": 1,
+        "winning_cfo_hz": -194343.8743595247,
+        "winning_epoch_sample": 2063
+      }
+    ],
+    "status": "pending-revised-search"
+  }
+}
