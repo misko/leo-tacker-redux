@@ -36,6 +36,11 @@ def test_static_routes_are_exact_allow_list_with_safe_content_and_cache_policy()
             "text/javascript; charset=utf-8",
             "public, max-age=300",
         ),
+        "/aggregate-stats": ("text/html; charset=utf-8", "no-store"),
+        "/assets/aggregate-stats.js": (
+            "text/javascript; charset=utf-8",
+            "public, max-age=300",
+        ),
     }
     for path, (content_type, cache_control) in expected.items():
         response = app.handle(JsonRequest("GET", path, {}))
@@ -77,6 +82,29 @@ def test_overview_discloses_duty_candidate_and_calibration_semantics() -> None:
     assert "/api/v6/observation-aggregate" in javascript
     assert "Candidate-positive means score > conditioned control" in javascript
     assert 'starlinkFilter === "detected"' in javascript
+
+
+def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() -> None:
+    app = application()
+    html = app.handle(JsonRequest("GET", "/aggregate-stats", {})).body.decode()
+    javascript = app.handle(
+        JsonRequest("GET", "/assets/aggregate-stats.js", {})
+    ).body.decode()
+    for required in (
+        'id="density-window-hours"',
+        'id="method-selector"',
+        'id="density-canvas"',
+        'id="score-summary-table"',
+        "native score domain [0,1]",
+        "not calibrated beacon detections",
+    ):
+        assert required in html
+    assert "/api/v7/score-distributions" in javascript
+    assert "visibleMethods" in javascript
+    assert "unit histogram area" in html
+    assert "innerHTML" not in javascript
+    assert "eval(" not in javascript
+    assert "http://" not in html and "https://" not in html
 
 
 def test_dedicated_recording_page_is_same_origin_bounded_and_path_validated() -> None:

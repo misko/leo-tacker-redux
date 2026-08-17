@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>LEO Flow · Aggregate statistics</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+  <script src="/assets/aggregate-stats.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#aggregate-main">Skip to aggregate statistics</a>
+  <header class="site-header compact-header">
+    <div>
+      <p class="eyebrow"><a href="/">LEO Flow / dashboard</a></p>
+      <h1>Aggregate score statistics</h1>
+      <p class="lede">Observed Redux detector-suite candidate scores on their native bounded domain.</p>
+    </div>
+    <div id="aggregate-status" class="system-state" data-state="loading" role="status" aria-live="polite">
+      <span class="state-dot" aria-hidden="true"></span>
+      <span id="aggregate-status-text">Loading score distributions…</span>
+    </div>
+  </header>
+
+  <nav class="section-nav" aria-label="Aggregate statistics navigation">
+    <a href="/">Dashboard</a>
+    <a href="#score-density">Score density</a>
+    <a href="#score-summary">Method summary</a>
+  </nav>
+
+  <main id="aggregate-main" tabindex="-1">
+    <section id="score-density" class="hero-panel" aria-labelledby="score-density-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-index">01 / distributions</p>
+          <h2 id="score-density-heading">Overlaid score density</h2>
+        </div>
+        <form id="density-window-form" class="window-controls">
+          <label for="density-window-hours">UTC time window</label>
+          <select id="density-window-hours" name="density-window-hours">
+            <option value="2">Past 2 hours</option>
+            <option value="6">Past 6 hours</option>
+            <option value="8" selected>Past 8 hours</option>
+            <option value="24">Past 24 hours</option>
+            <option value="168">Past 7 days</option>
+            <option value="720">Past 30 days</option>
+          </select>
+          <button type="submit">Refresh</button>
+        </form>
+      </div>
+      <p id="density-window-label" class="interval-label">UTC interval loading…</p>
+      <p class="availability-note">The x-axis is the native score domain [0,1], not a per-method min/max transformation. Each method is normalized to unit histogram area. These are candidate-score distributions, not calibrated beacon detections. Report-era threshold lines are intentionally absent because the live suite uses a different 8 ms search geometry.</p>
+      <fieldset id="method-selector" class="method-selector">
+        <legend>Visible algorithms</legend>
+      </fieldset>
+      <div id="density-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading normalized histograms…</div>
+      <figure class="density-figure">
+        <div class="density-canvas-wrap">
+          <canvas id="density-canvas" width="1200" height="560" aria-describedby="density-caption"></canvas>
+        </div>
+        <figcaption id="density-caption">Density per unit score. Curves with equal area may have different sample counts; consult the summary table.</figcaption>
+      </figure>
+    </section>
+
+    <section id="score-summary" aria-labelledby="score-summary-heading">
+      <div class="section-heading">
+        <div><p class="section-index">02 / method census</p><h2 id="score-summary-heading">Raw score summary</h2></div>
+      </div>
+      <div class="table-wrap">
+        <table id="score-summary-table">
+          <caption>Untransformed score statistics for the selected UTC interval</caption>
+          <thead><tr><th scope="col">Algorithm</th><th scope="col">Recordings</th><th scope="col">Scores</th><th scope="col">Mean</th><th scope="col">Std dev</th><th scope="col">Minimum</th><th scope="col">Maximum</th></tr></thead>
+          <tbody id="score-summary-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer><p>Read-only aggregate view · UTC bounds are <code>[start, stop)</code> · No score threshold is applied on this page.</p></footer>
+</body>
+</html>

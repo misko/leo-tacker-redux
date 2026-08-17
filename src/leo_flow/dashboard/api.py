@@ -25,6 +25,9 @@ from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPo
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_score_distribution import (
+    ScoreDistributionQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.ports import DashboardQueryPort
@@ -314,6 +317,40 @@ class DashboardJsonApplicationV6:
             return _error(405, "method_not_allowed", "only GET is supported")
         try:
             payload = self._aggregates.observation_aggregate(_time_query(request.query))
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+
+class DashboardJsonApplicationV7:
+    """Add bounded detector-score distributions without changing V6."""
+
+    _ROUTE = "/api/v7/score-distributions"
+
+    def __init__(
+        self,
+        v6: DashboardJsonApplicationV6,
+        distributions: ScoreDistributionQueryPortV0_1,
+    ) -> None:
+        self._v6 = v6
+        self._distributions = distributions
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._ROUTE:
+            return self._v6.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            payload = self._distributions.score_distributions(
+                _time_query(request.query)
+            )
         except (ValueError, InvalidCursor) as error:
             return _error(400, "invalid_request", str(error))
         except Exception:  # noqa: BLE001 - fixed external error contract

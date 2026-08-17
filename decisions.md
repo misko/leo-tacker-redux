@@ -115,3 +115,21 @@ reproducibility. Promotion to calibrated detection semantics requires a new,
 explicitly approved calibration artifact and contract path; this decision cannot
 authorize that promotion.
 
+## 2026-08-17 — Dashboard candidate-score density view
+
+**Status:** accepted for descriptive analysis; not a detection decision surface.
+
+The dashboard exposes a separate aggregate-statistics page backed by the additive
+`org.leo-flow` score-distribution v0.1 contract and `/api/v7/score-distributions`.
+For every detector-suite method it computes a fixed 40-bin histogram over the
+method's native bounded score domain `[0,1]`. Density is `bin_count / total_count /
+bin_width`, so every visible method integrates to one and methods with different
+sample counts can be overlaid. Raw recording count, score count, mean, population
+standard deviation, minimum, and maximum remain visible beside the plot.
+
+The x-axis is never rescaled to an observed per-method minimum and maximum. The
+page does not apply the report-era thresholds: current detector-suite v0.2 scores
+use an 8 ms prefix and different search multiplicity, whereas the frozen report
+thresholds require exact 80/160/640 ms report-era score semantics. The view is
+therefore labeled candidate-score density and cannot claim a beacon detection,
+detection rate, or calibrated false-alarm probability.

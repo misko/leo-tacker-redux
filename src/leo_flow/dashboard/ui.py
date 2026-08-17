@@ -56,6 +56,16 @@ class DashboardUiApplication:
                     "public, max-age=300",
                     (package / "recording-detail.js").read_bytes(),
                 ),
+                "/aggregate-stats": (
+                    "text/html; charset=utf-8",
+                    "no-store",
+                    (package / "aggregate-stats.html").read_bytes(),
+                ),
+                "/assets/aggregate-stats.js": (
+                    "text/javascript; charset=utf-8",
+                    "public, max-age=300",
+                    (package / "aggregate-stats.js").read_bytes(),
+                ),
             }
         )
         self._recording_page = (
