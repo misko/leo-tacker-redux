@@ -6,8 +6,17 @@ import math
 from collections.abc import Mapping, Sequence
 from statistics import NormalDist
 
-from leo_flow.contracts.core import V0_1, ArtifactRef, Digest, RadioId, SchemaRef
+from leo_flow.contracts.core import (
+    V0_1,
+    ArtifactRef,
+    Digest,
+    RadioId,
+    ReceiverChainId,
+    SchemaRef,
+)
+from leo_flow.contracts.starlink import StarlinkEdge
 from leo_flow.contracts.starlink_detector_suite import (
+    StarlinkDetectorMethod,
     StarlinkDetectorMethodEvidenceV0_2,
     StarlinkDetectorSuiteBundleV0_2,
 )
@@ -16,8 +25,75 @@ from leo_flow.contracts.starlink_suite_calibration import (
     StarlinkSuiteCalibrationCellPlanV0_1,
     StarlinkSuiteCalibrationEvidenceV0_1,
     StarlinkSuiteMethodDecisionV0_1,
+    StarlinkSuitePositiveGateV0_1,
     StarlinkSuitePositivePerformanceV0_1,
 )
+
+
+def plan_starlink_suite_calibration_cell_v0_1(
+    *,
+    cell_id: str,
+    radio_id: RadioId,
+    receiver_chain_id: ReceiverChainId,
+    channel_number: int,
+    edge: StarlinkEdge,
+    sample_rate_hz: float,
+    probe_sample_count: int,
+    method: StarlinkDetectorMethod,
+    hardware_profile_digest: Digest,
+    tuning_identity_digest: Digest,
+    algorithm_digest: Digest,
+    config_digest: Digest,
+    exact_template_digest: Digest,
+    conditioned_control_template_digest: Digest,
+    search_identity_digest: Digest,
+    positive_gates: tuple[StarlinkSuitePositiveGateV0_1, ...],
+    target_whole_search_far: float = 0.01,
+    null_confidence_level: float = 0.95,
+    expected_training_tail_count: int = 100,
+    holdout_design_far_fraction: float = 0.5,
+    expected_holdout_exceedance_count: int = 20,
+) -> StarlinkSuiteCalibrationCellPlanV0_1:
+    """Materialize resolvable train and confidence-qualified holdout counts."""
+
+    if not 0 < target_whole_search_far < 1:
+        raise ValueError("target_whole_search_far must lie in (0, 1)")
+    if expected_training_tail_count <= 0:
+        raise ValueError("expected_training_tail_count must be positive")
+    from leo_flow.analysis.recording.starlink_calibration import (
+        minimum_holdout_searches,
+    )
+
+    return StarlinkSuiteCalibrationCellPlanV0_1(
+        SchemaRef(StarlinkSuiteCalibrationCellPlanV0_1.SCHEMA_ID, V0_1),
+        cell_id,
+        radio_id,
+        receiver_chain_id,
+        channel_number,
+        edge,
+        sample_rate_hz,
+        probe_sample_count,
+        method,
+        hardware_profile_digest,
+        tuning_identity_digest,
+        algorithm_digest,
+        config_digest,
+        exact_template_digest,
+        conditioned_control_template_digest,
+        search_identity_digest,
+        "whole-search-reported-score",
+        "strict-greater-than",
+        target_whole_search_far,
+        null_confidence_level,
+        math.ceil(expected_training_tail_count / target_whole_search_far),
+        minimum_holdout_searches(
+            target_whole_search_far,
+            confidence_level=null_confidence_level,
+            design_far_fraction=holdout_design_far_fraction,
+            minimum_design_exceedance_count=expected_holdout_exceedance_count,
+        ),
+        positive_gates,
+    )
 
 
 def one_sided_wilson_lower_bound(

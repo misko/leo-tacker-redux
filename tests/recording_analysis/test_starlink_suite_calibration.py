@@ -9,6 +9,7 @@ from leo_flow.analysis.recording.starlink_suite_calibration import (
     decide_starlink_suite_method_v0_1,
     evaluate_starlink_suite_calibration_v0_1,
     one_sided_wilson_lower_bound,
+    plan_starlink_suite_calibration_cell_v0_1,
 )
 from leo_flow.contracts.core import (
     V0_1,
@@ -258,3 +259,30 @@ def test_positive_confidence_bound_and_corpus_shape_fail_closed() -> None:
             holdout_null_whole_search_scores=(0.0,) * 10,
             positive_whole_search_scores_by_snr_db={-3.0: (1.0,) * 10},
         )
+
+
+def test_default_planner_resolves_one_percent_whole_search_tail() -> None:
+    suite = _suite()
+    method = suite.methods[0]
+    plan = plan_starlink_suite_calibration_cell_v0_1(
+        cell_id="slsuitecalcell_planned",
+        radio_id=RadioId("radio_pluto_5d4d"),
+        receiver_chain_id=suite.receiver_chain_id,
+        channel_number=1,
+        edge=suite.edge,
+        sample_rate_hz=suite.sample_rate_hz,
+        probe_sample_count=suite.probe_sample_count,
+        method=method.method,
+        hardware_profile_digest=_digest("hardware"),
+        tuning_identity_digest=_digest("tuning"),
+        algorithm_digest=method.algorithm_ref.digest,
+        config_digest=method.config_ref.digest,
+        exact_template_digest=method.exact_template_ref.digest,
+        conditioned_control_template_digest=(
+            method.conditioned_control_template_ref.digest
+        ),
+        search_identity_digest=method.search_identity_digest,
+        positive_gates=(StarlinkSuitePositiveGateV0_1(-6.0, 100, 0.8, 0.95),),
+    )
+    assert plan.training_null_search_count == 10_000
+    assert plan.holdout_null_search_count == 4_000

@@ -44,6 +44,13 @@ For each exact cell:
 6. Apply it only when every statistical-cell identity exactly matches the
    candidate evidence.
 
+The default one-percent whole-search FAR plan requires 10,000 training-null
+maxima, giving 100 expected training-tail observations, and 4,000 disjoint
+holdout-null maxima. The latter is the minimum plan whose one-sided 95% Wilson
+upper bound passes at the declared half-target design FAR with at least 20
+expected exceedances. These counts apply independently to every exact cell;
+they are not a license to pool radios, receivers, tunings, rates or methods.
+
 An approved result is a method decision with explicit calibration evidence.
 It carries `method-decision-not-beacon-count` and
 `event-clustering-required`; downstream code must not sum correlated report
