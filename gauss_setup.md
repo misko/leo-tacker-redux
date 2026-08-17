@@ -2873,3 +2873,24 @@ candidate views totaling 768 streams and 6,144 method outputs. Every
 calibrated-detection count remains null. Capture advanced from 182 to 199
 during the slice and to 206 during the dashboard audit, with 412/412 unique
 recordings, maximum observed skew 61,534,172 ns, and no campaign halt.
+
+The sixth V5 online-analysis window (`180..215`) closed with exact digest
+`bc1a050a6722cd4b6a303106cca21a30c6da77e6c98ec708de15a47777c1cb2d`.
+The sealed Release-F slice exited zero after 9m15s with no parked work.
+Independent dashboard reads proved 72 complete FeatureSet projections with
+3,456 rows, 72 complete 16-tile/262,144-cell waterfalls, and 72 Starlink v0.2
+views containing 24 clipped `not_evaluated` and 48 candidate recordings, 768
+streams and 6,144 method outputs. All calibrated-detection counts remain null.
+Capture advanced from 218 to 235 during analysis and to 238 during the audit,
+with 476/476 unique recordings, maximum skew still 61,534,172 ns, and no halt.
+
+Additive report-compatible suite calibration source landed at commit
+`daf970c`. It preserves candidate-only v0.2 and defines exact non-poolable
+method/radio/receiver/tuning/rate/probe/search cells, strict report-compatible
+`reported_score > threshold` decisions, disjoint training/holdout whole-search
+nulls, a one-sided Wilson FAR upper gate, and one-sided Wilson positive-
+injection detection-probability lower gates. Method decisions explicitly remain
+non-beacon evidence pending event clustering. Verification was 886 passed/979
+environment-skipped, strict mypy on 311 source files, Ruff on 573 source/test
+files, and 45 focused calibration/suite regressions. No calibration threshold
+was promoted or applied to the live candidate dashboard.
