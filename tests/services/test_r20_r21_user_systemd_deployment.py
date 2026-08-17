@@ -70,10 +70,11 @@ def test_user_units_preserve_two_phase_bounds_and_fail_closed_restart() -> None:
         assert "Restart=on-failure" in unit
         assert "RestartPreventExitStatus=2 3 4" in unit
         assert "RestartSec=1s" in unit
-        assert "NoNewPrivileges=yes" in unit
-        assert "ProtectSystem=strict" in unit
-        assert "ProtectHome=read-only" in unit
-        assert "CapabilityBoundingSet=\n" in unit
+        assert "NoNewPrivileges=" not in unit
+        assert "ProtectSystem=" not in unit
+        assert "ProtectHome=" not in unit
+        assert "CapabilityBoundingSet=" not in unit
+        assert "AmbientCapabilities=" not in unit
         assert "UMask=0077" in unit
 
 

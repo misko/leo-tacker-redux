@@ -13,10 +13,11 @@ the unattended release process. A user unit also avoids creating root-owned
 files beneath the user-owned `0700` state root.
 
 The templates intentionally omit `User=` and `Group=` because a user manager
-already runs the service as its owner. They retain namespace, capability,
-filesystem, address-family, resource, and no-new-privilege restrictions. The
-sealed release and selected qualification receipt are mounted read-only; only the existing
-`leo-flow` state and object roots are writable.
+already runs the service as its owner. The host's user manager cannot create
+the namespace/capability sandbox used by system services (`218/CAPABILITIES`),
+so these user units deliberately rely on the unprivileged account, an exact
+closed-tree verifier before every invocation, absolute immutable input paths,
+`UMask=0077`, and bounded resources instead of unsupported namespace directives.
 
 ## Unrendered inputs
 

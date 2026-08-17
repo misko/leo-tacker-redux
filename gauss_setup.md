@@ -2738,3 +2738,51 @@ for all eight methods agree to floating-point precision (maximum
 score/control/margin delta `1.17e-13`). These are exploratory candidate fire
 rates, not calibrated beacon detections; no threshold or detection count was
 promoted.
+
+Main-v3 terminal and Release-F qualification (2026-08-17): campaign
+`main_gauss_r20_r21_20260817_v3` reached exact terminal capture success with
+936/936 synchronized batches and 1,872/1,872 unique successful recordings,
+no halt or replay. Fresh Release-F qualification
+`qual_gauss_r20_r21_20260817_f3` subsequently completed all nine cells and
+18/18 recordings with maximum paired first-sample skew 56,015,509 ns. Its
+post-capture closure audit proved 18 FeatureSet, 18 waterfall, and 18 Starlink
+v0.2 jobs and projections terminal: six clipped 1.25 MS/s recordings were
+`not_evaluated` with zero streams/methods, while twelve eligible 2.5/5 MS/s
+recordings each produced 16 streams and 128 method outputs. The closure audit
+digest is
+`890182240bfe52da7bf96838be5d8201d5f8becfc516df8e952483ca02acea3d`.
+Only then was the canonical f3 qualification receipt issued; its file SHA-256
+is `83376a36aedcc2404242c134382926e32d722a2e2d280fa6a9aadb9e90343a68`
+and its canonical receipt digest is
+`911c78433bf489dbfa17f832ff862a5face00ec9d5ec2b523e8db7a8ec515e80`.
+
+The first F/f3 main attempt, `main_gauss_r20_r21_20260817_v4`, is preserved
+halted after three successful batches. A local read-only monitor's shell
+command line contained the two target address literals; the existing external
+ownership gate deliberately scans `/proc/*/cmdline`, rejected that monitor at
+slot-three admission, and the no-catch-up state machine subsequently sealed a
+`missed_slot`. This was a monitor/gate interaction, not an RF, radio, network,
+or cadence failure. V4 was not replayed. All later monitoring avoids target
+address literals in process command lines.
+
+Fresh capture-only campaign `main_gauss_r20_r21_20260817_v5`, definition
+`sha256:6e4148b4a2739fe7eff565f7364b7c865d42f6f3b6fd7986e679f6744b4054a7`,
+then proved its first exact 36-batch window: 72/72 unique successful
+recordings, no halt/retry/analysis-journal mutation, maximum skew 60,591,138 ns,
+and maximum start lateness 264,907,274 ns. Radio-originated sentinels and a
+literal-free ownership audit preserve unchanged boot/iiOD identities, passive
+TX gains, and zero DDS scales.
+
+That first V5 window was processed concurrently by the sealed Release-F
+campaign-scoped online-analysis path. The production database and dashboard
+now contain 72/72 complete FeatureSet projections (3,456 feature rows), 72/72
+complete waterfalls (16 tiles and 262,144 cells per recording), and 72/72
+Starlink v0.2 projections. Exactly 24 clipped recordings are terminal
+`not_evaluated`; 48 eligible recordings contain 768 analyzed streams and 6,144
+method outputs, with calibrated detection count intentionally absent. Capture
+advanced during the analysis slice. The 60-second user timer was enabled only
+after this exact closure proof. The host user manager cannot apply system-unit
+namespace/capability sandbox directives and returned `218/CAPABILITIES` before
+program execution; the user-unit templates now rely on the unprivileged user,
+closed-tree release verifier, immutable absolute inputs, restrictive umask,
+and resource limits instead of unsupported directives.
