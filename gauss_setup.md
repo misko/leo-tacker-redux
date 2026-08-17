@@ -2894,3 +2894,13 @@ non-beacon evidence pending event clustering. Verification was 886 passed/979
 environment-skipped, strict mypy on 311 source files, Ruff on 573 source/test
 files, and 45 focused calibration/suite regressions. No calibration threshold
 was promoted or applied to the live candidate dashboard.
+
+The seventh V5 online-analysis window (`216..251`) closed with exact digest
+`6d58e7bddd996235657e123c09496c23f7de74ba978c508208c54d01274c2a6c`.
+The sealed Release-F slice exited zero after 9m19s with no parked work.
+Independent dashboard reads proved 72 complete FeatureSet projections with
+3,456 rows, 72 complete 16-tile/262,144-cell waterfalls, and 72 Starlink v0.2
+views containing 24 clipped `not_evaluated` and 48 candidate recordings, 768
+streams and 6,144 method outputs. All calibrated-detection counts remain null.
+Capture advanced from 252 to 269 during analysis and to 272 during the audit,
+with 544/544 unique recordings, maximum skew still 61,534,172 ns, and no halt.
