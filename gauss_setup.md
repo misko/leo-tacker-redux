@@ -2934,3 +2934,15 @@ views containing 24 clipped `not_evaluated` and 48 candidate recordings, 768
 streams and 6,144 method outputs. All calibrated-detection counts remain null.
 Capture advanced from 289 to 307 during analysis and to 310 during the audit,
 with 620/620 unique recordings, maximum skew still 61,534,172 ns, and no halt.
+
+The ninth V5 online-analysis window (`288..323`) closed with exact digest
+`12d340830c7d235bfd93980e78573b2c3221504f1509514a11530e196491be3e`.
+The sealed Release-F slice exited zero after 9m34s with no parked work.
+Independent dashboard reads proved 72 complete FeatureSet projections with
+3,456 rows, 72 complete 16-tile/262,144-cell waterfalls, and 72 Starlink v0.2
+views containing 24 clipped `not_evaluated` and 48 candidate recordings, 768
+streams and 6,144 method outputs. Candidate views retain both
+`whole-search-calibration-required` and `candidate-evidence-only`, and every
+calibrated-detection count remains null. Capture advanced from 325 to 342
+during analysis and to 346 during the audit, with 692/692 unique recordings,
+maximum skew still 61,534,172 ns, and no halt.
