@@ -380,7 +380,7 @@ def test_aggregate_score_density_page_in_a_real_browser() -> None:
             )
             page.get_by_label("anchor-8").uncheck()
             expect(page.locator("#method-selector input:checked")).to_have_count(1)
-            page.get_by_label("Conditioned null controls").uncheck()
+            page.get_by_label("Rolled template at target-selected hypothesis").uncheck()
             expect(page.locator("#score-summary-body tr")).to_have_count(1)
             page.locator("#density-window-hours").select_option("24")
             page.get_by_role("button", name="Refresh").click()

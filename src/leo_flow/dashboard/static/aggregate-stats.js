@@ -19,6 +19,12 @@ function appendText(parent, tag, text, className = "") {
   return node;
 }
 
+function scoreKindLabel(scoreKind) {
+  return scoreKind === "conditioned-control"
+    ? "rolled template at target-selected hypothesis"
+    : scoreKind;
+}
+
 function formatUtcNs(value) {
   const milliseconds = Number(value) / 1_000_000;
   return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : "Unavailable";
@@ -144,7 +150,7 @@ function renderSummary(series) {
   body.replaceChildren();
   for (const item of series) {
     const row = document.createElement("tr");
-    appendText(row, "th", `${item.method} · ${item.score_kind}`).scope = "row";
+    appendText(row, "th", `${item.method} · ${scoreKindLabel(item.score_kind)}`).scope = "row";
     appendText(row, "td", item.point_count);
     appendText(row, "td", item.mean.toFixed(6));
     appendText(row, "td", item.standard_deviation.toFixed(6));
@@ -234,7 +240,7 @@ function renderAll() {
   setAppState(
     series.length ? "ready" : "empty",
     series.length
-      ? `${candidatePoints.toLocaleString()} candidate points and ${controls.toLocaleString()} paired controls in ${series.length} visible series.`
+      ? `${candidatePoints.toLocaleString()} candidate points and ${controls.toLocaleString()} target-conditioned rolled-template points in ${series.length} visible series.`
       : "No score series match the selected strata.",
   );
 }

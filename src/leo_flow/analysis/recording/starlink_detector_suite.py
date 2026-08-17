@@ -38,6 +38,14 @@ from leo_flow.contracts.starlink_detector_suite import (
     StarlinkSamplingStratum,
     StarlinkSearchMode,
 )
+from leo_flow.contracts.starlink_full_search_control import (
+    V0_1 as FULL_SEARCH_CONTROL_V0_1,
+)
+from leo_flow.contracts.starlink_full_search_control import (
+    StarlinkFullSearchControlMethodEvidenceV0_1,
+    StarlinkFullSearchControlMode,
+    StarlinkFullSearchControlSuiteV0_1,
+)
 
 from .api import AnalysisExecutionContext
 from .starlink import (
@@ -49,6 +57,8 @@ from .starlink import (
 
 ALGORITHM_ID = "starlink-report-detector-suite"
 ALGORITHM_VERSION = "0.2.0"
+FULL_SEARCH_CONTROL_ALGORITHM_ID = "starlink-rolled-template-full-search-control"
+FULL_SEARCH_CONTROL_ALGORITHM_VERSION = "0.1.0"
 CONFIG_SCHEMA_ID = "org.leo-flow.starlink-detector-suite-config"
 PSS_SSS_TEMPLATE_SCHEMA_ID = "org.leo-flow.starlink-pss-sss-template"
 OFDM_SYMBOL_DURATION_S = 4.4e-6
@@ -374,6 +384,199 @@ class StarlinkDetectorSuiteV0_2:
             tuple(warnings),
         )
 
+    def analyze_full_search_control(
+        self,
+        samples: Sequence[complex],
+        *,
+        recording_id: RecordingId,
+        recording_identity_digest: Digest,
+        segment_id: SegmentId,
+        receiver_chain_id: ReceiverChainId,
+        templates: KnownCodePilotTemplatePairV0_1,
+    ) -> StarlinkFullSearchControlSuiteV0_1:
+        """Search the rolled template independently over the target grid.
+
+        This is additive evidence. It deliberately does not alter the published
+        v0.2 same-cell control statistic.
+        """
+
+        values = tuple(complex(value) for value in samples)
+        self._validate_inputs(values, templates, None)
+        algorithm_ref = starlink_full_search_control_algorithm_ref_v0_1()
+        config_ref = starlink_detector_suite_config_ref_v0_2(self._config)
+        suite_identity = canonical_digest(
+            {
+                "algorithm_digest": str(algorithm_ref.digest),
+                "config_digest": str(config_ref.digest),
+                "rolled_template_digest": str(templates.conditioned_control_ref.digest),
+                "recording_identity_digest": str(recording_identity_digest),
+                "segment_id": str(segment_id),
+                "receiver_chain_id": str(receiver_chain_id),
+                "probe_sample_count": len(values),
+                "sample_rate_hz": templates.sample_rate_hz,
+                "edge": templates.edge.value,
+                "methods": tuple(method.value for method in REPORT_METHOD_ORDER),
+                "control_search": "rolled-template-independent-full-search",
+            }
+        )
+        evidence = self._run_full_search_controls(
+            values,
+            templates,
+            algorithm_ref=algorithm_ref,
+            config_ref=config_ref,
+            suite_identity=suite_identity,
+        )
+        input_digest = canonical_digest(
+            {
+                "recording_identity_digest": str(recording_identity_digest),
+                "segment_id": str(segment_id),
+                "receiver_chain_id": str(receiver_chain_id),
+            }
+        )
+        provenance = Provenance(
+            self._execution.producer_name,
+            self._execution.producer_version,
+            self._execution.git_commit,
+            self._execution.environment_digest,
+            config_ref.digest,
+            (input_digest,),
+            (
+                algorithm_ref.digest,
+                templates.conditioned_control_ref.digest,
+            ),
+            self._execution.started_utc_ns,
+            self._execution.completed_utc_ns,
+            self._execution.host_class,
+        )
+        token = canonical_digest(
+            {"suite_identity_digest": str(suite_identity), "methods": evidence}
+        ).value
+        return StarlinkFullSearchControlSuiteV0_1(
+            SchemaRef(
+                StarlinkFullSearchControlSuiteV0_1.SCHEMA_ID,
+                FULL_SEARCH_CONTROL_V0_1,
+            ),
+            f"slsctrl_{token[:32]}",
+            recording_id,
+            recording_identity_digest,
+            segment_id,
+            receiver_chain_id,
+            templates.edge,
+            templates.sample_rate_hz,
+            len(values),
+            suite_identity,
+            evidence,
+            provenance,
+            True,
+            (
+                "not-an-empirical-null-distribution",
+                "no-calibrated-detection-verdict",
+            ),
+        )
+
+    def _run_full_search_controls(
+        self,
+        values: tuple[complex, ...],
+        templates: KnownCodePilotTemplatePairV0_1,
+        *,
+        algorithm_ref: ArtifactRef,
+        config_ref: ArtifactRef,
+        suite_identity: Digest,
+    ) -> tuple[StarlinkFullSearchControlMethodEvidenceV0_1, ...]:
+        anchors = _spread_symbols(8)
+        relative_specs = (
+            (StarlinkDetectorMethod.ANCHOR_8, anchors, "anchor"),
+            (StarlinkDetectorMethod.DIFFERENTIAL_16, tuple(range(2, 18)), "contiguous"),
+            (StarlinkDetectorMethod.DIFFERENTIAL_32, tuple(range(2, 34)), "contiguous"),
+            (StarlinkDetectorMethod.GLRT_32, tuple(range(2, 34)), "contiguous"),
+            (StarlinkDetectorMethod.GLRT_64, tuple(range(2, 66)), "contiguous"),
+        )
+        results: dict[
+            StarlinkDetectorMethod, StarlinkFullSearchControlMethodEvidenceV0_1
+        ] = {}
+        for method, symbols, role in relative_specs:
+            winner = self._search_relative_template(
+                values,
+                templates.conditioned_control_samples,
+                templates.sample_rate_hz,
+                method,
+                symbols,
+            )
+            results[method] = self._full_search_control_evidence(
+                method,
+                algorithm_ref,
+                config_ref,
+                templates,
+                suite_identity,
+                StarlinkFullSearchControlMode.SEARCHED_ROLLED_TEMPLATE,
+                method,
+                (
+                    self._config.glrt_effective_search_cell_count
+                    if method
+                    in (StarlinkDetectorMethod.GLRT_32, StarlinkDetectorMethod.GLRT_64)
+                    else self._config.outer_search_cell_count
+                ),
+                winner,
+                symbols,
+                role,
+                None,
+            )
+
+        acquire_winner = self._search_full_frame_template(
+            values,
+            templates.conditioned_control_samples,
+            templates.sample_rate_hz,
+            self._config.acquire_symbols,
+        )
+        for method, symbols, role, mode in (
+            (
+                StarlinkDetectorMethod.FULL_FRAME_ACQUIRE,
+                self._config.acquire_symbols,
+                "acquire",
+                StarlinkFullSearchControlMode.SEARCHED_ROLLED_TEMPLATE,
+            ),
+            (
+                StarlinkDetectorMethod.FULL_FRAME_VERIFY,
+                self._config.verify_symbols,
+                "verify",
+                StarlinkFullSearchControlMode.CONDITIONED_ON_ROLLED_ACQUIRE_WINNER,
+            ),
+            (
+                StarlinkDetectorMethod.FULL_FRAME_FULL,
+                tuple(range(2, 302)),
+                "full",
+                StarlinkFullSearchControlMode.CONDITIONED_ON_ROLLED_ACQUIRE_WINNER,
+            ),
+        ):
+            scored = _full_frame_score(
+                values,
+                templates.conditioned_control_samples,
+                templates.sample_rate_hz,
+                acquire_winner.epoch,
+                acquire_winner.coarse_cfo_hz,
+                symbols,
+            )
+            winner = _Winner(
+                acquire_winner.epoch,
+                acquire_winner.coarse_cfo_hz,
+                scored,
+            )
+            results[method] = self._full_search_control_evidence(
+                method,
+                algorithm_ref,
+                config_ref,
+                templates,
+                suite_identity,
+                mode,
+                StarlinkDetectorMethod.FULL_FRAME_ACQUIRE,
+                self._config.outer_search_cell_count,
+                winner,
+                symbols,
+                role,
+                self._config.symbol_split_digest,
+            )
+        return tuple(results[method] for method in REPORT_METHOD_ORDER)
+
     def _validate_inputs(
         self,
         values: tuple[complex, ...],
@@ -535,13 +738,29 @@ class StarlinkDetectorSuiteV0_2:
         method: StarlinkDetectorMethod,
         symbols: tuple[int, ...],
     ) -> _Winner:
+        return self._search_relative_template(
+            values,
+            templates.exact_samples,
+            templates.sample_rate_hz,
+            method,
+            symbols,
+        )
+
+    def _search_relative_template(
+        self,
+        values: tuple[complex, ...],
+        template: tuple[complex, ...],
+        sample_rate_hz: float,
+        method: StarlinkDetectorMethod,
+        symbols: tuple[int, ...],
+    ) -> _Winner:
         candidates = []
         for epoch in self._config.epoch_hypotheses_samples:
             for coarse in self._config.coarse_cfo_hypotheses_hz:
                 frames = _symbol_correlations(
                     values,
-                    templates.exact_samples,
-                    templates.sample_rate_hz,
+                    template,
+                    sample_rate_hz,
                     epoch,
                     coarse,
                     symbols,
@@ -605,13 +824,27 @@ class StarlinkDetectorSuiteV0_2:
         templates: KnownCodePilotTemplatePairV0_1,
         symbols: tuple[int, ...],
     ) -> _Winner:
+        return self._search_full_frame_template(
+            values,
+            templates.exact_samples,
+            templates.sample_rate_hz,
+            symbols,
+        )
+
+    def _search_full_frame_template(
+        self,
+        values: tuple[complex, ...],
+        template: tuple[complex, ...],
+        sample_rate_hz: float,
+        symbols: tuple[int, ...],
+    ) -> _Winner:
         candidates = []
         for epoch in self._config.epoch_hypotheses_samples:
             for cfo in self._config.coarse_cfo_hypotheses_hz:
                 scored = _full_frame_score(
                     values,
-                    templates.exact_samples,
-                    templates.sample_rate_hz,
+                    template,
+                    sample_rate_hz,
                     epoch,
                     cfo,
                     symbols,
@@ -621,6 +854,62 @@ class StarlinkDetectorSuiteV0_2:
         if not candidates:
             raise ValueError("no complete frame supports full-frame acquisition")
         return max(candidates, key=_winner_key)
+
+    def _full_search_control_evidence(
+        self,
+        method: StarlinkDetectorMethod,
+        algorithm_ref: ArtifactRef,
+        config_ref: ArtifactRef,
+        templates: KnownCodePilotTemplatePairV0_1,
+        suite_identity: Digest,
+        search_mode: StarlinkFullSearchControlMode,
+        selection_method: StarlinkDetectorMethod,
+        effective_search_cells: int,
+        winner: _Winner,
+        symbols: tuple[int, ...],
+        role: str,
+        split_digest: Digest | None,
+    ) -> StarlinkFullSearchControlMethodEvidenceV0_1:
+        identity = canonical_digest(
+            {
+                "suite_identity_digest": str(suite_identity),
+                "method": method.value,
+                "search_mode": search_mode.value,
+                "selection_method": selection_method.value,
+                "effective_search_cell_count": effective_search_cells,
+                "symbols": symbols,
+                "control_search": "rolled-template-independent-full-search",
+            }
+        )
+        return StarlinkFullSearchControlMethodEvidenceV0_1(
+            SchemaRef(
+                StarlinkFullSearchControlMethodEvidenceV0_1.SCHEMA_ID,
+                FULL_SEARCH_CONTROL_V0_1,
+            ),
+            method,
+            algorithm_ref,
+            config_ref,
+            templates.conditioned_control_ref,
+            identity,
+            search_mode,
+            selection_method,
+            effective_search_cells,
+            winner.epoch,
+            winner.coarse_cfo_hz,
+            winner.scored.residual_cfo_hz,
+            winner.scored.score,
+            winner.scored.summary,
+            symbols,
+            role,
+            split_digest,
+            "rolled-template-independent-full-search",
+            True,
+            (
+                "same-hypothesis-grid-as-target",
+                "surrogate-control-not-verified-signal-absent",
+                "no-calibrated-detection-verdict",
+            ),
+        )
 
     def _evidence(
         self,
@@ -760,6 +1049,24 @@ def starlink_detector_suite_algorithm_ref_v0_2() -> ArtifactRef:
             }
         ),
         SchemaRef("org.leo-flow.recording-algorithm", V0_2),
+    )
+
+
+def starlink_full_search_control_algorithm_ref_v0_1() -> ArtifactRef:
+    return ArtifactRef(
+        "starlink-rolled-template-full-search-control-v0.1",
+        canonical_digest(
+            {
+                "algorithm_id": FULL_SEARCH_CONTROL_ALGORITHM_ID,
+                "algorithm_version": FULL_SEARCH_CONTROL_ALGORITHM_VERSION,
+                "target_suite_algorithm": str(
+                    starlink_detector_suite_algorithm_ref_v0_2().digest
+                ),
+                "semantics": "rolled-template-independent-full-search",
+                "methods": tuple(method.value for method in REPORT_METHOD_ORDER),
+            }
+        ),
+        SchemaRef("org.leo-flow.recording-algorithm", FULL_SEARCH_CONTROL_V0_1),
     )
 
 

@@ -101,6 +101,9 @@ def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() 
         'id="score-summary-table"',
         "native score domain [0,1]",
         "not calibrated beacon detections",
+        "not an independently searched null distribution",
+        "Rolled template at target-selected hypothesis",
+        "shown only after a recording has been explicitly backprocessed",
     ):
         assert required in html
     assert "/api/v8/score-distributions" in javascript

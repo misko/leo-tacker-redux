@@ -142,3 +142,36 @@ same-section control scores are separate distributions. Radio, RX chain, and edg
 filters combine only disjoint server-produced strata. Each point still summarizes
 the method's 5–6 supported internal frames; it is not represented as an individual
 OFDM-frame score because the v0.2 product does not retain such a value.
+
+## 2026-08-17 — Symmetric rolled-template search control
+
+**Status:** accepted as additive descriptive evidence; historical v0.2 remains
+immutable and is not silently reinterpreted.
+
+The v0.2 field named `conditioned_control_score` is not a whole-search null. The
+target template first selects the maximum-scoring epoch/CFO hypothesis, then the
+rolled template is evaluated only at that target-selected point. Under signal-absent
+noise, maximizing the target but not the control creates a winner-selection bias,
+so the candidate distribution is expected to exceed this conditioned statistic.
+
+The operator UI therefore labels the existing dashed series **rolled template at
+target-selected hypothesis**. The immutable V8 API token remains
+`conditioned-control`; changing its meaning or spelling would violate the published
+contract.
+
+Redux also adds the separate
+`org.leo-flow.starlink-full-search-control-suite/v0.1` evidence path. It maximizes
+the rolled template over the same epoch, coarse-CFO, residual-CFO, symbol, and
+full-frame selection grid used by the corresponding target method. Relative-phase
+methods select their own rolled-template winner. Full-frame ACQUIRE selects the
+rolled-template epoch/CFO; VERIFY and FULL are then evaluated at that rolled
+ACQUIRE winner, mirroring the target-side split without leaking the target winner.
+
+This symmetric statistic removes the specific target-winner asymmetry, but it is
+still a surrogate control, not proof that a scan section is signal-absent. It may
+retain sky signal, interference, template autocorrelation, and receiver effects.
+The empirical null for calibration must come from independently verified
+signal-absent sections and must run the full target search. Existing v0.2 rows show
+the new statistic as unavailable until an explicit, versioned back-process creates
+the additive product; no historical value may be synthesized from the conditioned
+score.

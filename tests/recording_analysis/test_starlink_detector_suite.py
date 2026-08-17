@@ -22,6 +22,11 @@ from leo_flow.analysis.recording.starlink_detector_suite import (
     run_starlink_injection_cases_v0_2,
     synthesize_starlink_injection_v0_2,
 )
+from leo_flow.analysis.recording.starlink_full_search_control_codec import (
+    MalformedFullSearchControlBundleError,
+    decode_full_search_control_bundle,
+    encode_full_search_control_bundle,
+)
 from leo_flow.analysis.recording.starlink_templates import (
     qin_edge_pilot_template_pair_v0_1,
 )
@@ -42,6 +47,14 @@ from leo_flow.contracts.starlink_detector_suite import (
     StarlinkDetectorMethod,
     StarlinkSamplingStratum,
     StarlinkSearchMode,
+)
+from leo_flow.contracts.starlink_full_search_control import (
+    V0_1 as FULL_SEARCH_CONTROL_V0_1,
+)
+from leo_flow.contracts.starlink_full_search_control import (
+    StarlinkFullSearchControlMode,
+    StarlinkFullSearchControlRecordingBundleV0_1,
+    StarlinkFullSearchControlRecordingState,
 )
 
 from .fakes import execution_context
@@ -371,13 +384,127 @@ def test_searched_roll_reacquires_shift_but_same_cell_control_remains_suppressed
         receiver_chain_id=ReceiverChainId("rx_searched_roll_test"),
         templates=roll_as_search_target,
     )
+    full_search_control = analyzer.analyze_full_search_control(
+        values,
+        recording_id=RecordingId("rec_full_search_control_test"),
+        recording_identity_digest=Digest.sha256(b"full-search-control-test"),
+        segment_id=SegmentId("seg_full_search_control_test"),
+        receiver_chain_id=ReceiverChainId("rx_full_search_control_test"),
+        templates=templates,
+    )
 
     exact_anchor = exact.methods[0]
     searched_roll_anchor = searched_roll.methods[0]
+    symmetric_anchor = full_search_control.methods[0]
     assert exact_anchor.winning_epoch_sample == 200
     assert exact_anchor.conditioned_control_score < 0.1
     assert searched_roll_anchor.winning_epoch_sample == 13
     assert searched_roll_anchor.reported_score > 0.9
+    assert symmetric_anchor.winning_epoch_sample == 13
+    assert symmetric_anchor.full_search_control_score == pytest.approx(
+        searched_roll_anchor.reported_score, abs=2e-12
+    )
+    assert symmetric_anchor.effective_search_cell_count == (
+        exact_anchor.effective_search_cell_count
+    )
+    assert symmetric_anchor.control_search == (
+        "rolled-template-independent-full-search"
+    )
+    assert full_search_control.surrogate_only is True
+    assert "not-an-empirical-null-distribution" in full_search_control.warnings
+    for symmetric, independently_searched in zip(
+        full_search_control.methods, searched_roll.methods, strict=True
+    ):
+        assert symmetric.method is independently_searched.method
+        assert symmetric.full_search_control_score == pytest.approx(
+            independently_searched.reported_score, abs=2e-12
+        )
+        assert symmetric.winning_epoch_sample == (
+            independently_searched.winning_epoch_sample
+        )
+        assert symmetric.winning_coarse_cfo_hz == pytest.approx(
+            independently_searched.winning_coarse_cfo_hz, abs=1e-12
+        )
+        assert symmetric.winning_residual_cfo_hz == pytest.approx(
+            independently_searched.winning_residual_cfo_hz, abs=1e-12
+        )
+
+
+def test_full_search_control_mirrors_all_target_search_modes_without_verdict() -> None:
+    templates = qin_edge_pilot_template_pair_v0_1(SAMPLE_RATE_HZ, StarlinkEdge.UPPER)
+    values = synthesize_starlink_injection_v0_2(templates, _case())
+    control = _analyzer().analyze_full_search_control(
+        values,
+        recording_id=RecordingId("rec_symmetric_control"),
+        recording_identity_digest=Digest.sha256(b"symmetric-control"),
+        segment_id=SegmentId("seg_symmetric_control"),
+        receiver_chain_id=ReceiverChainId("rx_symmetric_control"),
+        templates=templates,
+    )
+
+    assert tuple(item.method for item in control.methods) == REPORT_METHOD_ORDER
+    by_method = {item.method: item for item in control.methods}
+    acquire = by_method[StarlinkDetectorMethod.FULL_FRAME_ACQUIRE]
+    verify = by_method[StarlinkDetectorMethod.FULL_FRAME_VERIFY]
+    full = by_method[StarlinkDetectorMethod.FULL_FRAME_FULL]
+    assert acquire.search_mode is StarlinkFullSearchControlMode.SEARCHED_ROLLED_TEMPLATE
+    assert (
+        verify.search_mode
+        is StarlinkFullSearchControlMode.CONDITIONED_ON_ROLLED_ACQUIRE_WINNER
+    )
+    assert (
+        full.search_mode
+        is StarlinkFullSearchControlMode.CONDITIONED_ON_ROLLED_ACQUIRE_WINNER
+    )
+    assert (
+        verify.winning_epoch_sample
+        == full.winning_epoch_sample
+        == (acquire.winning_epoch_sample)
+    )
+    assert (
+        verify.winning_coarse_cfo_hz
+        == full.winning_coarse_cfo_hz
+        == (acquire.winning_coarse_cfo_hz)
+    )
+    assert all(item.surrogate_only for item in control.methods)
+
+    with pytest.raises(ValueError, match="cannot be a detection verdict"):
+        replace(control.methods[0], surrogate_only=False)
+
+
+def test_full_search_control_recording_codec_is_canonical_and_strict() -> None:
+    templates = qin_edge_pilot_template_pair_v0_1(SAMPLE_RATE_HZ, StarlinkEdge.LOWER)
+    values = synthesize_starlink_injection_v0_2(templates, _case())
+    recording_digest = Digest.sha256(b"control-codec-recording")
+    suite = _analyzer().analyze_full_search_control(
+        values,
+        recording_id=RecordingId("rec_control_codec"),
+        recording_identity_digest=recording_digest,
+        segment_id=SegmentId("seg_control_codec"),
+        receiver_chain_id=ReceiverChainId("rx_control_codec"),
+        templates=templates,
+    )
+    bundle = StarlinkFullSearchControlRecordingBundleV0_1(
+        SchemaRef(
+            StarlinkFullSearchControlRecordingBundleV0_1.SCHEMA_ID,
+            FULL_SEARCH_CONTROL_V0_1,
+        ),
+        "slsctrlrec_0123456789abcdef0123456789abcdef",
+        suite.recording_id,
+        recording_digest,
+        Digest.sha256(b"source-request"),
+        StarlinkFullSearchControlRecordingState.CANDIDATES,
+        (suite,),
+        (
+            "surrogate-control-only",
+            "not-an-empirical-null-distribution",
+        ),
+    )
+
+    payload = encode_full_search_control_bundle(bundle)
+    assert decode_full_search_control_bundle(payload) == bundle
+    with pytest.raises(MalformedFullSearchControlBundleError):
+        decode_full_search_control_bundle(payload + b"\n")
 
 
 @pytest.mark.parametrize("edge", tuple(StarlinkEdge))
