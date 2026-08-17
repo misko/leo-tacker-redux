@@ -66,6 +66,16 @@ class DashboardUiApplication:
                     "public, max-age=300",
                     (package / "aggregate-stats.js").read_bytes(),
                 ),
+                "/aggregate-doppler": (
+                    "text/html; charset=utf-8",
+                    "no-store",
+                    (package / "aggregate-doppler.html").read_bytes(),
+                ),
+                "/assets/aggregate-doppler.js": (
+                    "text/javascript; charset=utf-8",
+                    "public, max-age=300",
+                    (package / "aggregate-doppler.js").read_bytes(),
+                ),
             }
         )
         self._recording_page = (

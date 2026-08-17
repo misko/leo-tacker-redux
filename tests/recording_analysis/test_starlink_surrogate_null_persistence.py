@@ -47,6 +47,9 @@ from leo_flow.analysis.recording.starlink_surrogate_null_recording_codec import 
 from leo_flow.analysis.recording.starlink_templates import (
     qin_edge_pilot_template_pair_v0_1,
 )
+from leo_flow.analysis.recording.starlink_temporal_pilot_recording import (
+    ExactStarlinkTemporalPilotRecordingAnalyzerV0_1,
+)
 from leo_flow.contracts.core import (
     JobId,
     RadioId,
@@ -82,6 +85,9 @@ from leo_flow.services.starlink_surrogate_null_analysis import (
     PreparedStarlinkSurrogateNullAnalysisV0_1,
     StarlinkSurrogateNullAnalysisPreparerV0_1,
     starlink_surrogate_null_request_v0_1,
+)
+from leo_flow.services.starlink_temporal_pilot_analysis import (
+    StarlinkTemporalPilotAnalysisPreparerV0_1,
 )
 from leo_flow.storage.filesystem import FileSystemBlobStore
 from leo_flow.storage.ports import RecordingView
@@ -232,6 +238,17 @@ def test_combined_preparer_uses_exact_profile_and_one_recording_open() -> None:
         StarlinkPilotConstellationAnalyzerV0_1(
             StarlinkPilotConstellationConfigV0_1(), execution_context()
         ),
+        (
+            (
+                source_request.config_ref,
+                StarlinkTemporalPilotAnalysisPreparerV0_1(
+                    ExactStarlinkTemporalPilotRecordingAnalyzerV0_1(
+                        config, execution_context()
+                    ),
+                    starlink_search_grid_v0_1(config),
+                ),
+            ),
+        ),
     )
     lease = JobLease(
         JobId("job_surrogate_combined"),
@@ -253,6 +270,8 @@ def test_combined_preparer_uses_exact_profile_and_one_recording_open() -> None:
     assert result.surrogate_null.bundle.streams
     assert result.pilot_constellation is not None
     assert result.pilot_constellation.bundle.streams
+    assert result.temporal_pilot is not None
+    assert result.temporal_pilot.bundle.streams
     assert reader.open_count == 1
 
 

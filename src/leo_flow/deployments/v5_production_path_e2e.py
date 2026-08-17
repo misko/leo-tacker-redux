@@ -120,7 +120,7 @@ from leo_flow.storage.recording_codec import (
 
 REPORT_SCHEMA = "org.leo-flow.v5-production-path-qualification/v2"
 EXPECTED_CLOCK_CONFIRMATION = "host-ntp-synchronized"
-EXPECTED_MIGRATION_HEAD = "0038_dashboard_surrogate_score_distributions.sql"
+EXPECTED_MIGRATION_HEAD = "0040_dashboard_doppler_aggregate.sql"
 EXPECTED_POSTGRES_MAJOR = 16
 MAX_DSN_BYTES = 4096
 _DATABASE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}")
@@ -191,6 +191,7 @@ _APPLICATION_TABLES = (
     "recording_starlink_detector_suite",
     "recording_starlink_surrogate_null",
     "recording_starlink_pilot_constellation",
+    "recording_starlink_temporal_pilot",
     "recording_doppler_analysis",
     "recording_waterfall",
     "recording_waterfall_v0_2",
@@ -1220,7 +1221,7 @@ def _migration_evidence(
         or names[-1] != EXPECTED_MIGRATION_HEAD
     ):
         raise ProductionPathQualificationError(
-            "migration receipts do not exactly match the approved files through 0038"
+            "migration receipts do not exactly match the approved files through 0040"
         )
     return {
         "count": len(names),
@@ -1257,9 +1258,9 @@ def _expected_migration_receipts(directory: Path) -> dict[str, str]:
                 "migration file cannot be read"
             ) from error
         receipts[path.name] = hashlib.sha256(payload).hexdigest()
-    if len(receipts) != 38 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
+    if len(receipts) != 40 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
         raise ProductionPathQualificationError(
-            "migration directory is not exactly the approved 0038 release"
+            "migration directory is not exactly the approved 0040 release"
         )
     return receipts
 

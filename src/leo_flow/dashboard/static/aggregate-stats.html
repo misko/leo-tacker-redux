@@ -26,6 +26,7 @@
     <a href="/">Dashboard</a>
     <a href="#score-density">Score density</a>
     <a href="#score-summary">Method summary</a>
+    <a href="#temporal-summary">Temporal sampling</a>
   </nav>
 
   <main id="aggregate-main" tabindex="-1">
@@ -74,6 +75,21 @@
         </div>
         <figcaption id="density-caption">Density per unit score. Solid lines are exact Qin scores; dashed lines are independently searched surrogate-pattern scores. Curves have equal area but may have different point counts.</figcaption>
       </figure>
+    </section>
+
+    <section id="temporal-summary" aria-labelledby="temporal-summary-heading">
+      <div class="section-heading">
+        <div><p class="section-index">03 / temporal coverage</p><h2 id="temporal-summary-heading">Stratified dwell-probe summary</h2></div>
+      </div>
+      <p class="availability-note"><strong>“Mean probe maximum” means:</strong> each 8 ms sampled window is searched over its complete epoch/CFO grid and contributes its maximum score; the table then averages those per-window maxima. It is not a mean over CFO. These windows sample the full dwell extent but not every captured sample; exact union coverage is shown. Radios and RX chains remain separate strata. Candidate fractions are descriptive, uncalibrated, and not detection rates.</p>
+      <div id="temporal-aggregate-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading stratified temporal summaries…</div>
+      <div class="table-wrap">
+        <table id="temporal-summary-table">
+          <caption>Per-probe independently maximized Qin versus surrogate statistics</caption>
+          <thead><tr><th scope="col">Method / stream</th><th scope="col">Recordings</th><th scope="col">Probes</th><th scope="col">Mean probe-max Qin</th><th scope="col">Mean probe-max surrogate</th><th scope="col">Union coverage</th><th scope="col">Candidate windows</th></tr></thead>
+          <tbody id="temporal-summary-body"></tbody>
+        </table>
+      </div>
     </section>
 
     <section id="score-summary" aria-labelledby="score-summary-heading">

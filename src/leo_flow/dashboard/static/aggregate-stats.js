@@ -9,6 +9,7 @@ const METHOD_COLORS = Object.freeze([
 let strata = [];
 let methodOrder = [];
 let visibleMethods = new Set();
+let temporalStrata = [];
 
 const byId = (id) => document.getElementById(id);
 
@@ -246,6 +247,37 @@ function renderAll() {
       ? `${qinPoints.toLocaleString()} exact Qin points and ${surrogatePoints.toLocaleString()} identically searched surrogate points in ${series.length} visible series.`
       : "No score series match the selected strata.",
   );
+  renderTemporalAggregate();
+}
+
+function renderTemporalAggregate() {
+  const radio = byId("density-radio").value;
+  const receiver = byId("density-receiver").value;
+  const edge = byId("density-edge").value;
+  const selected = temporalStrata.filter((item) =>
+    (methodOrder.length === 0 || visibleMethods.has(item.method))
+      && (radio === "all" || item.radio_id === radio)
+      && (receiver === "all" || item.receiver_chain_id === receiver)
+      && (edge === "all" || item.edge === edge)
+  );
+  const body = byId("temporal-summary-body");
+  body.replaceChildren();
+  for (const item of selected) {
+    const row = document.createElement("tr");
+    appendText(row, "th", `${item.method} · ${item.radio_id} · ${item.receiver_chain_id} · ${item.edge}`).scope = "row";
+    appendText(row, "td", item.recording_count);
+    appendText(row, "td", item.probe_count);
+    appendText(row, "td", Number(item.mean_probe_maximum_qin_score).toFixed(6));
+    appendText(row, "td", Number(item.mean_probe_maximum_surrogate_score).toFixed(6));
+    appendText(row, "td", `${(Number(item.mean_union_coverage_fraction) * 100).toFixed(4)}%`);
+    appendText(row, "td", `${(Number(item.candidate_window_fraction) * 100).toFixed(2)}% · candidate only`);
+    body.append(row);
+  }
+  const state = byId("temporal-aggregate-state");
+  state.dataset.state = selected.length ? "ready" : "empty";
+  state.textContent = selected.length
+    ? `${selected.length} independent method/radio/RX/edge strata; no cross-radio or cross-RX pooling.`
+    : "No temporal pilot products match the selected interval and strata yet.";
 }
 
 async function refresh() {
@@ -266,8 +298,18 @@ async function refresh() {
     populateSelect("density-receiver", strata.map((item) => item.receiver_chain_id), "All RX chains");
     renderSelector();
     renderAll();
+    try {
+      const temporal = await fetchJson(`/api/v13/temporal-pilot-aggregate?start_utc_ns=${bounds.start}&stop_utc_ns=${bounds.stop}`);
+      temporalStrata = temporal.strata || [];
+      renderTemporalAggregate();
+    } catch (temporalError) {
+      temporalStrata = [];
+      const state = byId("temporal-aggregate-state");
+      state.dataset.state = "unavailable";
+      state.textContent = temporalError instanceof Error ? temporalError.message : "Temporal summaries are unavailable.";
+    }
   } catch (error) {
-    strata = []; methodOrder = [];
+    strata = []; temporalStrata = []; methodOrder = [];
     renderSelector(); renderSummary([]); renderPlot([]);
     setAppState("error", error instanceof Error ? error.message : "Score distributions unavailable");
   }

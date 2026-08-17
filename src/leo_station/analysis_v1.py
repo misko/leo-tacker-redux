@@ -63,6 +63,9 @@ from leo_flow.analysis.recording.starlink_surrogate_null import (
 from leo_flow.analysis.recording.starlink_surrogate_null_recording import (
     ExactStarlinkSurrogateNullRecordingAnalyzerV0_1,
 )
+from leo_flow.analysis.recording.starlink_temporal_pilot_recording import (
+    ExactStarlinkTemporalPilotRecordingAnalyzerV0_1,
+)
 from leo_flow.analysis.recording.waterfall_doppler_pipeline import (
     WaterfallDopplerPipelineV0_1,
 )
@@ -100,6 +103,9 @@ from leo_flow.services.config import ServiceConfig
 from leo_flow.services.lifecycle import DiagnosticSink, ServiceLoop
 from leo_flow.services.starlink_surrogate_null_analysis import (
     StarlinkSurrogateNullAnalysisPreparerV0_1,
+)
+from leo_flow.services.starlink_temporal_pilot_analysis import (
+    StarlinkTemporalPilotAnalysisPreparerV0_1,
 )
 from leo_flow.storage.ports import RecordingObjectReader, RecordingView
 
@@ -545,6 +551,25 @@ def starlink_surrogate_null_preparers_v0_1(
     )
 
 
+def starlink_temporal_pilot_preparers_v0_1() -> tuple[
+    tuple[ArtifactRef, StarlinkTemporalPilotAnalysisPreparerV0_1], ...
+]:
+    """Bind each approved suite profile to stratified temporal evidence."""
+
+    return tuple(
+        (
+            profile.config_ref,
+            StarlinkTemporalPilotAnalysisPreparerV0_1(
+                ExactStarlinkTemporalPilotRecordingAnalyzerV0_1(
+                    profile.config, _starlink_suite_execution()
+                ),
+                starlink_search_grid_v0_1(profile.config),
+            ),
+        )
+        for profile in STARLINK_SUITE_PROFILES
+    )
+
+
 def _model_fitter(dataset: FeatureDatasetSnapshot) -> ReceiverQualityAggregateModel:
     return ReceiverQualityAggregateModel(dataset, MODEL_CONFIG, _model_execution())
 
@@ -719,6 +744,19 @@ def science_manifest() -> dict[str, object]:
             "scope": "published-edge-pilot-not-user-payload",
             "decision_semantics": "candidate-evidence-not-calibrated-detection",
         },
+        "starlink_temporal_pilot": {
+            "source": "detector-suite-v0.2-exact-search-grid",
+            "window_duration_ms": 8,
+            "nominal_stride_seconds": 5,
+            "maximum_probe_count": 8,
+            "surrogate_count": 4,
+            "coverage_semantics": "stratified-temporal-sampling-not-full-dwell",
+            "decision_semantics": "candidate-evidence-not-calibrated-detection",
+            "requested_output_schema": {
+                "schema_id": "org.leo-flow.starlink-temporal-pilot-recording-bundle",
+                "version": "0.1",
+            },
+        },
         "model": {
             "algorithm_ref": _artifact_document(MODEL_ALGORITHM_REF),
             "config_ref": _artifact_document(MODEL_CONFIG_REF),
@@ -734,6 +772,9 @@ def science_manifest() -> dict[str, object]:
             "starlink_suite_producer": ("leo-flow-gauss-starlink-detector-suite/0.2.0"),
             "starlink_pilot_constellation_producer": (
                 "leo-flow-gauss-starlink-published-pilot-constellation/0.1.0"
+            ),
+            "starlink_temporal_pilot_producer": (
+                "leo-flow-gauss-starlink-stratified-temporal-pilot/0.1.0"
             ),
             "model_producer": ("leo-flow-gauss-receiver-quality-aggregate/0.1.0"),
             "host_class": "gauss-x86_64-python31116",

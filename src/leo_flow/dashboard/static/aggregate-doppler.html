@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aggregate Doppler candidates · leo-flow</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <header class="site-header">
+    <div><p class="eyebrow">leo-flow / aggregate analysis</p><h1>Doppler candidate explorer</h1></div>
+    <nav><a href="/">Recordings</a><a href="/aggregate-stats">Pilot statistics</a></nav>
+  </header>
+  <main>
+    <aside class="candidate-warning" role="note">
+      <strong>Candidate-only motion evidence.</strong> Tracks are not satellite detections.
+      Overlapping track observations are not independent. Radios and receiver ports are never pooled.
+    </aside>
+    <section class="detail-card" aria-labelledby="interval-heading">
+      <h2 id="interval-heading">Recording interval</h2>
+      <div class="doppler-controls">
+        <label>Start UTC <input id="start-utc" type="datetime-local" step="1"></label>
+        <label>Stop UTC <input id="stop-utc" type="datetime-local" step="1"></label>
+        <button id="load-doppler" type="button">Load candidates</button>
+      </div>
+      <div id="doppler-aggregate-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading aggregate Doppler evidence…</div>
+      <dl id="coverage-facts" class="fact-grid"></dl>
+    </section>
+    <section id="filter-panel" class="detail-card" hidden aria-labelledby="filters-heading">
+      <h2 id="filters-heading">Visible evidence</h2>
+      <p class="muted">These toggles only change visibility in the downloaded immutable response; they do not recompute or pool evidence.</p>
+      <div id="source-filters" class="doppler-evidence-grid"></div>
+    </section>
+    <section class="detail-card" aria-labelledby="time-series-heading">
+      <h2 id="time-series-heading">Physical frequency offset vs time</h2>
+      <p class="muted">Each trace is one basic candidate path. Offset is relative to that path’s fitted reference frequency; advanced bin-only paths are excluded from this physical-frequency plot.</p>
+      <label>Time axis
+        <select id="time-axis-mode"><option value="relative">Relative to fitted reference</option><option value="utc">UTC</option></select>
+      </label>
+      <canvas id="frequency-time-canvas" width="1280" height="520" role="img" aria-label="Candidate frequency offset versus relative time, separated by radio and receiver"></canvas>
+      <div id="series-legend" class="doppler-candidate-list"></div>
+    </section>
+    <section class="doppler-summary-grid">
+      <article class="detail-card" aria-labelledby="drift-heading">
+        <h2 id="drift-heading">Drift-rate distribution</h2>
+        <canvas id="drift-canvas" width="720" height="480" role="img" aria-label="Physical Doppler drift rate histogram by radio and receiver"></canvas>
+        <div id="drift-summary"></div>
+      </article>
+      <article class="detail-card" aria-labelledby="control-heading">
+        <h2 id="control-heading">Advanced path and controls</h2>
+        <canvas id="control-canvas" width="720" height="480" role="img" aria-label="Heldout advanced path scores compared with stationary opposite slope and time shuffle controls"></canvas>
+        <p class="muted">Scores are algorithm evidence values, not physical drift and not calibrated probabilities.</p>
+      </article>
+    </section>
+    <details class="detail-card"><summary>Per-series provenance</summary><div id="provenance-list" class="doppler-candidate-list"></div></details>
+  </main>
+  <script src="/assets/aggregate-doppler.js" defer></script>
+</body>
+</html>

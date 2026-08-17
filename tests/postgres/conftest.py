@@ -55,6 +55,8 @@ _EXPECTED_MIGRATIONS = (
     "0036_starlink_pilot_constellation_catalog.sql",
     "0037_focused_analysis_during_capture.sql",
     "0038_dashboard_surrogate_score_distributions.sql",
+    "0039_starlink_temporal_pilot_catalog.sql",
+    "0040_dashboard_doppler_aggregate.sql",
 )
 
 
@@ -187,6 +189,7 @@ def clean_database(postgres_dsn: str) -> None:
                      focused_analysis_pair_scope,
                      recording_starlink_pilot_constellation,
                      recording_starlink_surrogate_null,
+                     recording_starlink_temporal_pilot,
                      recording_doppler_analysis,
                      recording_waterfall_v0_2,
                      campaign_analysis_job_scope,

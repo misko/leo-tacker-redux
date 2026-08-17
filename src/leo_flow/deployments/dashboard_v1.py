@@ -17,6 +17,9 @@ from leo_flow.contracts.dashboard_batch import CaptureBatchDashboardQueryPortV0_
 from leo_flow.contracts.dashboard_doppler import (
     RecordingDopplerVisualizationQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_doppler_aggregate import (
+    DopplerAggregateQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
@@ -27,6 +30,9 @@ from leo_flow.contracts.dashboard_score_distribution import (
 )
 from leo_flow.contracts.dashboard_surrogate_distribution import (
     SurrogateScoreDistributionQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_temporal_pilot import (
+    TemporalPilotAggregateQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.ports import DashboardQueryPort
@@ -41,6 +47,9 @@ from leo_flow.contracts.starlink_suite_pipeline import (
 from leo_flow.contracts.starlink_surrogate_null_pipeline import (
     RecordingStarlinkSurrogateNullQueryPortV0_1,
 )
+from leo_flow.contracts.starlink_temporal_pilot import (
+    RecordingStarlinkTemporalPilotQueryPortV0_1,
+)
 from leo_flow.dashboard.api import (
     DashboardJsonApplicationV3,
     DashboardJsonApplicationV4,
@@ -52,6 +61,8 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV10,
     DashboardJsonApplicationV11,
     DashboardJsonApplicationV12,
+    DashboardJsonApplicationV13,
+    DashboardJsonApplicationV14,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -138,6 +149,23 @@ class DashboardV12QueryPort(
     """Additive aggregate Qin-versus-surrogate read surface."""
 
 
+class DashboardV13QueryPort(
+    DashboardV12QueryPort,
+    RecordingStarlinkTemporalPilotQueryPortV0_1,
+    TemporalPilotAggregateQueryPortV0_1,
+    Protocol,
+):
+    """Additive stratified temporal pilot read surface."""
+
+
+class DashboardV14QueryPort(
+    DashboardV13QueryPort,
+    DopplerAggregateQueryPortV0_1,
+    Protocol,
+):
+    """Additive candidate-only aggregate Doppler read surface."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -167,7 +195,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV12QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV14QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -199,6 +227,9 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV12Quer
     surrogate_nulls = None
     pilot_constellations = None
     surrogate_distributions = None
+    temporal_pilots = None
+    temporal_aggregate = None
+    doppler_aggregate = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
         from leo_flow.adapters.dashboard_doppler_projection import (
@@ -222,6 +253,11 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV12Quer
             DurableRecordingStarlinkSurrogateNullQueryV0_1,
             DurableStarlinkSurrogateNullStoreV0_1,
             StarlinkSurrogateNullBlobStore,
+        )
+        from leo_flow.analysis.recording.starlink_temporal_pilot_persistence import (
+            DurableRecordingStarlinkTemporalPilotQueryV0_1,
+            DurableStarlinkTemporalPilotStoreV0_1,
+            StarlinkTemporalPilotBlobStore,
         )
         from leo_flow.analysis.recording.waterfall_v0_2_persistence import (
             DurableWaterfallReaderV0_2,
@@ -263,12 +299,36 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV12Quer
         surrogate_distributions = DurableDashboardSurrogateDistributionV0_1(
             connect, blobs
         )
+        from leo_flow.adapters.dashboard_doppler_aggregate import (
+            DurableDashboardDopplerAggregateV0_1,
+        )
+
+        doppler_aggregate = DurableDashboardDopplerAggregateV0_1(connect, blobs)
+        from leo_flow.adapters.starlink_temporal_pilot_postgres import (
+            PostgresStarlinkTemporalPilotCatalogV0_1,
+        )
+
+        temporal_catalog = PostgresStarlinkTemporalPilotCatalogV0_1(connect)
+        temporal_pilots = DurableRecordingStarlinkTemporalPilotQueryV0_1(
+            DurableStarlinkTemporalPilotStoreV0_1(
+                cast(StarlinkTemporalPilotBlobStore, blobs), temporal_catalog
+            ),
+            temporal_catalog,
+        )
+        from leo_flow.adapters.dashboard_temporal_pilot import (
+            DurableDashboardTemporalPilotAggregateV0_1,
+        )
+
+        temporal_aggregate = DurableDashboardTemporalPilotAggregateV0_1(connect, blobs)
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
         surrogate_nulls=surrogate_nulls,
         pilot_constellations=pilot_constellations,
         surrogate_distributions=surrogate_distributions,
+        temporal_pilots=temporal_pilots,
+        temporal_aggregate=temporal_aggregate,
+        doppler_aggregate=doppler_aggregate,
     )
 
 
@@ -293,52 +353,29 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV12QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV14QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
         queries,
         cleanup_timeout_s=config.runtime.shutdown_timeout_s,
     )
+    v3 = DashboardJsonApplicationV3(queries, queries, queries, queries, queries)
+    v4 = DashboardJsonApplicationV4(v3, queries)
+    v5 = DashboardJsonApplicationV5(v4, queries)
+    v6 = DashboardJsonApplicationV6(v5, queries)
+    v7 = DashboardJsonApplicationV7(v6, queries)
+    v8 = DashboardJsonApplicationV8(v7, queries)
+    v9 = DashboardJsonApplicationV9(v8, queries)
+    v10 = DashboardJsonApplicationV10(v9, queries)
+    v11 = DashboardJsonApplicationV11(v10, queries)
+    v12 = DashboardJsonApplicationV12(v11, queries)
+    v13 = DashboardJsonApplicationV13(v12, queries, queries)
+    v14 = DashboardJsonApplicationV14(v13, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(
-            DashboardJsonApplicationV12(
-                DashboardJsonApplicationV11(
-                    DashboardJsonApplicationV10(
-                        DashboardJsonApplicationV9(
-                            DashboardJsonApplicationV8(
-                                DashboardJsonApplicationV7(
-                                    DashboardJsonApplicationV6(
-                                        DashboardJsonApplicationV5(
-                                            DashboardJsonApplicationV4(
-                                                DashboardJsonApplicationV3(
-                                                    queries,
-                                                    queries,
-                                                    queries,
-                                                    queries,
-                                                    queries,
-                                                ),
-                                                queries,
-                                            ),
-                                            queries,
-                                        ),
-                                        queries,
-                                    ),
-                                    queries,
-                                ),
-                                queries,
-                            ),
-                            queries,
-                        ),
-                        queries,
-                    ),
-                    queries,
-                ),
-                queries,
-            ),
-        ),
+        DashboardUiApplication(v14),
         diagnostics=diagnostics,
     )
 

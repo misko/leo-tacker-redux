@@ -27,7 +27,7 @@ capture spool.
 | Source | Local CAS from the immutable 2026-08-14 qualified scan; both source objects are re-hashed through the public blob-reader port |
 | Output | New or empty absolute directory on an approved local filesystem: `ext2`, `ext3`, `ext4`, `xfs`, `btrfs`, `f2fs`, `bcachefs`, `zfs`, `tmpfs`, or `overlay` |
 | Database | Approved disposable PostgreSQL 16 database and owner on one exact pinned cluster system identifier; every application table must be empty |
-| Migrations | Private reviewed directory whose 38 exact file hashes match all database receipts through `0038_dashboard_surrogate_score_distributions.sql` |
+| Migrations | Private reviewed directory whose 40 exact file hashes match all database receipts through `0040_dashboard_doppler_aggregate.sql` |
 | Capture login | Authenticated non-owner, non-privileged login whose complete inherited-role closure is exactly `leo_capture` |
 | Analysis login | Authenticated non-owner, non-privileged login whose complete inherited-role closure is exactly `leo_analysis` |
 | Audit login | Disposable database owner, used only for read-only identity, migration, initial-closure, and final evidence queries |

@@ -27,6 +27,10 @@ from leo_flow.contracts.dashboard_doppler import (
     DopplerWaterfallLayer,
     RecordingDopplerVisualizationQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_doppler_aggregate import (
+    DopplerAggregateQueryPortV0_1,
+    DopplerAggregateQueryV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
@@ -37,6 +41,9 @@ from leo_flow.contracts.dashboard_score_distribution import (
 )
 from leo_flow.contracts.dashboard_surrogate_distribution import (
     SurrogateScoreDistributionQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_temporal_pilot import (
+    TemporalPilotAggregateQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
@@ -61,6 +68,11 @@ from leo_flow.contracts.starlink_surrogate_null_pipeline import (
     MAXIMUM_SURROGATE_NULL_QUERY_ROWS,
     RecordingStarlinkSurrogateNullQueryPortV0_1,
     StarlinkSurrogateNullQueryV0_1,
+)
+from leo_flow.contracts.starlink_temporal_pilot import (
+    MAXIMUM_TEMPORAL_QUERY_POINTS,
+    RecordingStarlinkTemporalPilotQueryPortV0_1,
+    StarlinkTemporalPilotQueryV0_1,
 )
 
 from .repository import DashboardNotFound, InvalidCursor
@@ -589,6 +601,186 @@ class DashboardJsonApplicationV12:
             (("content-type", "application/json; charset=utf-8"),),
             canonical_json_bytes(payload),
         )
+
+
+class DashboardJsonApplicationV13:
+    """Add bounded stratified temporal Qin-versus-surrogate traces."""
+
+    _PREFIX = "/api/v13/recordings/"
+
+    def __init__(
+        self,
+        v12: DashboardJsonApplicationV12,
+        temporal: RecordingStarlinkTemporalPilotQueryPortV0_1,
+        aggregate: TemporalPilotAggregateQueryPortV0_1 | None = None,
+    ) -> None:
+        self._v12, self._temporal, self._aggregate = v12, temporal, aggregate
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path == "/api/v13/temporal-pilot-aggregate":
+            if request.method.upper() != "GET":
+                return _error(405, "method_not_allowed", "only GET is supported")
+            if self._aggregate is None:
+                return _error(404, "not_found", "temporal aggregate is unavailable")
+            try:
+                aggregate_payload = self._aggregate.temporal_pilot_aggregate(
+                    _time_query(request.query)
+                )
+            except (ValueError, InvalidCursor) as error:
+                return _error(400, "invalid_request", str(error))
+            except Exception:  # noqa: BLE001 - fixed external error contract
+                return _error(500, "internal_error", "dashboard query failed")
+            return JsonResponse(
+                200,
+                (("content-type", "application/json; charset=utf-8"),),
+                canonical_json_bytes(aggregate_payload),
+            )
+        if not path.startswith(self._PREFIX):
+            return self._v12.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-temporal-pilot":
+                raise DashboardNotFound(f"route {path} was not found")
+            query = _starlink_temporal_query(
+                RecordingId(unquote(parts[0])), request.query
+            )
+            payload = self._temporal.recording_starlink_temporal_pilot(query)
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > 32 * 1024 * 1024:
+                raise RuntimeError("temporal response exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+class DashboardJsonApplicationV14:
+    """Add bounded candidate-only aggregate Doppler evidence."""
+
+    _ROUTE = "/api/v14/doppler-aggregate"
+    _MAX_QUERY_BYTES = 16_384
+    _MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+
+    def __init__(
+        self,
+        v13: DashboardJsonApplicationV13,
+        aggregate: DopplerAggregateQueryPortV0_1,
+    ) -> None:
+        self._v13, self._aggregate = v13, aggregate
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._ROUTE:
+            return self._v13.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            payload = self._aggregate.doppler_aggregate(
+                _doppler_aggregate_query(request.query, self._MAX_QUERY_BYTES)
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("Doppler aggregate response exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _doppler_aggregate_query(
+    query: dict[str, str], maximum_query_bytes: int
+) -> DopplerAggregateQueryV0_1:
+    allowed = {
+        "start_utc_ns",
+        "stop_utc_ns",
+        "methods",
+        "models",
+        "radio_ids",
+        "receiver_chain_ids",
+        "channels",
+        "edges",
+        "association_states",
+    }
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    if (
+        sum(len(key.encode()) + len(value.encode()) for key, value in query.items())
+        > maximum_query_bytes
+    ):
+        raise ValueError("Doppler aggregate query text exceeds its bound")
+    try:
+        start = UtcNs(int(query["start_utc_ns"]))
+        stop = UtcNs(int(query["stop_utc_ns"]))
+    except KeyError as error:
+        raise ValueError(f"missing query parameter {error.args[0]}") from error
+    except (TypeError, ValueError) as error:
+        raise ValueError("UTC bounds must be integers") from error
+
+    def values(name: str, maximum: int) -> tuple[str, ...]:
+        raw = _comma_values(query, name, maximum)
+        if raw is None:
+            return ()
+        if len(set(raw)) != len(raw):
+            raise ValueError(f"{name} must be unique")
+        return tuple(sorted(raw))
+
+    return DopplerAggregateQueryV0_1(
+        start,
+        stop,
+        values("methods", 2),
+        values("models", 4),
+        values("radio_ids", 64),
+        values("receiver_chain_ids", 32),
+        values("channels", 32),
+        values("edges", 3),
+        values("association_states", 3),
+    )
+
+
+def _starlink_temporal_query(
+    recording_id: RecordingId, query: dict[str, str]
+) -> StarlinkTemporalPilotQueryV0_1:
+    allowed = {
+        "methods",
+        "radio_ids",
+        "receiver_chain_ids",
+        "edges",
+        "maximum_points",
+    }
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    methods = _comma_values(query, "methods", len(REPORT_METHOD_ORDER))
+    radios = _comma_values(query, "radio_ids", 16)
+    receivers = _comma_values(query, "receiver_chain_ids", 16)
+    edges = _comma_values(query, "edges", len(StarlinkEdge))
+    return StarlinkTemporalPilotQueryV0_1(
+        recording_id,
+        REPORT_METHOD_ORDER
+        if methods is None
+        else tuple(StarlinkDetectorMethod(item) for item in methods),
+        () if radios is None else tuple(RadioId(item) for item in radios),
+        () if receivers is None else tuple(ReceiverChainId(item) for item in receivers),
+        () if edges is None else tuple(StarlinkEdge(item) for item in edges),
+        _optional_positive_int(query, "maximum_points", MAXIMUM_TEMPORAL_QUERY_POINTS),
+    )
 
 
 def _starlink_pilot_constellation_query(

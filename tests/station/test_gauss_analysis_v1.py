@@ -226,6 +226,24 @@ def test_science_manifest_pins_rate_specific_qin_template_digests() -> None:
     assert profiles[0]["config_ref"] != profiles[1]["config_ref"]
 
 
+def test_science_manifest_pins_stratified_temporal_search_resources() -> None:
+    temporal = analysis_v1.science_manifest()["starlink_temporal_pilot"]
+
+    assert temporal == {
+        "source": "detector-suite-v0.2-exact-search-grid",
+        "window_duration_ms": 8,
+        "nominal_stride_seconds": 5,
+        "maximum_probe_count": 8,
+        "surrogate_count": 4,
+        "coverage_semantics": "stratified-temporal-sampling-not-full-dwell",
+        "decision_semantics": "candidate-evidence-not-calibrated-detection",
+        "requested_output_schema": {
+            "schema_id": "org.leo-flow.starlink-temporal-pilot-recording-bundle",
+            "version": "0.1",
+        },
+    }
+
+
 def test_plugin_imports_no_capture_radio_or_private_storage_paths() -> None:
     source = inspect.getsource(analysis_v1) + inspect.getsource(analysis_operator)
     forbidden = (

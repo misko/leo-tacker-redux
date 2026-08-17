@@ -268,6 +268,12 @@ code { color: var(--accent); }
 .constellation-subcarrier-table { margin-top: 1rem; }
 .constellation-subcarrier-table table { min-width: 46rem; }
 .constellation-subcarrier-table td:not(:first-child) { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.temporal-controls { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: end; justify-content: end; }
+.temporal-controls label { display: grid; gap: 0.35rem; min-width: 9rem; color: var(--muted); font-size: 0.75rem; }
+.temporal-figure { margin: 1rem 0 0; }
+#temporal-chart { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 0.45rem; background: #050907; }
+.temporal-figure figcaption { margin-top: 0.65rem; color: var(--muted); font-size: 0.75rem; }
+.temporal-tooltip { display: block; min-height: 3rem; margin-top: 0.75rem; padding: 0.7rem; border: 1px solid var(--line); border-radius: 0.4rem; color: var(--ink); background: #0b1411; font: 0.75rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .decision-card { background: var(--surface-raised); border: 1px solid var(--line); border-radius: 0.55rem; padding: 1.1rem; }
 .decision-card[data-state="not-evaluated"] { border-color: #68572e; }
 .decision-card[data-state="unavailable"] { border-color: #6e3d3a; }
@@ -308,6 +314,8 @@ code { color: var(--accent); }
   .surrogate-controls label, .surrogate-controls button { flex: 1 1 100%; }
   .constellation-controls { width: 100%; justify-content: start; }
   .constellation-controls label { flex: 1 1 100%; }
+  .temporal-controls { width: 100%; justify-content: start; }
+  .temporal-controls label { flex: 1 1 100%; }
   .surrogate-score-row { grid-template-columns: 1fr 4rem; }
   .surrogate-score-track { grid-column: 1 / -1; grid-row: 2; }
 }

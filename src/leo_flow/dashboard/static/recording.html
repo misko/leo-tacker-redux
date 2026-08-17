@@ -221,9 +221,54 @@
       <div id="constellation-streams" class="constellation-stream-list"></div>
     </section>
 
+    <section id="temporal-pilot" aria-labelledby="temporal-pilot-heading">
+      <div class="section-heading">
+        <div><p class="section-index">07 / stratified time probes</p><h2 id="temporal-pilot-heading">Pilot score versus dwell time</h2></div>
+        <div class="temporal-controls" aria-label="Temporal pilot filters">
+          <label for="temporal-method">Method
+            <select id="temporal-method">
+              <option value="anchor-8">Anchor-8</option>
+              <option value="differential-16">Differential-16</option>
+              <option value="differential-32">Differential-32</option>
+              <option value="full-frame-acquire">Full-frame acquire</option>
+              <option value="full-frame-full">Full-frame full</option>
+              <option value="full-frame-verify">Full-frame verify</option>
+              <option value="glrt-32" selected>GLRT-32</option>
+              <option value="glrt-64">GLRT-64</option>
+            </select>
+          </label>
+          <label for="temporal-radio">Radio
+            <select id="temporal-radio"><option value="">Select radio</option></select>
+          </label>
+          <label for="temporal-receiver">Receiver
+            <select id="temporal-receiver"><option value="">Select receiver</option></select>
+          </label>
+          <label for="temporal-edge">Edge
+            <select id="temporal-edge"><option value="">Select edge</option><option value="lower">Lower</option><option value="upper">Upper</option></select>
+          </label>
+          <label for="temporal-surrogate">Surrogate display
+            <select id="temporal-surrogate"><option value="band">Summary band</option><option value="all">All surrogates</option><option value="0">Surrogate 1</option><option value="1">Surrogate 2</option><option value="2">Surrogate 3</option><option value="3">Surrogate 4</option></select>
+          </label>
+        </div>
+      </div>
+      <div id="temporal-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Stratified temporal candidate evidence is pending…</div>
+      <aside id="temporal-warning" class="candidate-warning" role="note" hidden>
+        <strong>Stratified candidate evidence—not continuous coverage or a detection.</strong>
+        Scores are independently maximized over epoch/CFO inside each sampled window. Coverage is the exact union of analyzed windows. Overlapping windows, when configured, are statistically dependent. Dwell maxima include the time look-elsewhere effect and finite surrogate ranks are not p-values.
+      </aside>
+      <article id="temporal-summary" class="detail-card" hidden>
+        <dl id="temporal-facts" class="fact-grid"></dl>
+        <figure class="temporal-figure">
+          <canvas id="temporal-chart" width="1200" height="520" role="img" aria-label="Qin and surrogate algorithm scores by relative dwell time"></canvas>
+          <figcaption>Solid green: Qin. Dashed controls or shaded range: fixed precommitted surrogates. Hover or focus a point for its exact window and search winner.</figcaption>
+          <output id="temporal-tooltip" class="temporal-tooltip" aria-live="polite">Select a point to inspect its exact hypothesis winner.</output>
+        </figure>
+      </article>
+    </section>
+
     <section id="analysis" aria-labelledby="analysis-heading">
       <div class="section-heading">
-        <div><p class="section-index">07 / scientific decision</p><h2 id="analysis-heading">Starlink beacon decision</h2></div>
+        <div><p class="section-index">08 / scientific decision</p><h2 id="analysis-heading">Starlink beacon decision</h2></div>
       </div>
       <article id="starlink-decision" class="decision-card" data-state="loading" aria-labelledby="starlink-decision-title">
         <div class="decision-heading">

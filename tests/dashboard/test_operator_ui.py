@@ -41,6 +41,11 @@ def test_static_routes_are_exact_allow_list_with_safe_content_and_cache_policy()
             "text/javascript; charset=utf-8",
             "public, max-age=300",
         ),
+        "/aggregate-doppler": ("text/html; charset=utf-8", "no-store"),
+        "/assets/aggregate-doppler.js": (
+            "text/javascript; charset=utf-8",
+            "public, max-age=300",
+        ),
     }
     for path, (content_type, cache_control) in expected.items():
         response = app.handle(JsonRequest("GET", path, {}))
@@ -99,6 +104,8 @@ def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() 
         'id="show-surrogate"',
         'id="density-canvas"',
         'id="score-summary-table"',
+        'id="temporal-summary-table"',
+        'id="temporal-aggregate-state"',
         "first successful dwell from the continuous service",
         "identical bounded search",
         "not yet a calibrated population null",
@@ -106,10 +113,43 @@ def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() 
     ):
         assert required in html
     assert "/api/v12/surrogate-score-distributions" in javascript
+    assert "/api/v13/temporal-pilot-aggregate" in javascript
+    assert "Mean probe maximum" in html
     assert "CONTINUOUS_SAMPLE_START_UTC_NS" in javascript
     assert "visibleMethods" in javascript
     assert "unit histogram area" in html
     assert "recording + segment + radio + RX chain" in html
+    assert "innerHTML" not in javascript
+    assert "eval(" not in javascript
+    assert "http://" not in html and "https://" not in html
+
+
+def test_aggregate_doppler_page_separates_candidate_sources_and_controls() -> None:
+    app = application()
+    html = app.handle(JsonRequest("GET", "/aggregate-doppler", {})).body.decode()
+    javascript = app.handle(
+        JsonRequest("GET", "/assets/aggregate-doppler.js", {})
+    ).body.decode()
+    for required in (
+        'id="frequency-time-canvas"',
+        'id="drift-canvas"',
+        'id="control-canvas"',
+        'id="source-filters"',
+        "Candidate-only motion evidence",
+        "Radios and receiver ports are never pooled",
+    ):
+        assert required in html
+    for required in (
+        "/api/v14/doppler-aggregate",
+        'category === "source"',
+        'category === "radio"',
+        'category === "receiver"',
+        'category === "method"',
+        'category === "model"',
+        'category === "control"',
+        "radio-and-receiver-series-are-never-pooled",
+    ):
+        assert required in javascript
     assert "innerHTML" not in javascript
     assert "eval(" not in javascript
     assert "http://" not in html and "https://" not in html
@@ -132,6 +172,10 @@ def test_dedicated_recording_page_is_same_origin_bounded_and_path_validated() ->
         'aria-controls="diagnostic-features-panel" aria-expanded="false"',
         'id="waterfall-canvas"',
         'id="waterfall-tile"',
+        'id="temporal-chart"',
+        'id="temporal-radio"',
+        'id="temporal-receiver"',
+        "not continuous coverage",
         '<script src="/assets/recording-detail.js" defer></script>',
     ):
         assert required in html
@@ -152,6 +196,7 @@ def test_recording_page_script_uses_only_projected_json_and_safe_dom_apis() -> N
     for route in (
         "/api/v3/recordings/",
         "/api/v4/recordings/",
+        "/api/v13/recordings/",
         "/waterfall",
         "/api/recordings/",
         "/features?selector=*",

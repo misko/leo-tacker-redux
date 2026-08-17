@@ -42,6 +42,11 @@ from leo_flow.contracts.dashboard_doppler import (
     RecordingDopplerVisualizationQueryPortV0_1,
     RecordingDopplerVisualizationViewV0_1,
 )
+from leo_flow.contracts.dashboard_doppler_aggregate import (
+    DopplerAggregateQueryPortV0_1,
+    DopplerAggregateQueryV0_1,
+    DopplerAggregateViewV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
 from leo_flow.contracts.dashboard_score_distribution import (
@@ -51,6 +56,10 @@ from leo_flow.contracts.dashboard_score_distribution import (
 from leo_flow.contracts.dashboard_surrogate_distribution import (
     SurrogateScoreDistributionQueryPortV0_1,
     SurrogateScoreDistributionViewV0_1,
+)
+from leo_flow.contracts.dashboard_temporal_pilot import (
+    TemporalPilotAggregateQueryPortV0_1,
+    TemporalPilotAggregateViewV0_1,
 )
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
@@ -66,6 +75,11 @@ from leo_flow.contracts.starlink_surrogate_null_pipeline import (
     RecordingStarlinkSurrogateNullQueryPortV0_1,
     RecordingStarlinkSurrogateNullViewV0_1,
     StarlinkSurrogateNullQueryV0_1,
+)
+from leo_flow.contracts.starlink_temporal_pilot import (
+    RecordingStarlinkTemporalPilotQueryPortV0_1,
+    RecordingStarlinkTemporalPilotViewV0_1,
+    StarlinkTemporalPilotQueryV0_1,
 )
 from leo_flow.dashboard import DashboardNotFound, InvalidCursor
 
@@ -97,6 +111,9 @@ class PostgresDashboardRepository:
         pilot_constellations: RecordingStarlinkPilotConstellationQueryPortV0_1
         | None = None,
         surrogate_distributions: SurrogateScoreDistributionQueryPortV0_1 | None = None,
+        temporal_pilots: RecordingStarlinkTemporalPilotQueryPortV0_1 | None = None,
+        temporal_aggregate: TemporalPilotAggregateQueryPortV0_1 | None = None,
+        doppler_aggregate: DopplerAggregateQueryPortV0_1 | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -116,6 +133,37 @@ class PostgresDashboardRepository:
         self._surrogate_nulls = surrogate_nulls
         self._pilot_constellations = pilot_constellations
         self._surrogate_distributions = surrogate_distributions
+        self._temporal_pilots = temporal_pilots
+        self._temporal_aggregate = temporal_aggregate
+        self._doppler_aggregate = doppler_aggregate
+
+    def temporal_pilot_aggregate(
+        self, query: TimeRangeQuery
+    ) -> TemporalPilotAggregateViewV0_1:
+        if self._temporal_aggregate is None:
+            raise DashboardNotFound("temporal pilot aggregate is unavailable")
+        return self._temporal_aggregate.temporal_pilot_aggregate(query)
+
+    def doppler_aggregate(
+        self, query: DopplerAggregateQueryV0_1
+    ) -> DopplerAggregateViewV0_1:
+        if self._doppler_aggregate is None:
+            raise DashboardNotFound("aggregate Doppler evidence is unavailable")
+        return self._doppler_aggregate.doppler_aggregate(query)
+
+    def recording_starlink_temporal_pilot(
+        self, query: StarlinkTemporalPilotQueryV0_1
+    ) -> RecordingStarlinkTemporalPilotViewV0_1:
+        if self._temporal_pilots is None:
+            raise DashboardNotFound(
+                f"temporal pilot evidence for recording {query.recording_id} is unavailable"
+            )
+        try:
+            return self._temporal_pilots.recording_starlink_temporal_pilot(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"temporal pilot evidence for recording {query.recording_id} was not found"
+            ) from error
 
     def surrogate_score_distributions(
         self, query: TimeRangeQuery

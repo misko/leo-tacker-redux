@@ -37,6 +37,14 @@ from leo_flow.analysis.recording.starlink_surrogate_null_recording_codec import 
     STARLINK_SURROGATE_NULL_RECORDING_MEDIA_TYPE,
     encode_starlink_surrogate_null_recording,
 )
+from leo_flow.analysis.recording.starlink_temporal_pilot_codec import (
+    STARLINK_TEMPORAL_PILOT_FORMAT_ID,
+    STARLINK_TEMPORAL_PILOT_MEDIA_TYPE,
+    encode_starlink_temporal_pilot,
+)
+from leo_flow.analysis.recording.starlink_temporal_pilot_persistence import (
+    starlink_temporal_pilot_projection_v0_1,
+)
 from leo_flow.application.starlink_suite_projection_work import (
     StarlinkSuiteProjectionLeaseV0_2,
 )
@@ -292,6 +300,9 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
         from leo_flow.adapters.starlink_surrogate_null_postgres import (
             publish_starlink_surrogate_null_with_cursor,
         )
+        from leo_flow.adapters.starlink_temporal_pilot_postgres import (
+            publish_starlink_temporal_pilot_with_cursor,
+        )
 
         if lease.job_type is not JobType.STARLINK_SUITE_ANALYSIS or not isinstance(
             prepared, PreparedCombinedStarlinkSuiteAnalysisV0_2
@@ -335,6 +346,18 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
                 STARLINK_PILOT_CONSTELLATION_RECORDING_FORMAT_ID,
                 f"starlink-suite:{lease.job_id}:pilot-constellation-bundle-v0.1",
             )
+        temporal_projection = None
+        temporal_ref = None
+        if prepared.temporal_pilot is not None:
+            temporal_projection = starlink_temporal_pilot_projection_v0_1(
+                prepared.temporal_pilot.request, prepared.temporal_pilot.bundle
+            )
+            temporal_ref = self._put(
+                encode_starlink_temporal_pilot(prepared.temporal_pilot.bundle),
+                STARLINK_TEMPORAL_PILOT_MEDIA_TYPE,
+                STARLINK_TEMPORAL_PILOT_FORMAT_ID,
+                f"starlink-suite:{lease.job_id}:temporal-pilot-bundle-v0.1",
+            )
         result = ArtifactRef(
             prepared.bundle.analysis_id, suite_ref.digest, prepared.bundle.schema
         )
@@ -374,6 +397,14 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
                     idempotency_key=(
                         f"starlink-suite:{lease.job_id}:pilot-constellation"
                     ),
+                )
+            if temporal_projection is not None and temporal_ref is not None:
+                publish_starlink_temporal_pilot_with_cursor(
+                    cursor,
+                    temporal_projection,
+                    temporal_ref,
+                    prepared.request.recording_object_ref,
+                    idempotency_key=f"starlink-suite:{lease.job_id}:temporal-pilot",
                 )
             work_id = (
                 "slsuitework_"

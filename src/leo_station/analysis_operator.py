@@ -85,6 +85,7 @@ from .analysis_v1 import (
     starlink_search_profile_v0_1,
     starlink_suite_profile_v0_2,
     starlink_surrogate_null_preparers_v0_1,
+    starlink_temporal_pilot_preparers_v0_1,
 )
 
 MAX_MANIFEST_BYTES = 64 * 1024
@@ -560,6 +561,7 @@ def _process_starlink_suite_one(credentials: SecretProvider) -> bool:
             STARLINK_SUITE_ANALYZER,
             starlink_surrogate_null_preparers_v0_1(reader),
             STARLINK_PILOT_CONSTELLATION_ANALYZER,
+            starlink_temporal_pilot_preparers_v0_1(),
         ),
         AtomicPostgresCombinedStarlinkSuiteCommitterV0_2(blobs, connect),
         worker_id="gauss-starlink-suite-analysis-1",

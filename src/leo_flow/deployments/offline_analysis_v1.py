@@ -123,6 +123,8 @@ EXPECTED_MIGRATIONS = tuple(
         (36, "starlink_pilot_constellation_catalog"),
         (37, "focused_analysis_during_capture"),
         (38, "dashboard_surrogate_score_distributions"),
+        (39, "starlink_temporal_pilot_catalog"),
+        (40, "dashboard_doppler_aggregate"),
     )
 )
 

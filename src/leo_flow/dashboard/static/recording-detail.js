@@ -12,6 +12,11 @@ let constellationRecordingId = null;
 let constellationRequestSequence = 0;
 const constellationKnownSegments = new Set();
 const constellationKnownReceivers = new Set();
+let temporalRecordingId = null;
+let temporalRequestSequence = 0;
+let temporalPayload = null;
+let temporalChartPoints = [];
+let temporalFocusedPoint = 0;
 
 function setState(id, state, message) {
   const node = byId(id);
@@ -1297,6 +1302,171 @@ async function loadPilotConstellation(recordingId) {
   }
 }
 
+function temporalQueryString() {
+  const parameters = new URLSearchParams();
+  parameters.set("methods", byId("temporal-method").value);
+  const mappings = [
+    ["temporal-radio", "radio_ids"],
+    ["temporal-receiver", "receiver_chain_ids"],
+    ["temporal-edge", "edges"],
+  ];
+  for (const [id, name] of mappings) {
+    const value = byId(id).value;
+    if (value) parameters.set(name, value);
+  }
+  parameters.set("maximum_points", "1024");
+  return parameters.toString();
+}
+
+function temporalOptions(streams) {
+  const definitions = [
+    ["temporal-radio", streams.map((item) => item.radio_id)],
+    ["temporal-receiver", streams.map((item) => item.receiver_chain_id)],
+    ["temporal-edge", streams.map((item) => item.edge)],
+  ];
+  for (const [id, values] of definitions) {
+    const select = byId(id);
+    const previous = select.value;
+    const label = select.options[0].textContent;
+    select.replaceChildren(new Option(label, ""));
+    for (const value of [...new Set(values)].sort()) select.append(new Option(value, value));
+    select.value = values.includes(previous) ? previous : (values[0] || "");
+  }
+}
+
+function temporalTooltip(point, stream) {
+  const start = point.start_sample / stream.sample_rate_hz;
+  const stop = point.stop_sample / stream.sample_rate_hz;
+  const center = point.center_sample / stream.sample_rate_hz;
+  const surrogates = (point.surrogates || []).map((item) => Number(item.winner.score).toFixed(6)).join(", ");
+  return `Window ${point.probe_index + 1}: ${start.toFixed(6)}–${stop.toFixed(6)} s (center ${center.toFixed(6)} s) · Qin ${Number(point.qin.score).toFixed(6)} · surrogates [${surrogates}] · finite rank ${point.finite_upper_tail_rank}/${(point.surrogates || []).length + 1} · margin ${Number(point.qin_minus_max_surrogate).toFixed(6)} · winner epoch ${point.qin.winning_epoch_sample}, coarse CFO ${Number(point.qin.winning_coarse_cfo_hz).toFixed(3)} Hz, residual CFO ${Number(point.qin.winning_residual_cfo_hz).toFixed(3)} Hz`;
+}
+
+function drawTemporalChart() {
+  if (!temporalPayload?.streams?.length) return;
+  const radio = byId("temporal-radio").value;
+  const receiver = byId("temporal-receiver").value;
+  const edge = byId("temporal-edge").value;
+  const stream = temporalPayload.streams.find((item) =>
+    (!radio || item.radio_id === radio) &&
+    (!receiver || item.receiver_chain_id === receiver) &&
+    (!edge || item.edge === edge)
+  ) || temporalPayload.streams[0];
+  const points = stream.points || [];
+  temporalChartPoints = points;
+  const canvas = byId("temporal-chart");
+  canvas.tabIndex = 0;
+  const context = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const margin = {left: 76, right: 28, top: 28, bottom: 58};
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const duration = stream.segment_sample_count / stream.sample_rate_hz;
+  const x = (point) => margin.left + (point.center_sample / stream.sample_rate_hz / duration) * plotWidth;
+  const y = (score) => margin.top + (1 - Number(score)) * plotHeight;
+  context.fillStyle = "#050907";
+  context.fillRect(0, 0, width, height);
+  context.strokeStyle = "#2b3a34";
+  context.fillStyle = "#94a59c";
+  context.font = "22px ui-monospace, monospace";
+  context.lineWidth = 2;
+  for (let score = 0; score <= 1.0001; score += 0.25) {
+    const yy = y(score);
+    context.beginPath(); context.moveTo(margin.left, yy); context.lineTo(width - margin.right, yy); context.stroke();
+    context.fillText(score.toFixed(2), 10, yy + 7);
+  }
+  for (let fraction = 0; fraction <= 1.0001; fraction += 0.25) {
+    const seconds = fraction * duration;
+    const xx = margin.left + fraction * plotWidth;
+    context.fillText(`${seconds.toFixed(1)} s`, xx - 24, height - 18);
+  }
+  const display = byId("temporal-surrogate").value;
+  if (display === "band") {
+    context.fillStyle = "rgba(255, 212, 121, 0.20)";
+    context.beginPath();
+    points.forEach((point, index) => {
+      const high = Math.max(...point.surrogates.map((item) => item.winner.score));
+      if (index === 0) context.moveTo(x(point), y(high)); else context.lineTo(x(point), y(high));
+    });
+    [...points].reverse().forEach((point) => {
+      const low = Math.min(...point.surrogates.map((item) => item.winner.score));
+      context.lineTo(x(point), y(low));
+    });
+    context.closePath(); context.fill();
+  } else {
+    const indexes = display === "all" ? [0, 1, 2, 3] : [Number(display)];
+    for (const index of indexes) {
+      context.strokeStyle = ["#ffd479", "#d9a6ff", "#75cfff", "#ff9f91"][index];
+      context.setLineDash([9, 7]); context.beginPath();
+      points.forEach((point, pointIndex) => {
+        const item = point.surrogates[index];
+        if (!item) return;
+        if (pointIndex === 0) context.moveTo(x(point), y(item.winner.score)); else context.lineTo(x(point), y(item.winner.score));
+      });
+      context.stroke();
+    }
+  }
+  context.setLineDash([]); context.strokeStyle = "#b6ffd2"; context.lineWidth = 4; context.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) context.moveTo(x(point), y(point.qin.score)); else context.lineTo(x(point), y(point.qin.score));
+  });
+  context.stroke();
+  context.fillStyle = "#b6ffd2";
+  points.forEach((point) => { context.beginPath(); context.arc(x(point), y(point.qin.score), 7, 0, Math.PI * 2); context.fill(); });
+  canvas._temporalGeometry = {stream, x, y};
+}
+
+function renderTemporalPayload(payload) {
+  if (payload.schema?.schema_id !== "org.leo-flow.dashboard.recording-starlink-temporal-pilot") throw new Error("Dashboard returned an unsupported temporal pilot view");
+  temporalPayload = payload;
+  const streams = payload.streams || [];
+  if (!streams.length) {
+    byId("temporal-warning").hidden = true;
+    byId("temporal-summary").hidden = true;
+    setState("temporal-state", "unavailable", "No stratified temporal evidence matches the selected radio, receiver, edge, and method.");
+    return;
+  }
+  temporalOptions(streams);
+  const stream = streams[0];
+  const plan = payload.plan;
+  const summary = stream.dwell_summaries?.[0];
+  replaceFacts(byId("temporal-facts"), [
+    ["Stream (never pooled)", `${stream.radio_id} · ${stream.receiver_chain_id} · ${stream.edge}`],
+    ["Sampling", `${stream.points.length} visible probes across ${(stream.segment_sample_count / stream.sample_rate_hz).toFixed(3)} s dwell`],
+    ["Window / nominal stride", `${(plan.window_sample_count / stream.sample_rate_hz * 1000).toFixed(3)} ms / ${(plan.nominal_stride_samples / stream.sample_rate_hz).toFixed(3)} s`],
+    ["Window overlap", `${(Math.max(0, 1 - plan.nominal_stride_samples / plan.window_sample_count) * 100).toFixed(3)}% · overlapping points are dependent`],
+    ["Analyzed union coverage", `${(stream.analyzed_sample_count / stream.sample_rate_hz * 1000).toFixed(3)} ms · ${(stream.coverage_fraction * 100).toFixed(4)}%`],
+    ["Sampled-dwell Qin maximum", summary ? Number(summary.qin_maximum).toFixed(6) : "Unavailable"],
+    ["Sampled-dwell finite rank", summary ? `${summary.finite_upper_tail_rank}/${summary.surrogate_maxima.length + 1}` : "Unavailable"],
+    ["Candidate occupancy", summary ? `${summary.candidate_window_count}/${summary.probe_count} (${(summary.candidate_window_count / summary.probe_count * 100).toFixed(2)}%) · descriptive only` : "Unavailable"],
+    ["Response selection", payload.truncated ? `${payload.original_point_count} original points · extrema-preserving decimation` : `${payload.original_point_count} points · no decimation`],
+  ]);
+  byId("temporal-warning").hidden = false;
+  byId("temporal-summary").hidden = false;
+  setState("temporal-state", "ready", `${streams.length} independent stream trace${streams.length === 1 ? "" : "s"} loaded; the plot displays one selected radio/RX/edge only.`);
+  drawTemporalChart();
+}
+
+async function loadTemporalPilot(recordingId) {
+  temporalRecordingId = recordingId;
+  const sequence = ++temporalRequestSequence;
+  setState("temporal-state", "pending", "Loading stratified temporal candidate evidence…");
+  byId("temporal-summary").hidden = true;
+  try {
+    const payload = await fetchJson(`/api/v13/recordings/${encodeURIComponent(recordingId)}/starlink-temporal-pilot?${temporalQueryString()}`);
+    if (sequence !== temporalRequestSequence) return;
+    renderTemporalPayload(payload);
+  } catch (error) {
+    if (sequence !== temporalRequestSequence) return;
+    if (error?.status === 404) {
+      setState("temporal-state", "unavailable", "Stratified temporal evidence is not yet available for this recording.");
+      return;
+    }
+    setState("temporal-state", "error", `Temporal pilot evidence failed: ${safeError(error)}`);
+  }
+}
+
 async function start() {
   const recordingId = recordingIdFromPath();
   if (!recordingId) {
@@ -1311,6 +1481,7 @@ async function start() {
     loadDopplerVisualization(recordingId),
     loadSurrogateNull(recordingId),
     loadPilotConstellation(recordingId),
+    loadTemporalPilot(recordingId),
     loadStarlinkDecision(recordingId),
     loadAllFeatures(recordingId),
   ]);
@@ -1344,6 +1515,33 @@ for (const id of ["constellation-segment", "constellation-receiver", "constellat
     if (constellationRecordingId) loadPilotConstellation(constellationRecordingId);
   });
 }
+
+for (const id of ["temporal-method", "temporal-radio", "temporal-receiver", "temporal-edge"]) {
+  byId(id).addEventListener("change", () => {
+    if (temporalRecordingId) loadTemporalPilot(temporalRecordingId);
+  });
+}
+byId("temporal-surrogate").addEventListener("change", drawTemporalChart);
+byId("temporal-chart").addEventListener("mousemove", (event) => {
+  const canvas = event.currentTarget;
+  const geometry = canvas._temporalGeometry;
+  if (!geometry || temporalChartPoints.length === 0) return;
+  const bounds = canvas.getBoundingClientRect();
+  const px = (event.clientX - bounds.left) * canvas.width / bounds.width;
+  let best = 0;
+  for (let index = 1; index < temporalChartPoints.length; index += 1) {
+    if (Math.abs(geometry.x(temporalChartPoints[index]) - px) < Math.abs(geometry.x(temporalChartPoints[best]) - px)) best = index;
+  }
+  temporalFocusedPoint = best;
+  byId("temporal-tooltip").textContent = temporalTooltip(temporalChartPoints[best], geometry.stream);
+});
+byId("temporal-chart").addEventListener("keydown", (event) => {
+  const geometry = event.currentTarget._temporalGeometry;
+  if (!geometry || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  temporalFocusedPoint = Math.max(0, Math.min(temporalChartPoints.length - 1, temporalFocusedPoint + (event.key === "ArrowRight" ? 1 : -1)));
+  byId("temporal-tooltip").textContent = temporalTooltip(temporalChartPoints[temporalFocusedPoint], geometry.stream);
+});
 
 byId("diagnostic-features").addEventListener("toggle", (event) => {
   const expanded = event.currentTarget.open;

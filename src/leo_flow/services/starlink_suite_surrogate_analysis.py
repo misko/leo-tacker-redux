@@ -35,12 +35,17 @@ from .starlink_surrogate_null_analysis import (
     PreparedStarlinkSurrogateNullAnalysisV0_1,
     StarlinkSurrogateNullAnalysisPreparerV0_1,
 )
+from .starlink_temporal_pilot_analysis import (
+    PreparedStarlinkTemporalPilotAnalysisV0_1,
+    StarlinkTemporalPilotAnalysisPreparerV0_1,
+)
 
 
 @dataclass(frozen=True)
 class PreparedCombinedStarlinkSuiteAnalysisV0_2(PreparedStarlinkSuiteAnalysisV0_2):
     surrogate_null: PreparedStarlinkSurrogateNullAnalysisV0_1
     pilot_constellation: PreparedStarlinkPilotConstellationAnalysisV0_1 | None
+    temporal_pilot: PreparedStarlinkTemporalPilotAnalysisV0_1 | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,9 @@ class CombinedStarlinkSuiteAnalysisJobPreparerV0_2:
             tuple[ArtifactRef, StarlinkSurrogateNullAnalysisPreparerV0_1], ...
         ],
         constellation_analyzer: StarlinkPilotConstellationStreamAnalyzerV0_1,
+        temporal_preparers: tuple[
+            tuple[ArtifactRef, StarlinkTemporalPilotAnalysisPreparerV0_1], ...
+        ] = (),
     ) -> None:
         if not surrogate_preparers:
             raise ValueError("combined suite analysis requires surrogate profiles")
@@ -78,6 +86,10 @@ class CombinedStarlinkSuiteAnalysisJobPreparerV0_2:
         self._suite_analyzer = suite_analyzer
         self._surrogate_preparers = surrogate_preparers
         self._constellation_analyzer = constellation_analyzer
+        temporal_refs = tuple(ref for ref, _preparer in temporal_preparers)
+        if len(temporal_refs) != len(set(temporal_refs)):
+            raise ValueError("temporal profile config refs must be unique")
+        self._temporal_preparers = temporal_preparers
 
     def prepare(self, lease: JobLease) -> PreparedCombinedStarlinkSuiteAnalysisV0_2:
         if lease.job_type is not JobType.STARLINK_SUITE_ANALYSIS:
@@ -102,8 +114,24 @@ class CombinedStarlinkSuiteAnalysisJobPreparerV0_2:
             constellation = _prepare_constellation(
                 recording, request, bundle, self._constellation_analyzer
             )
+            temporal_matches = tuple(
+                preparer
+                for config_ref, preparer in self._temporal_preparers
+                if config_ref == request.config_ref
+            )
+            if self._temporal_preparers and len(temporal_matches) != 1:
+                raise StarlinkSuiteAnalysisJobError(
+                    "detector-suite request has no exact temporal profile"
+                )
+            temporal = (
+                None
+                if not temporal_matches
+                else temporal_matches[0].prepare_from_open_recording(
+                    recording, request, bundle
+                )
+            )
         return PreparedCombinedStarlinkSuiteAnalysisV0_2(
-            request, bundle, surrogate, constellation
+            request, bundle, surrogate, constellation, temporal
         )
 
 
