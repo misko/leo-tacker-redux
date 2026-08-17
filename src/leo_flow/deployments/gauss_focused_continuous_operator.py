@@ -30,6 +30,7 @@ from leo_flow.deployments.gauss_focused_capture_operator import (
 MAXIMUM_IN_FLIGHT_ANALYSES = 8
 DEFAULT_POLL_INTERVAL_S = 0.25
 DEFAULT_MINIMUM_FREE_BYTES = 10 * 1024**3
+DEFAULT_LEAD_SECONDS = MINIMUM_LEAD_NS // 1_000_000_000 + 15
 
 
 @dataclass(slots=True)
@@ -59,9 +60,7 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=MAXIMUM_IN_FLIGHT_ANALYSES,
     )
-    parser.add_argument(
-        "--lead-seconds", type=int, default=MINIMUM_LEAD_NS // 1_000_000_000
-    )
+    parser.add_argument("--lead-seconds", type=int, default=DEFAULT_LEAD_SECONDS)
     parser.add_argument("--maximum-dwells", type=int, default=0)
     parser.add_argument(
         "--minimum-free-bytes", type=int, default=DEFAULT_MINIMUM_FREE_BYTES

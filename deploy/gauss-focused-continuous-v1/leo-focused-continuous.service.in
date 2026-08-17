@@ -17,7 +17,7 @@ Environment="OMP_NUM_THREADS=1"
 Environment="MKL_NUM_THREADS=1"
 Environment="NUMEXPR_NUM_THREADS=1"
 ExecStartPre=@RELEASE_ROOT@/venv/bin/leo-verify-release --manifest @RELEASE_ROOT@/release.manifest.json --receipt @RELEASE_ROOT@/validation.receipt.json --expected-manifest-sha256 @RELEASE_MANIFEST_SHA256@ --expected-receipt-sha256 @RELEASE_RECEIPT_SHA256@
-ExecStart=@RELEASE_ROOT@/venv/bin/leo-gauss-focused-continuous --station-a @RELEASE_ROOT@/config/r20.station.json --station-b @RELEASE_ROOT@/config/r21.station.json --state-root /home/mouse9911/.local/state/leo-flow/focused-continuous-v1 --capture-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-capture --analysis-config @RELEASE_ROOT@/config/analysis.json --analysis-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis --dashboard-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-dashboard --compute-workers 8 --maximum-in-flight-analyses 8 --lead-seconds 30 --minimum-free-bytes 10737418240 --arm
+ExecStart=@RELEASE_ROOT@/venv/bin/leo-gauss-focused-continuous --station-a @RELEASE_ROOT@/config/r20.station.json --station-b @RELEASE_ROOT@/config/r21.station.json --state-root /home/mouse9911/.local/state/leo-flow/focused-continuous-v1 --capture-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-capture --analysis-config @RELEASE_ROOT@/config/analysis.json --analysis-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis --dashboard-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-dashboard --compute-workers 8 --maximum-in-flight-analyses 8 --lead-seconds 45 --minimum-free-bytes 10737418240 --arm
 Restart=no
 TimeoutStartSec=30s
 TimeoutStopSec=2h
@@ -40,4 +40,3 @@ ReadWritePaths=/home/mouse9911/.local/state/leo-flow /home/mouse9911/.local/shar
 
 [Install]
 WantedBy=default.target
-
