@@ -2957,3 +2957,14 @@ streams and 6,144 method outputs. Candidate views retain both calibration-
 required reason codes and every calibrated-detection count remains null.
 Capture advanced from 361 to 379 during analysis and to 381 during the audit,
 with 762/762 unique recordings and no halt.
+
+The eleventh V5 online-analysis window (`360..395`) closed with exact digest
+`745ffe0de077e9b0f2016ff24f3b6cc5fb77f2b368c7bbfea4b07c8f0ba62829`.
+The sealed Release-F slice exited zero after 9m48s with no parked work.
+Independent dashboard reads proved 72 complete FeatureSet projections with
+3,456 rows, 72 complete 16-tile/262,144-cell waterfalls, and 72 Starlink v0.2
+views containing 24 clipped `not_evaluated` and 48 candidate recordings, 768
+streams and 6,144 method outputs. Candidate views retain both calibration-
+required reason codes and every calibrated-detection count remains null.
+Capture advanced from 396 to 413 during analysis and to 416 during the audit,
+with 832/832 unique recordings and no halt.
