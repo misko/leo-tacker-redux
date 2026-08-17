@@ -15,7 +15,7 @@ files beneath the user-owned `0700` state root.
 The templates intentionally omit `User=` and `Group=` because a user manager
 already runs the service as its owner. They retain namespace, capability,
 filesystem, address-family, resource, and no-new-privilege restrictions. The
-sealed release and v8 receipt are mounted read-only; only the existing
+sealed release and selected qualification receipt are mounted read-only; only the existing
 `leo-flow` state and object roots are writable.
 
 ## Unrendered inputs
@@ -30,7 +30,9 @@ value and then retain the rendered unit bytes in release evidence:
 | `@RELEASE_MANIFEST_SHA256@` | lowercase 64-hex SHA-256 of the selected release manifest bytes |
 | `@RELEASE_RECEIPT_SHA256@` | lowercase 64-hex SHA-256 of the selected release validation receipt bytes |
 | `@MAIN_CAMPAIGN_ROOT@` | fresh state root for the one reviewed 936-slot campaign |
+| `@MAIN_DEFINITION_PATH@` | absolute path of the campaign's immutable definition; it need not be inside the mutable state root |
 | `@MAIN_DEFINITION_DIGEST@` | exact `sha256:...` digest emitted for that root's immutable definition |
+| `@QUALIFICATION_RECEIPT_PATH@` | absolute path of the exact successful qualification receipt named by the main definition |
 
 The selected release must vendor libiio, its Python binding, and the reviewed SPF modules
 inside the release at the paths used by the templates. A writable `.cache`
@@ -46,7 +48,7 @@ and any symlink escape before the capture or analysis entrypoint can execute.
 | Order | Gate | Required evidence |
 |---:|---|---|
 | 1 | Release sealed | manifest and validation receipt re-hash exactly; entire release tree is non-writable; import inventory resolves only inside the selected release |
-| 2 | Qualification accepted | v8 receipt SHA-256 is `6a816b5da9be8cb86361610fe42004074512e64b0748de2be2b62e832cdbcb8d`; terminal audit SHA-256 is `53aff643eb3aa4f008f1b227674540016fc91678cf3b7c563ef98a6fdbff6dfd` |
+| 2 | Qualification accepted | selected receipt decodes canonically, names the exact station/runtime identities and nine successful cells, and its digest equals the main definition's `qualification_receipt_digest` |
 | 3 | Database promoted | migration receipts exactly match approved files through `0032_campaign_online_analysis.sql`; initial drain and campaign-scoped concurrent-analysis gates are true |
 | 4 | Exclusive host | no campaign, capture, analysis, or process-mode lock owner; no process has an established session to `.20` or `.21` |
 | 5 | Capacity | available bytes at both state and CAS roots are at least `75,966,218,240` immediately before arming |

@@ -15,7 +15,7 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_user_units_bind_only_sealed_release_v8_and_fresh_main() -> None:
+def test_user_units_bind_only_selected_release_receipt_and_fresh_main() -> None:
     for unit in (_text(CAPTURE), _text(ANALYSIS), _text(ONLINE)):
         assert "User=" not in unit
         assert "Group=" not in unit
@@ -23,7 +23,8 @@ def test_user_units_bind_only_sealed_release_v8_and_fresh_main() -> None:
         assert "@RELEASE_ROOT@/config/runtime.json" in unit
         assert "@RELEASE_ROOT@/config/r20.station.json" in unit
         assert "@RELEASE_ROOT@/config/r21.station.json" in unit
-        assert "@MAIN_CAMPAIGN_ROOT@/main.definition.json" in unit
+        assert "@MAIN_DEFINITION_PATH@" in unit
+        assert "@QUALIFICATION_RECEIPT_PATH@" in unit
         assert "@MAIN_DEFINITION_DIGEST@" in unit
         assert "@RELEASE_MANIFEST_SHA256@" in unit
         assert "@RELEASE_RECEIPT_SHA256@" in unit
@@ -35,7 +36,12 @@ def test_user_units_bind_only_sealed_release_v8_and_fresh_main() -> None:
             "--expected-receipt-sha256 @RELEASE_RECEIPT_SHA256@"
         ) in unit
         assert "@RELEASE_D_" not in unit
-        assert "qual_gauss_r20_r21_20260816_v8/qualification.receipt.json" in unit
+        assert "qual_gauss_r20_r21_20260816_v8/qualification.receipt.json" not in unit
+        assert 'Environment="PYTHONNOUSERSITE=1"' in unit
+        assert (
+            'Environment="LD_LIBRARY_PATH=@RELEASE_ROOT@/native/lib:'
+            '@RELEASE_ROOT@/python/lib"'
+        ) in unit
         assert "/gits/leo-tracker-redux" not in unit
         assert "/.cache/" not in unit
         assert "qualification-v5" not in unit
@@ -108,5 +114,7 @@ def test_runbook_requires_linger_migration_and_offline_render_verification() -> 
     assert "systemd-analyze --user verify" in runbook
     assert "@RELEASE_MANIFEST_SHA256@" in runbook
     assert "@RELEASE_RECEIPT_SHA256@" in runbook
+    assert "@MAIN_DEFINITION_PATH@" in runbook
+    assert "@QUALIFICATION_RECEIPT_PATH@" in runbook
     assert "Do not compensate by running capture as root" in runbook
     assert "libiio" in runbook and "SPF" in runbook

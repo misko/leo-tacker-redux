@@ -4,16 +4,17 @@ OnSuccess=leo-v5-main-r20-r21-analysis.service
 StartLimitIntervalSec=0
 ConditionPathExists=@RELEASE_ROOT@/release.manifest.json
 ConditionPathExists=@RELEASE_ROOT@/validation.receipt.json
-ConditionPathExists=/home/mouse9911/.local/state/leo-flow/campaigns/qual_gauss_r20_r21_20260816_v8/qualification.receipt.json
-ConditionPathExists=@MAIN_CAMPAIGN_ROOT@/main.definition.json
+ConditionPathExists=@QUALIFICATION_RECEIPT_PATH@
+ConditionPathExists=@MAIN_DEFINITION_PATH@
 
 [Service]
 Type=exec
 WorkingDirectory=@RELEASE_ROOT@
 Environment="PYTHONPATH=@RELEASE_ROOT@/native/lib/python3.11/site-packages:@RELEASE_ROOT@/native/spf"
-Environment="LD_LIBRARY_PATH=@RELEASE_ROOT@/native/lib"
+Environment="LD_LIBRARY_PATH=@RELEASE_ROOT@/native/lib:@RELEASE_ROOT@/python/lib"
+Environment="PYTHONNOUSERSITE=1"
 ExecStartPre=@RELEASE_ROOT@/venv/bin/leo-verify-release --manifest @RELEASE_ROOT@/release.manifest.json --receipt @RELEASE_ROOT@/validation.receipt.json --expected-manifest-sha256 @RELEASE_MANIFEST_SHA256@ --expected-receipt-sha256 @RELEASE_RECEIPT_SHA256@
-ExecStart=@RELEASE_ROOT@/venv/bin/leo-v5-continuous --runtime-config @RELEASE_ROOT@/config/runtime.json capture-run --definition @MAIN_CAMPAIGN_ROOT@/main.definition.json --qualification-receipt /home/mouse9911/.local/state/leo-flow/campaigns/qual_gauss_r20_r21_20260816_v8/qualification.receipt.json --station-a @RELEASE_ROOT@/config/r20.station.json --station-b @RELEASE_ROOT@/config/r21.station.json --journal @MAIN_CAMPAIGN_ROOT@/continuous.sqlite3 --campaign-state-root @MAIN_CAMPAIGN_ROOT@ --campaign-lock @MAIN_CAMPAIGN_ROOT@/campaign.lock --capacity-margin-bytes 10737418240 --maximum-transitions 1873 --maximum-runtime-seconds 32400 --arm --confirm-definition-digest @MAIN_DEFINITION_DIGEST@
+ExecStart=@RELEASE_ROOT@/venv/bin/leo-v5-continuous --runtime-config @RELEASE_ROOT@/config/runtime.json capture-run --definition @MAIN_DEFINITION_PATH@ --qualification-receipt @QUALIFICATION_RECEIPT_PATH@ --station-a @RELEASE_ROOT@/config/r20.station.json --station-b @RELEASE_ROOT@/config/r21.station.json --journal @MAIN_CAMPAIGN_ROOT@/continuous.sqlite3 --campaign-state-root @MAIN_CAMPAIGN_ROOT@ --campaign-lock @MAIN_CAMPAIGN_ROOT@/campaign.lock --capacity-margin-bytes 10737418240 --maximum-transitions 1873 --maximum-runtime-seconds 32400 --arm --confirm-definition-digest @MAIN_DEFINITION_DIGEST@
 Restart=on-failure
 RestartPreventExitStatus=2 3 4
 RestartSec=1s
@@ -41,7 +42,7 @@ RestrictRealtime=yes
 RestrictSUIDSGID=yes
 SystemCallArchitectures=native
 ReadOnlyPaths=@RELEASE_ROOT@
-ReadOnlyPaths=/home/mouse9911/.local/state/leo-flow/campaigns/qual_gauss_r20_r21_20260816_v8/qualification.receipt.json
+ReadOnlyPaths=@QUALIFICATION_RECEIPT_PATH@
 ReadWritePaths=/home/mouse9911/.local/state/leo-flow /home/mouse9911/.local/share/leo-flow
 
 [Install]
