@@ -1,0 +1,55 @@
+{
+  "schema": "org.leo-flow.v5-capture-station/v1",
+  "station_id": "station_gauss",
+  "hardware_snapshot_id": "hw_gauss_pluto_19f2_hostprime_oldradio_postreboot_20260816_d1",
+  "clock_status": "system-realtime-v5-metadata",
+  "capture_implementation": "leo-flow-v5-edge-scan-v1",
+  "runtime_manifest": "/home/mouse9911/gits/leo-tracker-redux/deploy/v5-runtime/gauss-rx-integrity-candidate.manifest.json",
+  "runtime_manifest_digest": "sha256:0a9cf278bf836655afbf7a9a324a21c5dc41235d1b251386a0013eb0f299f123",
+  "expected_runtime": {
+    "runtime_id": "gauss-pluto-v5-rx-integrity-close-barrier-1",
+    "schema": "leo-flow.v5-runtime/v1",
+    "iio_module_path": "/home/mouse9911/.cache/leo-flow/v5-runtime-rx-integrity-candidate1/lib/python3.11/site-packages/iio.py",
+    "iio_version": [0, 25, "c26258b"],
+    "iio_commit": "c26258bfa33098c2b215e19cf85d448e89499b1a+patch.195bddceada230ef",
+    "native_libiio_prefix": "/home/mouse9911/.cache/leo-flow/v5-runtime-rx-integrity-candidate1",
+    "required_backends": ["local", "ip", "usb"],
+    "pyadi_version": "0.0.21",
+    "pyadi_module_path": "/home/mouse9911/gits/leo-tracker-redux/.venv/lib/python3.11/site-packages/adi/__init__.py",
+    "spf_module_path": "/home/mouse9911/.cache/leo-flow/v5-build/spf-rx-integrity-candidate1/spf/direct_radio/iio_metadata.py",
+    "spf_revision": "c40ee4116546889effd72056115adaaa1bc3fd40+patch.c9113a6d75466b4d",
+    "spf_import": "spf.direct_radio.iio_metadata:IioMetadataRx",
+    "metadata_protocol": "spf-radio-metadata-v3"
+  },
+  "radio": {
+    "uri": "ip:192.168.1.21",
+    "expected_serial": "10400056f695001322002d0010ad1719f2",
+    "radio_id": "radio_pluto_19f2",
+    "receiver_chain_ids": ["rx_lnb_c", "rx_lnb_d"],
+    "firmware_release": "v0.38-plutoplus-spf-libiio-metadata-v5",
+    "firmware_commit": "d7c87a9a28094ee6f0b23cb47df9ff737b5a69d8",
+    "io_timeout_ms": 5000
+  },
+  "plan": {
+    "plan_id": "plan_v5_hostprime_oldradio_pluto_19f2_20260816_d1",
+    "plan_digest": "sha256:f42142d707107969515e33754e9a2c16f2daed4b1e1a18cb58a73a67347b26a0",
+    "sample_rate_hz": 5000000.0,
+    "bandwidth_hz": 2000000.0,
+    "sample_count": 200000,
+    "edge_order": "L",
+    "edge_order_draw_u32": 0,
+    "arm_name": "gauss-v5-hostprime-oldradio-19f2-d1-postreboot-5m-40ms-20260816",
+    "lnb_lo_hz": 9750000000.0,
+    "hardware_block_samples": 200000
+  },
+  "state": {
+    "state_root": "/home/mouse9911/.local/state/leo-flow/v5-scan/hostprime-oldradio-19f2-d1-postreboot-5m/radio-21",
+    "recording_root": "/home/mouse9911/.local/state/leo-flow/v5-scan/hostprime-oldradio-19f2-d1-postreboot-5m/radio-21/recordings",
+    "spool_database": "/home/mouse9911/.local/state/leo-flow/v5-scan/hostprime-oldradio-19f2-d1-postreboot-5m/radio-21/capture-spool.sqlite3",
+    "cas_root": "/home/mouse9911/.local/share/leo-flow/objects",
+    "lock_path": "/home/mouse9911/.local/state/leo-flow/v5-scan/hostprime-oldradio-19f2-d1-postreboot-5m/radio-21/instance.lock",
+    "mode_lock_path": "/home/mouse9911/.local/state/leo-flow/pipeline-mode.lock",
+    "minimum_free_bytes": 1073741824,
+    "require_cas_mount": false
+  }
+}

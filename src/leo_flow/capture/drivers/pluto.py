@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import importlib
+import struct
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypeAlias, cast
@@ -34,6 +37,12 @@ from ..errors import (
 CI16_BYTES_PER_COMPONENT = 2
 IQ_COMPONENTS = 2
 PAIRED_RECEIVERS = 2
+_CONFIGURATION_READBACK_TIMEOUT_S = 0.25
+_CONFIGURATION_READBACK_POLL_INTERVAL_S = 0.01
+_CONFIGURATION_MAX_WRITE_ATTEMPTS = 2
+_CONFIGURATION_WRITE_RETRY_DELAY_S = 0.05
+_METADATA_TRANSPORT_MAX_ATTEMPTS = 2
+_METADATA_TRANSPORT_RETRY_DELAY_S = 0.05
 
 
 class PlutoDevice(Protocol):
@@ -55,6 +64,7 @@ MetadataReader: TypeAlias = Callable[
     [PlutoDevice, int, int], tuple[object, RefillMetadata]
 ]
 TimeoutSetter: TypeAlias = Callable[[PlutoDevice, int], None]
+SignalIntegrityValidator: TypeAlias = Callable[[bytes, int], str]
 
 V5_FIRMWARE_RELEASE = "v0.38-plutoplus-spf-libiio-metadata-v5"
 V5_FIRMWARE_COMMIT = "d7c87a9a28094ee6f0b23cb47df9ff737b5a69d8"
@@ -127,9 +137,12 @@ class PlutoPairedRadio:
         serial_reader: SerialReader | None = None,
         health_reader: HealthReader | None = None,
         metadata_reader: MetadataReader | None = None,
+        signal_integrity_validator: SignalIntegrityValidator | None = None,
         timeout_setter: TimeoutSetter | None = None,
         attested_provenance: CaptureProvenance | None = None,
         clock: CaptureClock | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+        delay: Callable[[float], None] = time.sleep,
     ) -> None:
         self.config = config
         self._device_factory = device_factory or _lazy_pluto_factory
@@ -137,10 +150,16 @@ class PlutoPairedRadio:
         self._serial_reader = serial_reader or _default_serial_reader
         self._health_reader = health_reader or _default_health_reader
         self._metadata_reader = metadata_reader
+        self._signal_integrity_validator = (
+            signal_integrity_validator or _accept_unvalidated_ci16
+        )
         self._timeout_setter = timeout_setter or set_libiio_timeout
         self._attested_provenance = attested_provenance
         self._clock = clock or SystemCaptureClock()
+        self._monotonic = monotonic
+        self._delay = delay
         self._device: PlutoDevice | None = None
+        self._prepared_segment: _PreparedMetadataSegment | None = None
         self._closed = False
 
     @property
@@ -174,6 +193,7 @@ class PlutoPairedRadio:
         if self._closed:
             return
         self._closed = True
+        self._prepared_segment = None
         device, self._device = self._device, None
         failures: list[BaseException] = []
         try:
@@ -217,56 +237,84 @@ class PlutoPairedRadio:
             raise RadioConfigurationError(
                 "verified v5 capture requires exact host libiio provenance"
             )
-        target_samples = _requested_sample_count(request)
-        if target_samples % self.config.block_samples:
-            raise RadioConfigurationError(
-                "verified v5 capture sample count must align to the IIO block size"
-            )
+        target_samples = self._verified_metadata_sample_count(request)
         self._validate_request(request)
         device = self._connect()
-        try:
-            self._configure(device, request)
-        except RadioConfigurationError:
-            raise
-        except (OSError, RuntimeError) as error:
-            raise TuningError(f"Pluto configuration failed: {error}") from error
+        prepared, self._prepared_segment = self._prepared_segment, None
+        if prepared is not None:
+            if prepared.request != request:
+                raise RadioConfigurationError(
+                    "prepared metadata segment differs from acquisition request"
+                )
+            configuration_attempts = prepared.attempts
+        else:
+            configuration_attempts = self._configure_for_capture(device, request)
 
-        before_health = dict(self._health_reader(device))
-        start_utc_ns = UtcNs(self._clock.now_utc_ns())
-        monotonic_start_ns = self._clock.now_monotonic_ns()
-        samples_written = 0
-        refill_count = 0
-        try:
-            while samples_written < target_samples:
-                native, metadata = self._metadata_reader(
-                    device, refill_count, samples_written
+        transport_attempts = 0
+        signal_integrity = "not_validated"
+        while True:
+            transport_attempts += 1
+            before_health = dict(self._health_reader(device))
+            start_utc_ns = UtcNs(self._clock.now_utc_ns())
+            monotonic_start_ns = self._clock.now_monotonic_ns()
+            samples_written = 0
+            refill_count = 0
+            retryable_transport_error: OSError | None = None
+            try:
+                while samples_written < target_samples:
+                    try:
+                        native, metadata = self._metadata_reader(
+                            device, refill_count, samples_written
+                        )
+                    except OSError as error:
+                        if (
+                            error.errno in (errno.EIO, errno.EBUSY)
+                            and samples_written == 0
+                            and refill_count == 0
+                            and transport_attempts < _METADATA_TRANSPORT_MAX_ATTEMPTS
+                        ):
+                            retryable_transport_error = error
+                            break
+                        raise
+                    encoded = self._interleaver(native, PAIRED_RECEIVERS)
+                    expected_bytes = (
+                        self.config.block_samples
+                        * PAIRED_RECEIVERS
+                        * IQ_COMPONENTS
+                        * CI16_BYTES_PER_COMPONENT
+                    )
+                    if len(encoded) != expected_bytes:
+                        raise SampleCountError("v5 IQ refill has the wrong byte count")
+                    signal_integrity = self._signal_integrity_validator(
+                        encoded, PAIRED_RECEIVERS
+                    )
+                    if (
+                        metadata.refill_index != refill_count
+                        or metadata.segment_sample_offset != samples_written
+                        or metadata.sample_count != self.config.block_samples
+                    ):
+                        raise RefillError("v5 metadata does not describe its IQ refill")
+                    write_refill(encoded, metadata)
+                    samples_written += metadata.sample_count
+                    refill_count += 1
+            except (SampleCountError, ReceiverSkewError, RefillError):
+                raise
+            except (OSError, ConnectionError) as error:
+                raise RadioDisconnectedError(
+                    f"Pluto receive disconnected: {error}"
+                ) from error
+            except Exception as error:
+                raise RefillError(f"Pluto v5 receive failed: {error}") from error
+            if retryable_transport_error is None:
+                break
+            try:
+                configuration_attempts = configuration_attempts.plus(
+                    self._reconfigure_after_transport_failure(device, request)
                 )
-                encoded = self._interleaver(native, PAIRED_RECEIVERS)
-                expected_bytes = (
-                    self.config.block_samples
-                    * PAIRED_RECEIVERS
-                    * IQ_COMPONENTS
-                    * CI16_BYTES_PER_COMPONENT
-                )
-                if len(encoded) != expected_bytes:
-                    raise SampleCountError("v5 IQ refill has the wrong byte count")
-                if (
-                    metadata.refill_index != refill_count
-                    or metadata.segment_sample_offset != samples_written
-                    or metadata.sample_count != self.config.block_samples
-                ):
-                    raise RefillError("v5 metadata does not describe its IQ refill")
-                write_refill(encoded, metadata)
-                samples_written += metadata.sample_count
-                refill_count += 1
-        except (SampleCountError, ReceiverSkewError, RefillError):
-            raise
-        except (OSError, ConnectionError) as error:
-            raise RadioDisconnectedError(
-                f"Pluto receive disconnected: {error}"
-            ) from error
-        except Exception as error:
-            raise RefillError(f"Pluto v5 receive failed: {error}") from error
+            except RadioConfigurationError:
+                raise
+            except (OSError, RuntimeError) as error:
+                raise TuningError(f"Pluto configuration failed: {error}") from error
         after_health = dict(self._health_reader(device))
         _validate_health(before_health, after_health)
         readback = self._readback(device, request)
@@ -280,6 +328,12 @@ class PlutoPairedRadio:
                 "metadata_protocol": provenance.metadata_protocol,
                 "refill_count": refill_count,
                 "serial": self.config.expected_serial,
+                "signal_integrity": signal_integrity,
+                "configuration_readback_attempts": (
+                    configuration_attempts.readback_attempts
+                ),
+                "configuration_write_attempts": configuration_attempts.write_attempts,
+                "transport_attempts": transport_attempts,
             },
             "diagnostics",
         )
@@ -297,17 +351,44 @@ class PlutoPairedRadio:
             diagnostics=diagnostics,
         )
 
+    def prepare_segment_with_metadata(self, request: SegmentRequest) -> None:
+        """Configure one exact metadata segment without opening or reading a buffer.
+
+        This private deployment seam is intentionally one-use.  It permits a
+        software-coordinated runner to finish slow attribute propagation before
+        declaring READY while keeping MetadataBuffer open and READBUFM strictly
+        behind its release gate.
+        """
+
+        if self._metadata_reader is None:
+            raise RadioConfigurationError(
+                "metadata segment preparation requires a patched-libiio reader"
+            )
+        if self.capture_provenance.host_libiio_version == "unknown":
+            raise RadioConfigurationError(
+                "metadata segment preparation requires exact host libiio provenance"
+            )
+        self._verified_metadata_sample_count(request)
+        self._validate_request(request)
+        if self._prepared_segment is not None:
+            raise RadioConfigurationError(
+                "a metadata segment is already prepared for this radio"
+            )
+        device = self._connect()
+        attempts = self._configure_for_capture(device, request)
+        self._prepared_segment = _PreparedMetadataSegment(request, attempts)
+
     def acquire_segment(
         self, request: SegmentRequest, write_ci16: Callable[[bytes], None]
     ) -> SegmentManifest:
+        if self._prepared_segment is not None:
+            self._prepared_segment = None
+            raise RadioConfigurationError(
+                "prepared metadata segment cannot use ordinary acquisition"
+            )
         self._validate_request(request)
         device = self._connect()
-        try:
-            self._configure(device, request)
-        except RadioConfigurationError:
-            raise
-        except (OSError, RuntimeError) as error:
-            raise TuningError(f"Pluto configuration failed: {error}") from error
+        configuration_attempts = self._configure_for_capture(device, request)
 
         target_samples = _requested_sample_count(request)
         before_health = dict(self._health_reader(device))
@@ -317,6 +398,7 @@ class PlutoPairedRadio:
         refill_count = 0
         byte_count = 0
         discarded_samples = 0
+        signal_integrity = "not_validated"
         try:
             while samples_written < target_samples:
                 wanted = min(
@@ -338,6 +420,9 @@ class PlutoPairedRadio:
                         "Pluto refill returned "
                         f"{observed_samples} of {self.config.block_samples} paired samples"
                     )
+                signal_integrity = self._signal_integrity_validator(
+                    encoded, PAIRED_RECEIVERS
+                )
                 wanted_bytes = (
                     wanted * PAIRED_RECEIVERS * IQ_COMPONENTS * CI16_BYTES_PER_COMPONENT
                 )
@@ -346,7 +431,7 @@ class PlutoPairedRadio:
                 byte_count += wanted_bytes
                 discarded_samples += self.config.block_samples - wanted
                 refill_count += 1
-        except (SampleCountError, ReceiverSkewError):
+        except (SampleCountError, ReceiverSkewError, RefillError):
             raise
         except (OSError, ConnectionError) as error:
             raise RadioDisconnectedError(
@@ -366,10 +451,15 @@ class PlutoPairedRadio:
                 "physical_rx_channels": list(self.config.physical_rx_channels),
                 "refill_count": refill_count,
                 "serial": self.config.expected_serial,
+                "signal_integrity": signal_integrity,
                 "health_before": before_health,
                 "health_after": after_health,
                 "drop_telemetry_available": bool(after_health),
                 "gain_readback_db": readback.gain_db,
+                "configuration_readback_attempts": (
+                    configuration_attempts.readback_attempts
+                ),
+                "configuration_write_attempts": configuration_attempts.write_attempts,
             },
             "diagnostics",
         )
@@ -426,9 +516,66 @@ class PlutoPairedRadio:
                 "segment receiver order differs from configured Pluto receiver order"
             )
 
-    def _configure(self, device: PlutoDevice, request: SegmentRequest) -> None:
+    def _configure(
+        self, device: PlutoDevice, request: SegmentRequest
+    ) -> _ConfigurationAttempts:
         self._close_metadata_reader()
         _destroy_receive_buffer(device)
+        return self._write_configuration_with_retry(device, request)
+
+    def _configure_for_capture(
+        self, device: PlutoDevice, request: SegmentRequest
+    ) -> _ConfigurationAttempts:
+        try:
+            return self._configure(device, request)
+        except RadioConfigurationError:
+            raise
+        except (OSError, RuntimeError) as error:
+            raise TuningError(f"Pluto configuration failed: {error}") from error
+
+    def _verified_metadata_sample_count(self, request: SegmentRequest) -> int:
+        target_samples = _requested_sample_count(request)
+        if target_samples % self.config.block_samples:
+            raise RadioConfigurationError(
+                "verified v5 capture sample count must align to the IIO block size"
+            )
+        return target_samples
+
+    def _reconfigure_after_transport_failure(
+        self, device: PlutoDevice, request: SegmentRequest
+    ) -> _ConfigurationAttempts:
+        self._close_metadata_reader()
+        _destroy_receive_buffer(device)
+        self._delay(_METADATA_TRANSPORT_RETRY_DELAY_S)
+        return self._write_configuration_with_retry(device, request)
+
+    def _write_configuration_with_retry(
+        self, device: PlutoDevice, request: SegmentRequest
+    ) -> _ConfigurationAttempts:
+        readback_attempts = 0
+        for write_attempt in range(1, _CONFIGURATION_MAX_WRITE_ATTEMPTS + 1):
+            try:
+                readback_attempts += self._write_configuration_and_wait_for_readback(
+                    device, request
+                )
+            except _ReadbackMismatch as error:
+                if error.readback_attempts is None:
+                    raise RuntimeError(
+                        "configuration mismatch lacked bounded attempt evidence"
+                    ) from error
+                readback_attempts += error.readback_attempts
+                if write_attempt == _CONFIGURATION_MAX_WRITE_ATTEMPTS:
+                    raise
+                self._close_metadata_reader()
+                _destroy_receive_buffer(device)
+                self._delay(_CONFIGURATION_WRITE_RETRY_DELAY_S)
+            else:
+                return _ConfigurationAttempts(readback_attempts, write_attempt)
+        raise RuntimeError("configuration write attempts were not exhausted")
+
+    def _write_configuration_and_wait_for_readback(
+        self, device: PlutoDevice, request: SegmentRequest
+    ) -> int:
         device.rx_enabled_channels = list(self.config.physical_rx_channels)
         device.rx_buffer_size = self.config.block_samples
         if hasattr(device, "rx_output_type"):
@@ -445,7 +592,20 @@ class PlutoPairedRadio:
                 setattr(device, gain_name, request.gain.gain_db)
             else:
                 setattr(device, gain_mode_name, self.config.agc_mode)
-        self._validate_readback(device, request)
+        deadline = self._monotonic() + _CONFIGURATION_READBACK_TIMEOUT_S
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                self._validate_readback(device, request)
+            except _ReadbackMismatch as error:
+                remaining_s = deadline - self._monotonic()
+                if remaining_s <= 0:
+                    error.readback_attempts = attempts
+                    raise
+                self._delay(min(remaining_s, _CONFIGURATION_READBACK_POLL_INTERVAL_S))
+            else:
+                return attempts
 
     def _close_metadata_reader(self) -> None:
         close = getattr(self._metadata_reader, "close", None)
@@ -472,7 +632,7 @@ class PlutoPairedRadio:
             "bandwidth",
         )
         if tuple(device.rx_enabled_channels) != self.config.physical_rx_channels:
-            raise RadioConfigurationError("enabled-channel readback mismatch")
+            raise _ReadbackMismatch("enabled-channel readback mismatch")
         for channel in self.config.physical_rx_channels:
             mode = getattr(device, f"gain_control_mode_chan{channel}")
             expected_mode = (
@@ -481,7 +641,7 @@ class PlutoPairedRadio:
                 else self.config.agc_mode
             )
             if mode != expected_mode:
-                raise RadioConfigurationError(
+                raise _ReadbackMismatch(
                     f"gain mode readback mismatch on channel {channel}"
                 )
             if request.gain.mode is GainMode.MANUAL:
@@ -521,6 +681,32 @@ class _Readback:
     gain_db: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class _PreparedMetadataSegment:
+    request: SegmentRequest
+    attempts: _ConfigurationAttempts
+
+
+@dataclass(frozen=True)
+class _ConfigurationAttempts:
+    readback_attempts: int
+    write_attempts: int
+
+    def plus(self, other: _ConfigurationAttempts) -> _ConfigurationAttempts:
+        return _ConfigurationAttempts(
+            self.readback_attempts + other.readback_attempts,
+            self.write_attempts + other.write_attempts,
+        )
+
+
+class _ReadbackMismatch(RadioConfigurationError):
+    """A syntactically valid configuration readback has not converged yet."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.readback_attempts: int | None = None
+
+
 def _requested_sample_count(request: SegmentRequest) -> int:
     if request.sample_count is not None:
         return request.sample_count
@@ -533,7 +719,7 @@ def _requested_sample_count(request: SegmentRequest) -> int:
 
 def _within(actual: float, requested: float, tolerance: float, name: str) -> None:
     if abs(actual - requested) > tolerance:
-        raise RadioConfigurationError(
+        raise _ReadbackMismatch(
             f"{name} readback mismatch: requested {requested}, got {actual}"
         )
 
@@ -631,6 +817,30 @@ def _lazy_numpy_interleaver(refill: object, expected_channels: int) -> bytes:
             source = components[receiver_index * IQ_COMPONENTS + component_index]
             output[:, receiver_index, component_index] = source
     return cast(bytes, output.tobytes(order="C"))
+
+
+def require_ci16_component_variation(encoded: bytes, expected_channels: int) -> str:
+    """Reject a refill when any I/Q component is constant across all samples."""
+
+    component_count = expected_channels * IQ_COMPONENTS
+    frame_bytes = component_count * CI16_BYTES_PER_COMPONENT
+    if len(encoded) < frame_bytes * 2 or len(encoded) % frame_bytes:
+        raise RefillError("Pluto IQ refill cannot prove component variation")
+    unpack = struct.Struct(f"<{component_count}h").unpack_from
+    first = unpack(encoded, 0)
+    varied = [False] * component_count
+    for offset in range(frame_bytes, len(encoded), frame_bytes):
+        current = unpack(encoded, offset)
+        for component_index, value in enumerate(current):
+            if value != first[component_index]:
+                varied[component_index] = True
+        if all(varied):
+            return "all_ci16_components_vary"
+    raise RefillError("Pluto IQ refill has a constant component")
+
+
+def _accept_unvalidated_ci16(_encoded: bytes, _expected_channels: int) -> str:
+    return "not_validated"
 
 
 def _default_serial_reader(device: PlutoDevice) -> str | None:

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Self
 
 from leo_flow.contracts.capture import CompletedLocalRecording
 from leo_flow.contracts.core import PlanId, RecordingId
@@ -39,6 +40,17 @@ class SpoolEntry:
     idempotency_key: str | None
 
 
+@dataclass(frozen=True)
+class FailedSpoolRecording:
+    """Sanitized terminal failure evidence without payload or storage paths."""
+
+    recording_id: RecordingId
+    plan_id: PlanId
+    last_error: str
+    created_utc_ns: int
+    updated_utc_ns: int
+
+
 class SQLiteLocalSpool:
     """Single-host capture state; it is not a scientific catalog."""
 
@@ -58,10 +70,40 @@ class SQLiteLocalSpool:
         self._now_ns = now_ns
         self._initialize()
 
+    @classmethod
+    def for_read_only_diagnostics(
+        cls, database_path: Path, recording_root: Path
+    ) -> Self:
+        """Open an existing spool without creating files or running migrations."""
+
+        database = Path(database_path)
+        if (
+            not database.is_absolute()
+            or ".." in database.parts
+            or not database.is_file()
+        ):
+            raise ValueError(
+                "diagnostic spool database must be an existing absolute file"
+            )
+        instance = cls.__new__(cls)
+        instance.database_path = database
+        instance.recording_root = Path(recording_root)
+        instance._id_factory = _new_recording_id
+        instance._now_ns = time.time_ns
+        return instance
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=30)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 30000")
+        return connection
+
+    def _connect_read_only(self) -> sqlite3.Connection:
+        uri = f"{self.database_path.as_uri()}?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=30)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only = ON")
         connection.execute("PRAGMA busy_timeout = 30000")
         return connection
 
@@ -193,6 +235,25 @@ class SQLiteLocalSpool:
                 (limit,),
             ).fetchall()
         return tuple(_entry_from_row(row) for row in rows)
+
+    def failed_recordings(self, limit: int) -> tuple[FailedSpoolRecording, ...]:
+        """Return bounded newest-first terminal failure evidence read-only."""
+
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("limit must be a positive integer")
+        with self._connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT recording_id, plan_id, last_error,
+                       created_utc_ns, updated_utc_ns
+                  FROM recordings
+                 WHERE state = 'failed'
+                 ORDER BY updated_utc_ns DESC, recording_id DESC
+                 LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return tuple(_failed_recording_from_row(row) for row in rows)
 
     def pending_publication(
         self, limit: int = 100
@@ -378,6 +439,30 @@ def _entry_from_row(row: sqlite3.Row) -> SpoolEntry:
         publish_attempts=row["publish_attempts"],
         last_error=row["last_error"],
         idempotency_key=row["idempotency_key"],
+    )
+
+
+def _failed_recording_from_row(row: sqlite3.Row) -> FailedSpoolRecording:
+    error = row["last_error"]
+    created = row["created_utc_ns"]
+    updated = row["updated_utc_ns"]
+    if (
+        not isinstance(error, str)
+        or not error
+        or isinstance(created, bool)
+        or not isinstance(created, int)
+        or created < 0
+        or isinstance(updated, bool)
+        or not isinstance(updated, int)
+        or updated < created
+    ):
+        raise RuntimeError("failed spool evidence is invalid")
+    return FailedSpoolRecording(
+        RecordingId(row["recording_id"]),
+        PlanId(row["plan_id"]),
+        error,
+        created,
+        updated,
     )
 
 

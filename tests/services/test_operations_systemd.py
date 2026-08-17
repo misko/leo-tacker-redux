@@ -372,6 +372,8 @@ def test_systemd_bundle_orders_components_without_runtime_coupling() -> None:
     assert (
         "After=network-online.target leo-offline-analysis@worker-1.service" in dashboard
     )
+    assert "/opt/leo-flow/bin/leo-dashboard" in dashboard
+    assert "leo_flow.deployments.dashboard_v1:PLUGIN" not in dashboard
     assert "Requires=leo-storage-capacity.service" in target
     assert (
         "leo-v5-scan.service leo-offline-analysis@worker-1.service leo-dashboard.service"

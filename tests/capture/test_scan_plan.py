@@ -70,6 +70,27 @@ def test_scan_plan_materializes_order_and_contains_no_dwell() -> None:
     ] * 4
 
 
+def test_new_plan_id_creates_fresh_activity_and_segment_namespaces() -> None:
+    completed = build_starlink_edge_scan_plan(_spec())
+    replacement = build_starlink_edge_scan_plan(
+        _spec(plan_id=PlanId("plan_scan_fixture_replacement"))
+    )
+
+    assert completed.plan_id != replacement.plan_id
+    assert {item.activity_id for item in completed.activities}.isdisjoint(
+        item.activity_id for item in replacement.activities
+    )
+    assert {
+        segment.segment_id
+        for activity in completed.activities
+        for segment in activity.segments
+    }.isdisjoint(
+        segment.segment_id
+        for activity in replacement.activities
+        for segment in activity.segments
+    )
+
+
 def test_edge_order_draw_is_auditable_and_cannot_disagree() -> None:
     assert edge_order_for_draw(0) == "L"
     assert edge_order_for_draw(1) == "U"
@@ -84,3 +105,27 @@ def test_v5_scan_requires_full_pilot_band_and_block_alignment() -> None:
         _spec(sample_count=100_000)
     with pytest.raises(ValueError, match="bandwidth"):
         _spec(sample_rate_hz=2_500_000.0, bandwidth_hz=100_000.0)
+
+
+def test_clipped_pilot_requires_opt_in_and_carries_non_pooling_evidence() -> None:
+    spec = _spec(
+        sample_rate_hz=1_250_000.0,
+        bandwidth_hz=1_250_000.0,
+        sample_count=50_000,
+        hardware_block_samples=50_000,
+        allow_clipped_pilot=True,
+    )
+
+    plan = build_starlink_edge_scan_plan(spec)
+
+    for tags in (
+        dict(plan.experiment_tags),
+        *(dict(segment.tags) for segment in plan.activities[0].segments),
+    ):
+        assert tags["pilot_bandwidth_hz"] == 1_875_000.0
+        assert tags["pilot_guard_hz"] == -312_500.0
+        assert tags["pilot_band_fits"] is False
+        assert tags["pilot_band_clipped"] is True
+        assert tags["pilot_band_outside_hz"] == 625_000.0
+        assert tags["pilot_band_outside_fraction"] == pytest.approx(1 / 3)
+        assert "do not pool" in str(tags["pilot_band_note"])

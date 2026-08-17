@@ -12,7 +12,7 @@ DynamicUser=yes
 RuntimeDirectory=leo-flow-dashboard
 RuntimeDirectoryMode=0700
 LoadCredential=catalog-dsn:/etc/leo-flow/secrets/dashboard-catalog-dsn
-ExecStart=/usr/bin/flock --nonblock /run/leo-flow-dashboard/supervisor.lock /opt/leo-flow/bin/python -m leo_flow.services --config /etc/leo-flow/dashboard.json --plugin leo_flow.deployments.dashboard_v1:PLUGIN --forever
+ExecStart=/usr/bin/flock --nonblock /run/leo-flow-dashboard/supervisor.lock /opt/leo-flow/bin/leo-dashboard --config /etc/leo-flow/dashboard.json --forever
 Restart=on-failure
 RestartSec=2s
 TimeoutStartSec=30s
@@ -20,6 +20,7 @@ TimeoutStopSec=7s
 KillSignal=SIGTERM
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
 ProtectKernelTunables=yes
@@ -30,6 +31,7 @@ RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

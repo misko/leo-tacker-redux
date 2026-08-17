@@ -7,6 +7,8 @@ from typing import Protocol
 from urllib.parse import unquote
 
 from leo_flow.contracts.core import (
+    CaptureAttemptId,
+    CaptureBatchId,
     DetectorEvaluationId,
     EvaluationRunId,
     RadioId,
@@ -15,8 +17,21 @@ from leo_flow.contracts.core import (
     canonical_json_bytes,
 )
 from leo_flow.contracts.dashboard import TimeRangeQuery
+from leo_flow.contracts.dashboard_batch import (
+    CaptureBatchDashboardQueryPortV0_1,
+    CaptureBatchTimeRangeQuery,
+)
+from leo_flow.contracts.dashboard_recording import (
+    RecordingCaptureDetailQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.ports import DashboardQueryPort
+from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPortV0_1
+from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
+from leo_flow.contracts.starlink_suite_pipeline import (
+    RecordingStarlinkSuiteQueryPortV0_2,
+)
 
 from .repository import DashboardNotFound, InvalidCursor
 
@@ -102,6 +117,181 @@ class DashboardJsonApplication:
         raise DashboardNotFound(f"route {path} was not found")
 
 
+class DashboardJsonApplicationV2:
+    """Add versioned batch routes while preserving every dashboard v1 route."""
+
+    _BATCH_ROUTE = "/api/v2/capture-batches"
+
+    def __init__(
+        self,
+        queries: DashboardQueryPort,
+        capture_batches: CaptureBatchDashboardQueryPortV0_1,
+    ) -> None:
+        self._v1 = DashboardJsonApplication(queries)
+        self._capture_batches = capture_batches
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._BATCH_ROUTE and not path.startswith(f"{self._BATCH_ROUTE}/"):
+            return self._v1.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            payload = self._batch_route(path, request.query)
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - deterministic API boundary
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+    def _batch_route(self, path: str, query: dict[str, str]) -> object:
+        if path == self._BATCH_ROUTE:
+            return self._capture_batches.recent_capture_batches(
+                _capture_batch_time_query(query), query.get("cursor")
+            )
+        identity = _one_path_component(path, f"{self._BATCH_ROUTE}/")
+        return self._capture_batches.capture_batch(CaptureBatchId(identity))
+
+
+class DashboardJsonApplicationV3:
+    """Add projected capture detail and waterfall routes without changing V1/V2."""
+
+    _RECORDING_ROUTE = "/api/v3/recordings"
+
+    def __init__(
+        self,
+        queries: DashboardQueryPort,
+        capture_batches: CaptureBatchDashboardQueryPortV0_1,
+        recording_details: RecordingCaptureDetailQueryPortV0_1,
+        waterfalls: RecordingWaterfallQueryPortV0_1,
+        starlink: RecordingStarlinkDecisionQueryPortV0_1,
+    ) -> None:
+        self._v2 = DashboardJsonApplicationV2(queries, capture_batches)
+        self._recording_details = recording_details
+        self._waterfalls = waterfalls
+        self._starlink = starlink
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(f"{self._RECORDING_ROUTE}/"):
+            return self._v2.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            payload = self._recording_route(path)
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - deterministic API boundary
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+    def _recording_route(self, path: str) -> object:
+        suffix = path.removeprefix(f"{self._RECORDING_ROUTE}/")
+        parts = suffix.split("/")
+        if not parts[0] or len(parts) > 2:
+            raise DashboardNotFound(f"route {path} was not found")
+        recording_id = RecordingId(unquote(parts[0]))
+        if len(parts) == 1:
+            return self._recording_details.recording_capture_detail(recording_id)
+        if parts[1] == "waterfall":
+            return self._waterfalls.recording_waterfall(recording_id)
+        if parts[1] == "starlink":
+            return self._starlink.recording_starlink_decision(recording_id)
+        raise DashboardNotFound(f"route {path} was not found")
+
+
+class DashboardJsonApplicationV4:
+    """Expose the complete v0.2 report-method comparison for each recording."""
+
+    _RECORDING_ROUTE = "/api/v4/recordings"
+
+    def __init__(
+        self,
+        v3: DashboardJsonApplicationV3,
+        starlink_suite: RecordingStarlinkSuiteQueryPortV0_2,
+    ) -> None:
+        self._v3 = v3
+        self._starlink_suite = starlink_suite
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(f"{self._RECORDING_ROUTE}/"):
+            return self._v3.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(f"{self._RECORDING_ROUTE}/")
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-suite":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._starlink_suite.recording_starlink_suite(
+                RecordingId(unquote(parts[0]))
+            )
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+
+class DashboardJsonApplicationV5:
+    """Add bounded capture-attempt lifecycle detail without changing V1-V4."""
+
+    _PREFIX = "/api/v5/capture-attempts/"
+
+    def __init__(
+        self,
+        v4: DashboardJsonApplicationV4,
+        lifecycle: CaptureLifecycleDashboardQueryPortV0_1,
+    ) -> None:
+        self._v4 = v4
+        self._lifecycle = lifecycle
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._v4.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "radio-lifecycle":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._lifecycle.capture_attempt_radio_lifecycle(
+                CaptureAttemptId(unquote(parts[0]))
+            )
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            canonical_json_bytes(payload),
+        )
+
+
 def _time_query(query: dict[str, str]) -> TimeRangeQuery:
     try:
         start = UtcNs(int(query["start_utc_ns"]))
@@ -115,6 +305,17 @@ def _time_query(query: dict[str, str]) -> TimeRangeQuery:
     if len(radios) != len(set(radios)):
         raise ValueError("radio_ids must be unique")
     return TimeRangeQuery(start, stop, radios)
+
+
+def _capture_batch_time_query(query: dict[str, str]) -> CaptureBatchTimeRangeQuery:
+    try:
+        start = UtcNs(int(query["start_utc_ns"]))
+        stop = UtcNs(int(query["stop_utc_ns"]))
+    except KeyError as error:
+        raise ValueError(f"missing query parameter {error.args[0]}") from error
+    except (TypeError, ValueError) as error:
+        raise ValueError("UTC bounds must be integers") from error
+    return CaptureBatchTimeRangeQuery(start, stop)
 
 
 def _one_path_component(path: str, prefix: str) -> str:

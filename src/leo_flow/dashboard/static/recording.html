@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Capture detail · LEO Flow</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+  <script src="/assets/recording-detail.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#capture-detail-main">Skip to capture detail</a>
+  <header class="site-header compact-header">
+    <div>
+      <p class="eyebrow"><a href="/">LEO Flow / local operations</a></p>
+      <h1 id="capture-title">Capture detail</h1>
+      <p id="capture-identity" class="lede">Loading immutable recording identity…</p>
+    </div>
+    <div id="capture-page-state" class="system-state" data-state="loading" role="status" aria-live="polite">
+      <span class="state-dot" aria-hidden="true"></span>
+      <span id="capture-page-state-text">Loading capture projection…</span>
+    </div>
+  </header>
+
+  <nav class="section-nav" aria-label="Capture detail sections">
+    <a href="/">Dashboard</a>
+    <a href="#capture-facts">Capture facts</a>
+    <a href="#segments">Segments &amp; tunings</a>
+    <a href="#waterfall">Waterfall</a>
+    <a href="#analysis">Beacon decision</a>
+  </nav>
+
+  <main id="capture-detail-main" tabindex="-1">
+    <section id="capture-facts" class="hero-panel" aria-labelledby="capture-facts-heading">
+      <div class="section-heading">
+        <div><p class="section-index">01 / immutable capture</p><h2 id="capture-facts-heading">Capture facts</h2></div>
+        <span class="hint">Projected from the published recording manifest</span>
+      </div>
+      <div id="capture-detail-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading capture facts…</div>
+      <dl id="capture-detail-facts" class="fact-grid capture-fact-grid"></dl>
+    </section>
+
+    <section id="segments" aria-labelledby="segments-heading">
+      <div class="section-heading">
+        <div><p class="section-index">02 / tuning sequence</p><h2 id="segments-heading">Segments &amp; tunings</h2></div>
+      </div>
+      <div id="segments-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading segment projection…</div>
+      <div class="table-wrap">
+        <table id="segments-table">
+          <caption>Chronological, observed segment tuning facts</caption>
+          <thead><tr><th scope="col">Segment</th><th scope="col">Activity</th><th scope="col">Started UTC</th><th scope="col">Center</th><th scope="col">Sample rate</th><th scope="col">Bandwidth</th><th scope="col">Gain</th><th scope="col">Samples</th><th scope="col">Chains</th></tr></thead>
+          <tbody id="segments-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="waterfall" aria-labelledby="waterfall-heading">
+      <div class="section-heading">
+        <div><p class="section-index">03 / local analysis</p><h2 id="waterfall-heading">Waterfall</h2></div>
+        <label class="tile-picker" for="waterfall-tile">Segment / receiver <select id="waterfall-tile" disabled></select></label>
+      </div>
+      <div id="waterfall-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading projected waterfall…</div>
+      <figure id="waterfall-figure" class="waterfall-figure" hidden>
+        <div class="waterfall-canvas-wrap">
+          <canvas id="waterfall-canvas" width="1024" height="512" role="img" aria-label="Waterfall power over capture time and frequency"></canvas>
+        </div>
+        <figcaption>
+          <span id="waterfall-time-axis"></span>
+          <span id="waterfall-frequency-axis"></span>
+          <span id="waterfall-power-axis"></span>
+        </figcaption>
+      </figure>
+      <p class="availability-note">The browser receives a bounded, downsampled analysis projection. It never opens raw IQ or constructs a CAS path.</p>
+    </section>
+
+    <section id="analysis" aria-labelledby="analysis-heading">
+      <div class="section-heading">
+        <div><p class="section-index">04 / scientific decision</p><h2 id="analysis-heading">Starlink beacon decision</h2></div>
+      </div>
+      <article id="starlink-decision" class="decision-card" data-state="loading" aria-labelledby="starlink-decision-title">
+        <div class="decision-heading">
+          <h3 id="starlink-decision-title">Beacon evidence</h3>
+          <span id="starlink-decision-badge" class="status-badge" data-tone="warning">Loading</span>
+        </div>
+        <p id="starlink-decision-summary" role="status" aria-live="polite">Checking for a versioned Starlink detector decision…</p>
+        <dl id="starlink-decision-facts" class="facts compact-facts"></dl>
+        <p class="availability-note">A spectral peak or a healthy RMS value is a capture diagnostic, not a Starlink detection. A beacon claim requires a calibrated known-code search and its controls.</p>
+        <details id="starlink-candidates" hidden>
+          <summary>Show Starlink detector-method comparison</summary>
+          <div class="table-wrap">
+            <table>
+              <caption>Eight report methods per stream; uncalibrated scores are not detections</caption>
+              <thead><tr><th scope="col">Stream</th><th scope="col">Edge</th><th scope="col">Method</th><th scope="col">Exact</th><th scope="col">Control</th><th scope="col">Margin</th><th scope="col">Winner</th></tr></thead>
+              <tbody id="starlink-candidates-body"></tbody>
+            </table>
+          </div>
+        </details>
+      </article>
+
+      <details id="diagnostic-features" class="diagnostic-features">
+        <summary id="diagnostic-features-toggle" aria-controls="diagnostic-features-panel" aria-expanded="false">
+          <span id="diagnostic-features-label">Show diagnostic features</span>
+          <span id="diagnostic-features-count" class="diagnostic-count">Loading…</span>
+        </summary>
+        <div id="diagnostic-features-panel" class="diagnostic-features-panel">
+          <div id="analysis-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading projected diagnostics…</div>
+          <div class="table-wrap">
+            <table id="analysis-table">
+              <caption>Descriptive diagnostic features; exact identities and values remain attached to each row</caption>
+              <thead><tr><th scope="col">Context</th><th scope="col">Receiver</th><th scope="col">Family</th><th scope="col">Metric</th><th scope="col">Value</th></tr></thead>
+              <tbody id="analysis-body"></tbody>
+            </table>
+          </div>
+          <noscript><p class="availability-note">JavaScript is required to retrieve projected diagnostic rows; the disclosure remains keyboard-operable without it.</p></noscript>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer><p>Read-only local dashboard · Values are projected facts, not reconstructed from browser-visible paths.</p></footer>
+</body>
+</html>

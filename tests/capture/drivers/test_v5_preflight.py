@@ -85,6 +85,13 @@ def observed_radio() -> ObservedV5Radio:
             ("altvoltage6", 0.0),
             ("altvoltage7", 0.0),
         ),
+        -80.0,
+        (
+            ("altvoltage0", 0.0),
+            ("altvoltage1", 0.0),
+            ("altvoltage2", 0.0),
+            ("altvoltage3", 0.0),
+        ),
     )
 
 
@@ -159,6 +166,8 @@ def test_host_runtime_mismatches_fail_closed(
         ({"component_layout": ("I0", "Q0")}, "component layout"),
         ({"tx2_hardware_gain_db": -79.0}, "TX2 hardware gain"),
         ({"tx2_hardware_gain_db": float("nan")}, "TX2 hardware gain"),
+        ({"tx1_hardware_gain_db": -79.0}, "TX1 hardware gain"),
+        ({"tx1_hardware_gain_db": float("nan")}, "TX1 hardware gain"),
         (
             {
                 "tx2_dds_scales": (
@@ -180,6 +189,27 @@ def test_host_runtime_mismatches_fail_closed(
             },
             "TX2 DDS channel layout",
         ),
+        (
+            {
+                "tx1_dds_scales": (
+                    ("altvoltage0", 0.0),
+                    ("altvoltage1", 0.0),
+                    ("altvoltage2", 0.25),
+                    ("altvoltage3", 0.0),
+                )
+            },
+            "TX1 DDS scales",
+        ),
+        (
+            {
+                "tx1_dds_scales": (
+                    ("altvoltage0", 0.0),
+                    ("altvoltage1", 0.0),
+                    ("altvoltage2", 0.0),
+                )
+            },
+            "TX1 DDS channel layout",
+        ),
     ],
 )
 def test_radio_mismatches_fail_closed(changes: dict[str, object], message: str) -> None:
@@ -188,7 +218,7 @@ def test_radio_mismatches_fail_closed(changes: dict[str, object], message: str) 
             uri="usb:1.2.5",
             expected_runtime=expected_runtime(),
             observed_runtime=observed_runtime(),
-            expected_radio=expected_radio(),
+            expected_radio=replace(expected_radio(), require_both_tx_muted=True),
             observed_radio=replace(observed_radio(), **changes),
         )
 
@@ -314,5 +344,67 @@ def test_composition_releases_selected_device_when_radio_observation_fails() -> 
             device_factory=lambda _uri: device,
             metadata_reader=unused_metadata_reader,
         )
+    assert device.destroy_calls == 1
+    assert device.close_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("radio_change", "message"),
+    [
+        ({"tx1_hardware_gain_db": -10.0}, "TX1 hardware gain"),
+        (
+            {
+                "tx1_dds_scales": (
+                    ("altvoltage0", 0.125),
+                    ("altvoltage1", 0.0),
+                    ("altvoltage2", 0.0),
+                    ("altvoltage3", 0.0),
+                )
+            },
+            "TX1 DDS scales",
+        ),
+    ],
+)
+def test_both_tx_policy_stops_before_capture_io_and_closes_selected_device(
+    radio_change: dict[str, object], message: str
+) -> None:
+    device = FakeDevice()
+
+    with pytest.raises(RadioConfigurationError, match=message):
+        create_attested_v5_radio(
+            config(),
+            expected_runtime=expected_runtime(),
+            expected_radio=replace(expected_radio(), require_both_tx_muted=True),
+            observe_runtime=observed_runtime,
+            observe_radio=lambda _device: replace(observed_radio(), **radio_change),
+            device_factory=lambda _uri: device,
+            metadata_reader=unused_metadata_reader,
+        )
+
+    assert device.destroy_calls == 1
+    assert device.close_calls == 1
+
+
+def test_selected_ip_context_with_swapped_radio_serial_fails_closed() -> None:
+    device = FakeDevice()
+    opened: list[str] = []
+
+    def factory(uri: str) -> FakeDevice:
+        opened.append(uri)
+        return device
+
+    with pytest.raises(RadioConfigurationError, match="radio serial"):
+        create_attested_v5_radio(
+            config("ip:192.168.1.15"),
+            expected_runtime=expected_runtime(),
+            expected_radio=expected_radio(),
+            observe_runtime=observed_runtime,
+            observe_radio=lambda _device: replace(
+                observed_radio(), serial="serial-from-radio-21"
+            ),
+            device_factory=factory,
+            metadata_reader=unused_metadata_reader,
+        )
+    assert opened == ["ip:192.168.1.15"]
     assert device.destroy_calls == 1
     assert device.close_calls == 1

@@ -1,0 +1,121 @@
+diff --git a/bindings/python/iio.py b/bindings/python/iio.py
+index 95c86a7..ff87ffe 100644
+--- a/bindings/python/iio.py
++++ b/bindings/python/iio.py
+@@ -1013,8 +1013,14 @@ class Buffer(object):
+ 
+     def __del__(self):
+         """Destroy this buffer."""
+-        if self._buffer is not None:
+-            _buffer_destroy(self._buffer)
++        self.close()
++
++    def close(self):
++        """Destroy this buffer immediately; repeated calls are safe."""
++        buffer = getattr(self, "_buffer", None)
++        if buffer is not None:
++            self._buffer = None
++            _buffer_destroy(buffer)
+ 
+     def __len__(self):
+         """Size of this buffer, in bytes."""
+diff --git a/iiod/ops.c b/iiod/ops.c
+index 95290a4..1c03569 100644
+--- a/iiod/ops.c
++++ b/iiod/ops.c
+@@ -114,6 +114,8 @@ struct DevEntry {
+ 	pthread_mutex_t thdlist_lock;
+ 
+ 	pthread_cond_t rw_ready_cond;
++	pthread_cond_t teardown_complete_cond;
++	bool teardown_complete;
+ 
+ 	uint32_t *mask;
+ 	size_t nb_words;
+@@ -582,6 +584,7 @@ static void dev_entry_put(struct DevEntry *entry)
+ 	if (free_entry) {
+ 		pthread_mutex_destroy(&entry->thdlist_lock);
+ 		pthread_cond_destroy(&entry->rw_ready_cond);
++		pthread_cond_destroy(&entry->teardown_complete_cond);
+ 
+ 		free(entry->mask);
+ 		free(entry);
+@@ -872,6 +875,11 @@ static void rw_thd(struct thread_pool *pool, void *d)
+ 		iio_device_set_data(dev, NULL);
+ 	pthread_mutex_unlock(&devlist_lock);
+ 
++	pthread_mutex_lock(&entry->thdlist_lock);
++	entry->teardown_complete = true;
++	pthread_cond_broadcast(&entry->teardown_complete_cond);
++	pthread_mutex_unlock(&entry->thdlist_lock);
++
+ 	IIO_DEBUG("Stopping R/W thread for device %s\n",
+ 		  dev_label_or_name_or_id(dev));
+ 
+@@ -985,21 +993,29 @@ static void free_thd_entry(struct ThdEntry *t)
+ 	free(t);
+ }
+ 
+-static void remove_thd_entry(struct ThdEntry *t)
++static void remove_thd_entry(struct ThdEntry *t, bool wait_for_teardown)
+ {
+ 	struct DevEntry *entry = t->entry;
++	bool final_client = false;
+ 
+ 	pthread_mutex_lock(&entry->thdlist_lock);
+ 	if (!entry->closed) {
+ 		entry->update_mask = true;
+ 		SLIST_REMOVE(&entry->thdlist_head, t, ThdEntry, dev_list_entry);
+-		if (SLIST_EMPTY(&entry->thdlist_head) && entry->buf) {
++		final_client = SLIST_EMPTY(&entry->thdlist_head);
++		if (final_client && entry->buf) {
+ 			entry->cancelled = true;
+ 			iio_buffer_cancel(entry->buf); /* Wakeup the rw thread */
+ 		}
+ 
+ 		pthread_cond_signal(&entry->rw_ready_cond);
++	} else {
++		/* The worker has already detached this client after an error. */
++		final_client = true;
+ 	}
++	while (wait_for_teardown && final_client && !entry->teardown_complete)
++		pthread_cond_wait(&entry->teardown_complete_cond,
++				&entry->thdlist_lock);
+ 	pthread_mutex_unlock(&entry->thdlist_lock);
+ 	dev_entry_put(entry);
+ 
+@@ -1158,7 +1174,7 @@ retry:
+ 			if (ret == 0)
+ 				ret = (int) thd->err;
+ 			if (ret < 0)
+-				remove_thd_entry(thd);
++				remove_thd_entry(thd, false);
+ 			else
+ 				SLIST_INSERT_HEAD(&pdata->thdlist_head, thd, parser_list_entry);
+ 			return ret;
+@@ -1204,6 +1220,7 @@ retry:
+ 
+ 	pthread_mutex_init(&entry->thdlist_lock, NULL);
+ 	pthread_cond_init(&entry->rw_ready_cond, NULL);
++	pthread_cond_init(&entry->teardown_complete_cond, NULL);
+ 
+ 	ret = thread_pool_add_thread(main_thread_pool, rw_thd, entry, "rw_thd");
+ 	if (ret) {
+@@ -1227,7 +1244,7 @@ retry:
+ 	if (ret == 0)
+ 		ret = (int) thd->err;
+ 	if (ret < 0)
+-		remove_thd_entry(thd);
++		remove_thd_entry(thd, false);
+ 	else
+ 		SLIST_INSERT_HEAD(&pdata->thdlist_head, thd, parser_list_entry);
+ 	return ret;
+@@ -1258,7 +1275,7 @@ static int close_dev_helper(struct parser_pdata *pdata, struct iio_device *dev)
+ 		return -ENXIO;
+ 
+ 	SLIST_REMOVE(&pdata->thdlist_head, t, ThdEntry, parser_list_entry);
+-	remove_thd_entry(t);
++	remove_thd_entry(t, true);
+ 
+ 	return 0;
+ }

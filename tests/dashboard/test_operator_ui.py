@@ -4,7 +4,10 @@ import http.client
 import threading
 
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
-from leo_flow.dashboard.api import DashboardJsonApplication, JsonRequest
+from leo_flow.dashboard.api import (
+    DashboardJsonApplicationV2,
+    JsonRequest,
+)
 from leo_flow.dashboard.ui import DashboardUiApplication
 from leo_flow.deployments import dashboard_v1
 from leo_flow.services.bootstrap import Capability
@@ -18,7 +21,8 @@ from ._fixtures import repository
 
 
 def application() -> DashboardUiApplication:
-    return DashboardUiApplication(DashboardJsonApplication(repository()))
+    queries = repository()
+    return DashboardUiApplication(DashboardJsonApplicationV2(queries, queries))
 
 
 def test_static_routes_are_exact_allow_list_with_safe_content_and_cache_policy() -> (
@@ -57,6 +61,58 @@ def test_static_routes_are_exact_allow_list_with_safe_content_and_cache_policy()
     assert traversal.body == b"Not found\n"
 
 
+def test_dedicated_recording_page_is_same_origin_bounded_and_path_validated() -> None:
+    app = application()
+    page = app.handle(JsonRequest("GET", "/recordings/rec_1", {}))
+    html = page.body.decode()
+    assert page.status == 200
+    assert dict(page.headers)["cache-control"] == "no-store"
+    for required in (
+        'id="capture-detail-main"',
+        'aria-labelledby="capture-facts-heading"',
+        'aria-labelledby="segments-heading"',
+        'aria-labelledby="waterfall-heading"',
+        'aria-labelledby="analysis-heading"',
+        'id="starlink-decision"',
+        'id="diagnostic-features" class="diagnostic-features"',
+        'aria-controls="diagnostic-features-panel" aria-expanded="false"',
+        'id="waterfall-canvas"',
+        'id="waterfall-tile"',
+        '<script src="/assets/recording-detail.js" defer></script>',
+    ):
+        assert required in html
+    assert "http://" not in html and "https://" not in html
+    assert (
+        app.handle(JsonRequest("GET", "/recordings/not-a-recording", {})).status == 404
+    )
+    assert app.handle(JsonRequest("GET", "/recordings/rec_1/extra", {})).status == 404
+    assert app.handle(JsonRequest("GET", "/recordings/rec_1%2Fextra", {})).status == 404
+
+
+def test_recording_page_script_uses_only_projected_json_and_safe_dom_apis() -> None:
+    javascript = (
+        application()
+        .handle(JsonRequest("GET", "/assets/recording-detail.js", {}))
+        .body.decode()
+    )
+    for route in (
+        "/api/v3/recordings/",
+        "/api/v4/recordings/",
+        "/waterfall",
+        "/api/recordings/",
+        "/features?selector=*",
+    ):
+        assert route in javascript
+    assert "/api/v3/recordings/${encodeURIComponent(recordingId)}/starlink" not in (
+        javascript
+    )
+    assert "getContext" in javascript and "fillRect" in javascript
+    assert "innerHTML" not in javascript
+    assert "/home/" not in javascript
+    assert "cas:" not in javascript.casefold()
+    assert "fetch(" in javascript
+
+
 def test_head_and_json_delegation_preserve_existing_api_schema() -> None:
     app = application()
     head = app.handle(JsonRequest("HEAD", "/", {}))
@@ -81,6 +137,13 @@ def test_html_has_keyboard_landmarks_labels_and_explicit_state_hooks() -> None:
         '<nav class="section-nav" aria-label="Dashboard sections"',
         '<main id="main-content" tabindex="-1"',
         'aria-labelledby="overview-heading"',
+        'aria-labelledby="capture-batches-heading"',
+        'aria-label="Capture table filters"',
+        '<label for="capture-window-hours"',
+        '<label for="capture-radio-filter"',
+        'id="capture-batches-table"',
+        'id="capture-attempts-body"',
+        'id="capture-batches-more"',
         'aria-labelledby="recordings-heading"',
         'aria-labelledby="evaluation-heading"',
         'aria-labelledby="models-tracks-heading"',
@@ -88,6 +151,9 @@ def test_html_has_keyboard_landmarks_labels_and_explicit_state_hooks() -> None:
         '<label for="window-hours"',
         '<label for="evaluation-id"',
         '<label for="model-id"',
+        '<option value="8">8 hours</option>',
+        '<option value="168">7 days</option>',
+        '<option value="720">30 days</option>',
         'aria-live="polite"',
         "<caption>",
         'data-state="loading"',
@@ -111,6 +177,8 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
         assert f'"{state}"' in javascript or f'[data-state="{state}"]' in css
     for route in (
         "/api/activity",
+        "/api/v2/capture-batches",
+        "/api/v5/capture-attempts/",
         "/api/recordings",
         "/api/evaluations/",
         "/api/models/",
@@ -119,6 +187,30 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
     ):
         assert route in javascript
     assert "Promise.allSettled" in javascript
+    assert "captureBatchCursor" in javascript
+    assert "encodeURIComponent(nextCursor)" in javascript
+    assert "captureRows" in javascript
+    assert "Searching all stable pages for this radio" in javascript
+    assert "View capture details, waterfall, and analysis" in javascript
+    assert "makeCaptureRowNavigable" in javascript
+    assert "Radio lifecycle" in javascript
+    assert "Open to load bounded lifecycle evidence." in javascript
+    assert "Lifecycle evidence was not recorded for this capture." in javascript
+    assert (
+        'event.target.closest("a, button, input, select, textarea, summary")'
+        in javascript
+    )
+    assert '["Enter", " "]' in javascript
+    assert "RADIO_DISPLAY_ALIASES_V1" in javascript
+    assert (
+        'radio_pluto_5d4d: Object.freeze({ short: ".20", '
+        'address: "192.168.1.20" })' in javascript
+    )
+    assert (
+        'radio_pluto_19f2: Object.freeze({ short: ".21", '
+        'address: "192.168.1.21" })' in javascript
+    )
+    assert "radioMatchesFilter" in javascript and "radioDisplayName" in javascript
     assert "start_utc_ns=" in javascript and "stop_utc_ns=" in javascript
     assert "stop is exclusive" in javascript
     assert "innerHTML" not in javascript

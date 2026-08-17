@@ -18,6 +18,9 @@ from leo_flow.contracts.core import ArtifactRef, JobId, SchemaRef, UtcNs
 
 class JobType(str, Enum):
     RECORDING_ANALYSIS = "recording_analysis"
+    WATERFALL_ANALYSIS = "waterfall_analysis"
+    STARLINK_ANALYSIS = "starlink_analysis"
+    STARLINK_SUITE_ANALYSIS = "starlink_suite_analysis"
     MODEL_ANALYSIS = "model_analysis"
     EPHEMERIS_RETRIEVAL = "ephemeris_retrieval"
     EPHEMERIS_LINK_BACKFILL = "ephemeris_link_backfill"

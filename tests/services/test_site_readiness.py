@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import errno
+import fcntl
 import io
 import json
 import os
@@ -11,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from leo_flow.deployments import site_readiness
 from leo_flow.deployments.site_readiness import (
     SiteReadinessError,
     load_manifest,
@@ -22,6 +25,145 @@ ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = ROOT / "deploy" / "site-readiness-v1"
 EXAMPLE = BUNDLE / "site-readiness.example.json"
 SCHEMA = BUNDLE / "site-readiness.schema.json"
+
+
+def _candidate(
+    payload: bytes = b'{"ready":true}\n',
+) -> site_readiness._CapturedCandidate:
+    return site_readiness._CapturedCandidate(
+        payload=payload, text=payload.decode("utf-8")
+    )
+
+
+def test_captured_loader_uses_linux_uapi_fallbacks_when_exports_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "F_ADD_SEALS",
+        "F_GET_SEALS",
+        "F_SEAL_SEAL",
+        "F_SEAL_SHRINK",
+        "F_SEAL_GROW",
+        "F_SEAL_WRITE",
+    ):
+        monkeypatch.delattr(site_readiness.fcntl, name, raising=False)
+
+    observed = site_readiness._load_captured(
+        _candidate(), lambda path: path.read_bytes()
+    )
+
+    assert observed == b'{"ready":true}\n'
+
+
+def test_captured_loader_applies_exact_seal_mask_before_loader() -> None:
+    def inspect_and_try_write(path: Path) -> int:
+        fd = os.open(path, os.O_RDWR | os.O_CLOEXEC)
+        try:
+            observed = fcntl.fcntl(fd, 1034)
+            with pytest.raises(OSError) as error:
+                os.write(fd, b"mutation")
+            assert error.value.errno == errno.EPERM
+            return observed
+        finally:
+            os.close(fd)
+
+    assert site_readiness._load_captured(_candidate(), inspect_and_try_write) == 15
+
+
+@pytest.mark.parametrize("failed_command", [1033, 1034])
+def test_captured_loader_fails_closed_when_seal_operations_fail(
+    failed_command: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_fcntl = fcntl.fcntl
+    loader_called = False
+
+    def fail_operation(fd: int, command: int, *args: int) -> int:
+        if command == failed_command:
+            raise OSError(errno.EINVAL, "untrusted platform detail")
+        result = real_fcntl(fd, command, *args)
+        assert isinstance(result, int)
+        return result
+
+    def loader(_path: Path) -> object:
+        nonlocal loader_called
+        loader_called = True
+        return object()
+
+    monkeypatch.setattr(site_readiness.fcntl, "fcntl", fail_operation)
+
+    with pytest.raises(
+        SiteReadinessError, match="^immutable candidate staging is unavailable$"
+    ):
+        site_readiness._load_captured(_candidate(), loader)
+    assert loader_called is False
+
+
+def test_captured_loader_rejects_incomplete_seal_mask_before_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_fcntl = fcntl.fcntl
+    loader_called = False
+
+    def report_incomplete(fd: int, command: int, *args: int) -> int:
+        if command == 1034:
+            return 7
+        result = real_fcntl(fd, command, *args)
+        assert isinstance(result, int)
+        return result
+
+    def loader(_path: Path) -> object:
+        nonlocal loader_called
+        loader_called = True
+        return object()
+
+    monkeypatch.setattr(site_readiness.fcntl, "fcntl", report_incomplete)
+
+    with pytest.raises(
+        SiteReadinessError, match="^immutable candidate staging is unavailable$"
+    ):
+        site_readiness._load_captured(_candidate(), loader)
+    assert loader_called is False
+
+
+def test_captured_loader_rejects_zero_byte_write_before_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader_called = False
+
+    def loader(_path: Path) -> object:
+        nonlocal loader_called
+        loader_called = True
+        return object()
+
+    monkeypatch.setattr(site_readiness.os, "write", lambda *_args: 0)
+
+    with pytest.raises(
+        SiteReadinessError, match="^immutable candidate staging is unavailable$"
+    ):
+        site_readiness._load_captured(_candidate(), loader)
+    assert loader_called is False
+
+
+def test_captured_loader_sanitizes_unsupported_memfd_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader_called = False
+
+    def unsupported(*_args: object, **_kwargs: object) -> int:
+        raise OSError(errno.ENOSYS, "untrusted platform detail")
+
+    def loader(_path: Path) -> object:
+        nonlocal loader_called
+        loader_called = True
+        return object()
+
+    monkeypatch.setattr(site_readiness.os, "memfd_create", unsupported)
+
+    with pytest.raises(
+        SiteReadinessError, match="^immutable candidate staging is unavailable$"
+    ):
+        site_readiness._load_captured(_candidate(), loader)
+    assert loader_called is False
 
 
 def _artifact_values(document: dict[str, object]) -> Iterator[dict[str, object]]:
@@ -116,7 +258,7 @@ def _complete_bundle(tmp_path: Path) -> tuple[Path, dict[str, object]]:
             "database_owner": "leo_catalog_owner",
             "server_major": 16,
             "system_identifier": "7612345678901234567",
-            "migration_head": "0019_dwell_request_ingress.sql",
+            "migration_head": "0032_campaign_online_analysis.sql",
             "login_names": {
                 "leo_capture": "leo_capture_station_login",
                 "leo_analysis": "leo_analysis_station_login",
@@ -220,6 +362,31 @@ def test_complete_bundle_passes_without_external_access(
     assert [item["destination_path"] for item in plan] == sorted(
         item["destination_path"] for item in plan
     )
+
+
+def test_dashboard_remote_bind_requires_the_explicit_remote_adapter(
+    tmp_path: Path,
+) -> None:
+    manifest_path, document = _complete_bundle(tmp_path)
+    inputs = document["inputs"]
+    assert isinstance(inputs, dict)
+    dashboard = inputs["dashboard"]
+    assert isinstance(dashboard, dict)
+    artifact = dashboard["config"]
+    assert isinstance(artifact, dict)
+    source = artifact["source_path"]
+    assert isinstance(source, str)
+    config_path = tmp_path / source
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["adapters"]["server_ref"] = "dashboard.stdlib-loopback-http-v1"
+    _write_json(config_path, config)
+    artifact["sha256"] = _digest(config_path)
+    _write_json(manifest_path, document)
+
+    receipt = qualify_manifest(load_manifest(manifest_path), tmp_path)
+
+    assert receipt["status"] == "fail"
+    assert _gate(receipt, "dashboard.explicit_bind_policy")["passed"] is False
 
 
 def test_changed_candidate_and_cross_config_drift_fail_closed(tmp_path: Path) -> None:

@@ -53,6 +53,15 @@ def test_listener_rejects_remote_or_wildcard_binding_by_default() -> None:
             server.preflight(host, 8080)
 
 
+def test_explicit_remote_listener_permits_ipv4_wildcard() -> None:
+    server = StdlibDashboardServer(request_timeout_s=0.05, allow_remote=True)
+    server.preflight("0.0.0.0", 0)
+    status, _, payload = _exchange(server, "/api/storage-health")
+    assert status == 200
+    assert isinstance(payload, dict)
+    server.close(0.1)
+
+
 def test_serve_once_has_a_finite_idle_wait() -> None:
     server = StdlibDashboardServer(request_timeout_s=0.01)
     server.preflight("127.0.0.1", 0)

@@ -11,7 +11,10 @@ from types import ModuleType
 
 import pytest
 
-from leo_flow.deployments import dashboard_v1
+from leo_flow.contracts.dashboard import Page, StorageHealth
+from leo_flow.dashboard import DashboardNotFound
+from leo_flow.dashboard.api import JsonRequest
+from leo_flow.deployments import dashboard_operator, dashboard_v1
 from leo_flow.services import (
     AdapterBuildContext,
     BootstrapError,
@@ -23,6 +26,11 @@ from leo_flow.services import (
     assemble_service,
 )
 from leo_flow.services.cli import ExitCode, main
+from tests.dashboard._recording_detail_fixtures import (
+    RECORDING_ID,
+    capture_detail,
+    waterfall,
+)
 
 
 def _config(*, query_ref: str = dashboard_v1.QUERY_PROJECTION_REF):
@@ -42,6 +50,63 @@ def _config(*, query_ref: str = dashboard_v1.QUERY_PROJECTION_REF):
     )
 
 
+def test_dashboard_operator_pins_plugin_and_default_config_without_effects() -> None:
+    observed: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    def run(argv=None, *, stdout, stderr):
+        observed.extend((argv, stdout, stderr))
+        return 17
+
+    assert (
+        dashboard_operator.main(
+            ["--once"],
+            stdout=stdout,
+            stderr=stderr,
+            service_runner=run,
+        )
+        == 17
+    )
+    assert observed == [
+        [
+            "--config",
+            str(dashboard_operator.DEFAULT_CONFIG),
+            "--plugin",
+            dashboard_operator.PLUGIN_SPEC,
+            "--once",
+        ],
+        stdout,
+        stderr,
+    ]
+
+
+def test_dashboard_operator_forwards_only_config_and_process_mode(
+    tmp_path: Path,
+) -> None:
+    observed: list[str] = []
+
+    def run(argv=None, **_kwargs):
+        assert argv is not None
+        observed.extend(argv)
+        return 0
+
+    config = tmp_path / "dashboard.json"
+    assert (
+        dashboard_operator.main(
+            ["--config", str(config), "--forever"], service_runner=run
+        )
+        == 0
+    )
+    assert observed == [
+        "--config",
+        str(config),
+        "--plugin",
+        "leo_flow.deployments.dashboard_v1:PLUGIN",
+        "--forever",
+    ]
+
+
 def test_plugin_exports_only_exact_dashboard_capabilities() -> None:
     plugin = dashboard_v1.PLUGIN
     assert set(plugin.builders) == {Process.DASHBOARD}
@@ -59,6 +124,14 @@ def test_plugin_exports_only_exact_dashboard_capabilities() -> None:
             Process.DASHBOARD, Capability.DASHBOARD_SERVER, dashboard_v1.SERVER_REF
         )
         is dashboard_v1._stdlib_loopback_server
+    )
+    assert (
+        plugin.manifest.factory(
+            Process.DASHBOARD,
+            Capability.DASHBOARD_SERVER,
+            dashboard_v1.REMOTE_SERVER_REF,
+        )
+        is dashboard_v1._stdlib_explicit_remote_server
     )
     with pytest.raises(BootstrapError, match="cannot resolve"):
         plugin.manifest.factory(Process.DASHBOARD, Capability.RADIO, "radio.pluto-v5")
@@ -232,6 +305,79 @@ def test_failed_query_preflight_closes_bound_listener_before_propagating() -> No
     assert server.events == ["bind", "query", "close"]
 
 
+def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2() -> (
+    None
+):
+    class Queries(_Queries):
+        def storage_health(self):
+            self._events.append("query")
+            return StorageHealth(False, None, None)
+
+        def recent_capture_batches(self, query, cursor=None):
+            del query, cursor
+            return Page((), None)
+
+        def capture_batch(self, batch_id):
+            raise AssertionError(f"unexpected exact query {batch_id}")
+
+        def recording_capture_detail(self, recording_id):
+            assert recording_id == RECORDING_ID
+            return capture_detail()
+
+        def recording_waterfall(self, recording_id):
+            assert recording_id == RECORDING_ID
+            return waterfall()
+
+        def recording_starlink_suite(self, recording_id):
+            assert recording_id == RECORDING_ID
+            raise DashboardNotFound("suite projection absent")
+
+    class CapturingServer(_Server):
+        handler = None
+
+        def serve_once(self, handler) -> bool:
+            self.handler = handler
+            return super().serve_once(handler)
+
+    server = CapturingServer()
+    service = dashboard_v1._build_dashboard(
+        _config(),
+        {
+            Capability.QUERY_PROJECTION: Queries(server.events),
+            Capability.DASHBOARD_SERVER: server,
+        },
+        _Diagnostics(),
+    )
+    assert not service.run_once()
+    assert isinstance(server.handler, dashboard_v1.DashboardUiApplication)
+    v2 = server.handler.handle(
+        JsonRequest(
+            "GET",
+            "/api/v2/capture-batches",
+            {"start_utc_ns": "0", "stop_utc_ns": "1"},
+        )
+    )
+    assert v2.status == 200 and v2.body == b'{"items":[],"next_cursor":null}'
+    v3 = server.handler.handle(
+        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}", {})
+    )
+    assert v3.status == 200
+    assert json.loads(v3.body)["recording_id"] == str(RECORDING_ID)
+    waterfall_response = server.handler.handle(
+        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}/waterfall", {})
+    )
+    assert waterfall_response.status == 200
+    assert json.loads(waterfall_response.body)["state"] == "complete"
+    suite_response = server.handler.handle(
+        JsonRequest("GET", f"/api/v4/recordings/{RECORDING_ID}/starlink-suite", {})
+    )
+    assert suite_response.status == 404
+    v1 = server.handler.handle(JsonRequest("GET", "/api/storage-health", {}))
+    assert v1.status == 200
+    assert v1.body == b'{"available":false,"free_bytes":null,"total_bytes":null}'
+    service.shutdown()
+
+
 def test_plugin_import_is_side_effect_free_and_does_not_import_psycopg() -> None:
     source = Path(dashboard_v1.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -277,3 +423,49 @@ def test_missing_optional_postgres_dependency_has_an_actionable_error(
         dashboard_v1.DashboardRuntimeDependencyError, match="optional dependency"
     ):
         dashboard_v1._postgres_query_projection(context)
+
+
+def test_checked_gauss_dashboard_is_a_frozen_all_interface_read_only_unit() -> None:
+    root = Path(__file__).resolve().parents[2]
+    config = json.loads(
+        (root / "deploy/dashboard-v1/dashboard.json").read_text(encoding="utf-8")
+    )
+    unit = (root / "deploy/dashboard-v1/leo-dashboard.service").read_text(
+        encoding="utf-8"
+    )
+
+    assert config["adapters"] == {
+        "query_projection_ref": dashboard_v1.QUERY_PROJECTION_REF,
+        "server_ref": dashboard_v1.REMOTE_SERVER_REF,
+        "bind_host": "0.0.0.0",
+        "bind_port": 8090,
+    }
+    assert (
+        "ExecStart=/usr/bin/flock --nonblock "
+        "/run/leo-flow-dashboard/supervisor.lock "
+        "/opt/leo-flow/bin/leo-dashboard "
+        "--config /etc/leo-flow/dashboard.json --forever"
+    ) in unit
+    for directive in (
+        "DynamicUser=yes",
+        "LoadCredential=catalog-dsn:/etc/leo-flow/secrets/dashboard-catalog-dsn",
+        "NoNewPrivileges=yes",
+        "PrivateTmp=yes",
+        "PrivateDevices=yes",
+        "ProtectSystem=strict",
+        "ProtectHome=yes",
+        "UMask=0077",
+    ):
+        assert directive in unit
+    for forbidden in (
+        "/home/",
+        "PYTHONPATH=",
+        "Environment=",
+        "SupplementaryGroups=",
+        "StateDirectory=",
+        "ReadWritePaths=",
+        "BindPaths=",
+        "cas_root",
+        "capture-spool",
+    ):
+        assert forbidden not in unit

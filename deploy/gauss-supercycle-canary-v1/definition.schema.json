@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "org.leo-flow.gauss-v5-supercycle-canary/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "canary_id", "campaign_kind", "authorization_scope",
+    "main_campaign_authorized", "start_utc_ns", "radios", "station_digests",
+    "qualification_receipt_digest", "slots", "recordings", "cells",
+    "geometry_schedule", "unit_schedule", "slot_period_numerator_ns",
+    "slot_period_denominator", "preflight_lead_ns", "maximum_start_lateness_ns",
+    "maximum_observed_start_skew_ns", "hardware_block_duration_ms",
+    "capture_mode", "capture_first", "no_catch_up", "replay_allowed",
+    "raw_bytes", "capture_transition_limit", "analysis_transition_limit",
+    "staged_analysis", "result_semantics"
+  ],
+  "properties": {
+    "schema": {"const": "org.leo-flow.gauss-v5-supercycle-canary/v1"},
+    "canary_id": {"type": "string", "pattern": "^canary_[a-z0-9][a-z0-9_-]{0,31}$"},
+    "campaign_kind": {"const": "supercycle_canary"},
+    "authorization_scope": {"const": "canary_only"},
+    "main_campaign_authorized": {"const": false},
+    "start_utc_ns": {"type": "integer", "minimum": 0},
+    "radios": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true},
+    "station_digests": {"type": "array", "minItems": 2, "maxItems": 2},
+    "qualification_receipt_digest": {"const": "sha256:6a816b5da9be8cb86361610fe42004074512e64b0748de2be2b62e832cdb8d"},
+    "slots": {"const": 36},
+    "recordings": {"const": 72},
+    "cells": {"type": "array", "minItems": 9, "maxItems": 9},
+    "geometry_schedule": {"const": [["L", "L"], ["L", "U"], ["U", "U"], ["U", "L"]]},
+    "unit_schedule": {"const": "single_nine_cell_four_geometry_no_catch_up_supercycle"},
+    "slot_period_numerator_ns": {"const": 400000000000},
+    "slot_period_denominator": {"const": 13},
+    "preflight_lead_ns": {"const": 15000000000},
+    "maximum_start_lateness_ns": {"type": "integer", "minimum": 0, "maximum": 5000000000},
+    "maximum_observed_start_skew_ns": {"const": 100000000},
+    "hardware_block_duration_ms": {"const": 40},
+    "capture_mode": {"const": "coordinated"},
+    "capture_first": {"const": true},
+    "no_catch_up": {"const": true},
+    "replay_allowed": {"const": false},
+    "raw_bytes": {"const": 1254400000},
+    "capture_transition_limit": {"const": 73},
+    "analysis_transition_limit": {"const": 37},
+    "staged_analysis": {
+      "const": {
+        "migration_head": "0030_campaign_scoped_analysis_claims.sql",
+        "window_batches": 36,
+        "compute_workers": 8,
+        "projection_workers": 4
+      }
+    },
+    "result_semantics": {"const": "candidate_only_no_detection_count"}
+  }
+}

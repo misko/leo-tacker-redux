@@ -13,6 +13,7 @@ import shutil
 import stat
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol, cast
@@ -23,9 +24,11 @@ from leo_flow.application.projection_writers import (
     RecordingProjectionCommand,
 )
 from leo_flow.capture.drivers.pluto import (
+    DeviceFactory,
     PlutoDevice,
     PlutoPairedRadio,
     PlutoRadioConfig,
+    require_ci16_component_variation,
 )
 from leo_flow.capture.drivers.spf_v3 import (
     SpfV3MetadataReader,
@@ -38,6 +41,7 @@ from leo_flow.capture.drivers.v5_observers import (
 from leo_flow.capture.drivers.v5_preflight import (
     ExpectedV5Radio,
     ExpectedV5Runtime,
+    ObservedV5Runtime,
     create_attested_v5_radio,
 )
 from leo_flow.capture.engine import CaptureIdentity, PlanCaptureEngine
@@ -100,6 +104,10 @@ SPOOL_DATABASE = STATE_ROOT / "capture-spool.sqlite3"
 CAS_ROOT = STATE_ROOT / "cas"
 LOCK_PATH = Path("/run/leo-flow-v5-canary/instance.lock")
 RUNTIME_MANIFEST = Path("/opt/leo-v5/runtime-manifest.json")
+RUNTIME_MANIFEST_DIGEST = Digest(
+    DigestAlgorithm.SHA256,
+    "66ada25100348126cb6ef6d331f03dde92c6597a1cf550db44b785b630acd8fb",
+)
 MINIMUM_FREE_BYTES = 1 << 30
 POSTGRES_TIMEOUT_S = 5
 
@@ -189,6 +197,17 @@ CAPTURE_IDENTITY = CaptureIdentity(
 
 class CanaryDeploymentError(RuntimeError):
     """The one-shot canary cannot safely make forward progress."""
+
+
+class V5PlanCyclePhase(str, Enum):
+    """Private phase markers for sanitized deployment failure evidence."""
+
+    CYCLE_PREFLIGHT = "cycle_preflight"
+    HOST_SPOOL_PREFLIGHT = "host_spool_preflight"
+    CATALOG_PREFLIGHT = "catalog_preflight"
+    RADIO_ATTESTATION = "radio_attestation"
+    CAPTURE_ENGINE = "capture_engine"
+    RECORDING_PUBLICATION = "recording_publication"
 
 
 class _RadioProvider(Protocol):
@@ -337,7 +356,12 @@ class _ReadinessCheckedPublisher:
                     has_sequence_privilege(
                         current_user, 'dashboard_projection_sequence',
                         'USAGE,SELECT'
-                    ) AS projection_sequence
+                    ) AS projection_sequence,
+                    has_function_privilege(
+                        current_user,
+                        'publish_dashboard_recording_detail(jsonb)',
+                        'EXECUTE'
+                    ) AS recording_detail_projection
                 """
             ).fetchone()
         if row is None or not all(value is True for value in row.values()):
@@ -356,16 +380,41 @@ class _ReadinessCheckedPublisher:
 
 
 class _V5RadioProvider:
+    def __init__(
+        self,
+        radio_config: PlutoRadioConfig = RADIO_CONFIG,
+        *,
+        expected_radio: ExpectedV5Radio = EXPECTED_RADIO,
+        expected_runtime: ExpectedV5Runtime = EXPECTED_RUNTIME,
+        runtime_manifest: Path = RUNTIME_MANIFEST,
+        runtime_manifest_digest: Digest = RUNTIME_MANIFEST_DIGEST,
+        runtime_observer: Callable[[Path, Digest], ObservedV5Runtime] | None = None,
+        device_factory: DeviceFactory | None = None,
+    ) -> None:
+        if radio_config.expected_serial != expected_radio.serial:
+            raise ValueError("radio config and attestation serial differ")
+        self._radio_config = radio_config
+        self._expected_radio = expected_radio
+        self._expected_runtime = expected_runtime
+        self._runtime_manifest = runtime_manifest
+        self._runtime_manifest_digest = runtime_manifest_digest
+        self._runtime_observer = runtime_observer or _observe_v5_runtime_manifest
+        self._device_factory = device_factory or _open_pyadi_ad9361
+
     def open(self) -> PlutoPairedRadio:
         metadata = SpfV3MetadataReader(spf_iio_session_factory)
         return create_attested_v5_radio(
-            RADIO_CONFIG,
-            expected_runtime=EXPECTED_RUNTIME,
-            expected_radio=EXPECTED_RADIO,
-            observe_runtime=lambda: observe_current_v5_runtime(RUNTIME_MANIFEST),
+            self._radio_config,
+            expected_runtime=self._expected_runtime,
+            expected_radio=self._expected_radio,
+            observe_runtime=lambda: self._runtime_observer(
+                self._runtime_manifest,
+                self._runtime_manifest_digest,
+            ),
             observe_radio=observe_v5_radio,
-            device_factory=_open_pyadi_ad9361,
+            device_factory=self._device_factory,
             metadata_reader=metadata,
+            signal_integrity_validator=require_ci16_component_variation,
         )
 
 
@@ -374,6 +423,10 @@ class _V5RadioProvider:
 V5SpoolSpec = _SpoolSpec
 V5PostgresPublicationProvider = _PostgresPublicationProvider
 V5RadioProvider = _V5RadioProvider
+
+
+def _observe_v5_runtime_manifest(path: Path, digest: Digest) -> ObservedV5Runtime:
+    return observe_current_v5_runtime(path, expected_manifest_digest=digest)
 
 
 class CaptureHostGuard:
@@ -517,13 +570,18 @@ class OneShotV5PlanCycle:
         self._radio: RadioDevice | None = None
         self._closed = False
 
-    def preflight(self) -> None:
+    def preflight(
+        self, phase_observer: Callable[[V5PlanCyclePhase], None] | None = None
+    ) -> None:
+        observe = phase_observer or _ignore_cycle_phase
+        observe(V5PlanCyclePhase.CYCLE_PREFLIGHT)
         if self._closed:
             raise CanaryDeploymentError(
                 f"closed {self._deployment_name} cycle cannot restart"
             )
         if self._spool is not None:
             return
+        observe(V5PlanCyclePhase.HOST_SPOOL_PREFLIGHT)
         self._host_guard.acquire()
         self._spool_spec.validate_local_paths()
         spool = SQLiteLocalSpool(
@@ -531,17 +589,24 @@ class OneShotV5PlanCycle:
         )
         local = RootedSigMFRecordingStore(self._spool_spec.recording_root)
         self._recover(spool, local)
+        has_durable_recording = spool.has_durable_recording(self._plan_id)
+        observe(V5PlanCyclePhase.CATALOG_PREFLIGHT)
         publisher = self._publication_provider.build(local)
         publisher.preflight()
         self._spool = spool
         self._local = local
         self._reconciler = PublicationReconciler(spool, publisher, local)
-        if not spool.has_durable_recording(self._plan_id):
+        if not has_durable_recording:
+            observe(V5PlanCyclePhase.RADIO_ATTESTATION)
             self._radio = self._radio_provider.open()
 
-    def capture_and_publish_once(self) -> bool:
+    def capture_and_publish_once(
+        self, phase_observer: Callable[[V5PlanCyclePhase], None] | None = None
+    ) -> bool:
+        observe = phase_observer or _ignore_cycle_phase
         spool, reconciler = self._ready()
         if spool.has_durable_recording(self._plan_id):
+            observe(V5PlanCyclePhase.RECORDING_PUBLICATION)
             result = reconciler.reconcile()
             self._require_reconciled(result.deferred, result.errors)
             return bool(result.published or result.cleaned)
@@ -549,18 +614,31 @@ class OneShotV5PlanCycle:
             raise CanaryDeploymentError(
                 f"attested V5 radio is absent for {self._deployment_name}"
             )
-        plan = self._plan_source.get(self._plan_id)
-        if (
-            plan is not self._exact_plan
-            or canonical_digest(plan) != self._exact_plan_digest
-        ):
-            raise CanaryDeploymentError(
-                f"plan source changed the immutable {self._deployment_name} plan"
-            )
+        observe(V5PlanCyclePhase.CAPTURE_ENGINE)
+        plan = self._exact_source_plan()
         self._engine.execute(plan, self._radio, self._writer, spool)
+        observe(V5PlanCyclePhase.RECORDING_PUBLICATION)
         result = reconciler.reconcile()
         self._require_reconciled(result.deferred, result.errors)
         return True
+
+    def prepare_first_segment(self) -> None:
+        """Configure the exact first segment without opening a receive buffer."""
+
+        spool, _ = self._ready()
+        if spool.has_durable_recording(self._plan_id):
+            return
+        if self._radio is None:
+            raise CanaryDeploymentError(
+                f"attested V5 radio is absent for {self._deployment_name}"
+            )
+        plan = self._exact_source_plan()
+        prepare = getattr(self._radio, "prepare_segment_with_metadata", None)
+        if not callable(prepare):
+            raise CanaryDeploymentError(
+                f"{self._deployment_name} radio lacks pre-release configuration"
+            )
+        prepare(plan.activities[0].segments[0])
 
     def close(self, timeout_s: float) -> None:
         if timeout_s <= 0:
@@ -590,6 +668,17 @@ class OneShotV5PlanCycle:
             )
         return self._spool, self._reconciler
 
+    def _exact_source_plan(self) -> CapturePlan:
+        plan = self._plan_source.get(self._plan_id)
+        if (
+            plan is not self._exact_plan
+            or canonical_digest(plan) != self._exact_plan_digest
+        ):
+            raise CanaryDeploymentError(
+                f"plan source changed the immutable {self._deployment_name} plan"
+            )
+        return plan
+
     @staticmethod
     def _recover(spool: SQLiteLocalSpool, local: RootedSigMFRecordingStore) -> None:
         for entry in spool.incomplete_allocations():
@@ -612,6 +701,10 @@ class OneShotV5PlanCycle:
             raise CanaryDeploymentError(
                 f"recording publication remains deferred ({kinds or 'unknown'})"
             )
+
+
+def _ignore_cycle_phase(_phase: V5PlanCyclePhase) -> None:
+    pass
 
 
 class OneShotV5CanaryCycle(OneShotV5PlanCycle):

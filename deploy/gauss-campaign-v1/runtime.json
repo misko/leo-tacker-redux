@@ -1,0 +1,10 @@
+{
+  "schema": "org.leo-flow.gauss-v5-campaign-runtime/v1",
+  "analysis_config": "/home/mouse9911/gits/leo-tracker-redux/deploy/gauss-analysis-v1/analysis.json",
+  "capture_credential_directory": "/home/mouse9911/.local/state/leo-flow/credentials/gauss-capture",
+  "analysis_credential_directory": "/home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis",
+  "dashboard_credential_directory": "/home/mouse9911/.local/state/leo-flow/credentials/gauss-dashboard",
+  "cas_root": "/home/mouse9911/.local/share/leo-flow/objects",
+  "radio_ips": ["192.168.1.20", "192.168.1.21"],
+  "secondary_dispatch_delay_ms": 10
+}

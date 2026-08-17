@@ -23,6 +23,9 @@ from leo_flow.services.recording_analysis import PreparedRecordingAnalysis
 from leo_flow.storage.ports import BlobWriter
 
 from .feature_postgres_catalog import publish_feature_set_with_cursor
+from .feature_projection_work_postgres import (
+    enqueue_feature_projection_with_cursor,
+)
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 
@@ -63,12 +66,18 @@ class AtomicPostgresRecordingAnalysisCommitter:
                 raise StaleLeaseError(
                     "lease token, generation, type, or expiry is stale"
                 )
-            publish_feature_set_with_cursor(
+            feature_ref = publish_feature_set_with_cursor(
                 cursor,
                 projection,
                 bundle_ref,
                 prepared.request.recording_object_ref,
                 idempotency_key=f"recording-analysis:{lease.job_id}",
+            )
+            enqueue_feature_projection_with_cursor(
+                cursor,
+                lease,
+                feature_ref,
+                prepared.request.recording_object_ref,
             )
             cursor.execute(
                 COMPLETE_SQL,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import struct
 import subprocess
 import sys
@@ -9,13 +10,18 @@ from pathlib import Path
 
 import pytest
 
-from leo_flow.capture.drivers.pluto import PlutoPairedRadio, PlutoRadioConfig
+from leo_flow.capture.drivers.pluto import (
+    PlutoPairedRadio,
+    PlutoRadioConfig,
+    require_ci16_component_variation,
+)
 from leo_flow.capture.errors import (
     RadioConfigurationError,
     RadioDisconnectedError,
     ReceiverSkewError,
     RefillError,
     SampleCountError,
+    TuningError,
 )
 from leo_flow.contracts.capture import GainMode, GainSetting, SegmentRequest
 from leo_flow.contracts.continuity import ContinuityPolicy, RefillMetadata
@@ -78,6 +84,71 @@ class DeviceFactory:
     def __call__(self, uri: str) -> FakePluto:
         self.uris.append(uri)
         return self.device
+
+
+class ConfigurationCountingPluto(FakePluto):
+    def __init__(self, refills: list[object]) -> None:
+        self.configuration_writes: list[tuple[str, object]] = []
+        super().__init__(refills)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if (
+            name
+            in {
+                "rx_enabled_channels",
+                "rx_buffer_size",
+                "sample_rate",
+                "rx_rf_bandwidth",
+                "rx_lo",
+                "gain_control_mode_chan0",
+                "gain_control_mode_chan1",
+                "rx_hardwaregain_chan0",
+                "rx_hardwaregain_chan1",
+            }
+            and value not in (0, 0.0, "unset", ())
+            and hasattr(self, "configuration_writes")
+        ):
+            self.configuration_writes.append((name, value))
+        super().__setattr__(name, value)
+
+    def write_count(self, name: str) -> int:
+        return sum(item_name == name for item_name, _ in self.configuration_writes)
+
+
+class ScriptedMetadataReader:
+    def __init__(self, results: list[object]) -> None:
+        self.results = list(results)
+        self.calls: list[tuple[int, int]] = []
+        self.close_calls = 0
+
+    def __call__(
+        self, _device: object, refill_index: int, sample_offset: int
+    ) -> tuple[object, RefillMetadata]:
+        self.calls.append((refill_index, sample_offset))
+        result = self.results.pop(0)
+        if isinstance(result, BaseException):
+            raise result
+        assert isinstance(result, tuple)
+        return result
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class ScriptedCaptureClock:
+    def __init__(self, utc_ns: list[int], monotonic_ns: list[int]) -> None:
+        self._utc_ns = iter(utc_ns)
+        self._monotonic_ns = iter(monotonic_ns)
+        self.utc_calls = 0
+        self.monotonic_calls = 0
+
+    def now_utc_ns(self) -> int:
+        self.utc_calls += 1
+        return next(self._utc_ns)
+
+    def now_monotonic_ns(self) -> int:
+        self.monotonic_calls += 1
+        return next(self._monotonic_ns)
 
 
 def config(**changes) -> PlutoRadioConfig:
@@ -253,6 +324,351 @@ def test_v5_path_keeps_iq_and_normalized_metadata_associated() -> None:
     assert [item[1].first_sample_sequence for item in captured if item[1]] == [100, 103]
     assert manifest.sample_count == 6
     assert radio.capture_provenance.firmware_release.endswith("metadata-v5")
+    assert dict(manifest.diagnostics)["configuration_readback_attempts"] == 1
+    assert dict(manifest.diagnostics)["configuration_write_attempts"] == 1
+    assert dict(manifest.diagnostics)["transport_attempts"] == 1
+
+
+def test_v5_preparation_configures_once_without_opening_or_reading_metadata() -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader(
+        [
+            (refill(0, 3), metadata(0, 0, 100)),
+            (refill(0, 3), metadata(0, 0, 200)),
+        ]
+    )
+    capture_clock = ScriptedCaptureClock(
+        [1_700_000_000_000_001_000, 1_700_000_000_000_002_000],
+        [1_000_001_000, 1_000_002_000],
+    )
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        clock=capture_clock,
+    )
+    exact_request = request(3)
+
+    radio.prepare_segment_with_metadata(exact_request)
+
+    assert reader.calls == []
+    assert reader.close_calls == 1
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+    assert capture_clock.utc_calls == capture_clock.monotonic_calls == 0
+
+    first = radio.acquire_segment_with_metadata(exact_request, lambda _iq, _item: None)
+
+    assert reader.calls == [(0, 0)]
+    assert reader.close_calls == 1
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+    assert dict(first.diagnostics)["configuration_readback_attempts"] == 1
+    assert dict(first.diagnostics)["configuration_write_attempts"] == 1
+    assert capture_clock.utc_calls == capture_clock.monotonic_calls == 1
+
+    radio.acquire_segment_with_metadata(exact_request, lambda _iq, _item: None)
+    assert reader.calls == [(0, 0), (0, 0)]
+    assert reader.close_calls == 2
+    assert device.destroy_calls == 2
+    assert device.write_count("sample_rate") == 2
+
+
+def test_v5_prepared_request_is_one_use_and_mismatch_fails_closed() -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader([(refill(0, 3), metadata(0, 0, 100))])
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+    )
+    exact_request = request(3)
+    changed_request = replace(exact_request, center_frequency_hz=1_500_000_100.0)
+    radio.prepare_segment_with_metadata(exact_request)
+
+    with pytest.raises(RadioConfigurationError, match="already prepared"):
+        radio.prepare_segment_with_metadata(exact_request)
+    with pytest.raises(RadioConfigurationError, match="differs"):
+        radio.acquire_segment_with_metadata(
+            changed_request, lambda _iq, _item: pytest.fail("unexpected samples")
+        )
+
+    assert reader.calls == []
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+
+    radio.acquire_segment_with_metadata(exact_request, lambda _iq, _item: None)
+    assert reader.calls == [(0, 0)]
+    assert device.destroy_calls == 2
+    assert device.write_count("sample_rate") == 2
+
+
+def test_v5_prepared_metadata_request_rejects_ordinary_acquisition() -> None:
+    device = ConfigurationCountingPluto([refill(0, 3)])
+    reader = ScriptedMetadataReader([(refill(0, 3), metadata(0, 0, 100))])
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+    )
+    exact_request = request(3)
+    radio.prepare_segment_with_metadata(exact_request)
+
+    with pytest.raises(RadioConfigurationError, match="ordinary acquisition"):
+        radio.acquire_segment(exact_request, lambda _iq: pytest.fail("unexpected"))
+
+    assert reader.calls == []
+    assert device.rx_calls == 0
+
+
+@pytest.mark.parametrize("transport_errno", [errno.EIO, errno.EBUSY])
+def test_v5_retries_only_pre_refill_transport_errors_with_fresh_timing(
+    transport_errno: int,
+) -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader(
+        [
+            OSError(transport_errno, "transient metadata transport"),
+            (refill(0, 3), metadata(0, 0, 100)),
+        ]
+    )
+    capture_clock = ScriptedCaptureClock(
+        [1_700_000_000_000_001_000, 1_700_000_000_000_002_000],
+        [1_000_001_000, 1_000_002_000],
+    )
+    delays: list[float] = []
+    health_calls: list[int] = []
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        health_reader=lambda _device: health_calls.append(1) or {},
+        clock=capture_clock,
+        delay=delays.append,
+    )
+    captured: list[tuple[bytes, RefillMetadata | None]] = []
+
+    manifest = radio.acquire_segment_with_metadata(
+        request(3), lambda iq, item: captured.append((iq, item))
+    )
+
+    assert len(captured) == 1
+    assert reader.calls == [(0, 0), (0, 0)]
+    assert reader.close_calls == 2
+    assert device.destroy_calls == 2
+    assert device.write_count("sample_rate") == 2
+    assert delays == [0.05]
+    assert health_calls == [1, 1, 1]
+    assert capture_clock.utc_calls == capture_clock.monotonic_calls == 2
+    assert manifest.start_utc_ns == 1_700_000_000_000_002_000
+    assert manifest.monotonic_start_ns == 1_000_002_000
+    assert dict(manifest.diagnostics)["configuration_readback_attempts"] == 2
+    assert dict(manifest.diagnostics)["configuration_write_attempts"] == 2
+    assert dict(manifest.diagnostics)["transport_attempts"] == 2
+
+
+def test_v5_transport_retry_exhaustion_is_disconnected_and_bounded() -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader(
+        [
+            OSError(errno.EIO, "first metadata failure"),
+            OSError(errno.EBUSY, "second metadata failure"),
+        ]
+    )
+    delays: list[float] = []
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        delay=delays.append,
+    )
+
+    with pytest.raises(RadioDisconnectedError, match="second metadata failure"):
+        radio.acquire_segment_with_metadata(request(3), lambda _iq, _item: None)
+
+    assert reader.calls == [(0, 0), (0, 0)]
+    assert reader.close_calls == 2
+    assert device.destroy_calls == 2
+    assert device.write_count("sample_rate") == 2
+    assert delays == [0.05]
+
+
+def test_v5_transport_recovery_accumulates_its_configuration_write_retry() -> None:
+    class RecoveryFirstWriteStale(ConfigurationCountingPluto):
+        def __init__(self) -> None:
+            self._sample_rate = 0
+            self.sample_rate_reads = 0
+            super().__init__([])
+
+        @property
+        def sample_rate(self) -> int:
+            if self._sample_rate:
+                self.sample_rate_reads += 1
+            if self.write_count("sample_rate") == 2:
+                return self._sample_rate + 100
+            return self._sample_rate
+
+        @sample_rate.setter
+        def sample_rate(self, value: int) -> None:
+            self._sample_rate = value
+
+    device = RecoveryFirstWriteStale()
+    reader = ScriptedMetadataReader(
+        [
+            OSError(errno.EIO, "pre-refill transport failure"),
+            (refill(0, 3), metadata(0, 0, 100)),
+        ]
+    )
+    now = [19.0]
+    delays: list[float] = []
+
+    def delay(seconds: float) -> None:
+        delays.append(seconds)
+        now[0] += seconds
+
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        monotonic=lambda: now[0],
+        delay=delay,
+    )
+
+    manifest = radio.acquire_segment_with_metadata(request(3), lambda _iq, _item: None)
+    diagnostics = dict(manifest.diagnostics)
+
+    assert device.write_count("sample_rate") == 3
+    assert device.destroy_calls == 3
+    assert reader.close_calls == 3
+    assert sum(delays) == pytest.approx(0.35)
+    assert delays.count(0.05) == 2
+    assert diagnostics["configuration_write_attempts"] == 3
+    assert diagnostics["configuration_readback_attempts"] == (
+        device.sample_rate_reads - 1
+    )
+    assert diagnostics["transport_attempts"] == 2
+
+
+@pytest.mark.parametrize(
+    "transport_error",
+    [OSError("missing errno"), OSError(errno.ENODEV, "device absent")],
+)
+def test_v5_does_not_retry_other_transport_errors(
+    transport_error: OSError,
+) -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader([transport_error])
+    delays: list[float] = []
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        delay=delays.append,
+    )
+
+    with pytest.raises(RadioDisconnectedError):
+        radio.acquire_segment_with_metadata(request(3), lambda _iq, _item: None)
+
+    assert reader.calls == [(0, 0)]
+    assert reader.close_calls == 1
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+    assert delays == []
+
+
+def test_v5_never_retries_after_an_accepted_refill() -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader(
+        [
+            (refill(0, 3), metadata(0, 0, 100)),
+            OSError(errno.EIO, "failure after accepted samples"),
+        ]
+    )
+    delays: list[float] = []
+    captured: list[bytes] = []
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        delay=delays.append,
+    )
+
+    with pytest.raises(RadioDisconnectedError, match="accepted samples"):
+        radio.acquire_segment_with_metadata(
+            request(6), lambda iq, _item: captured.append(iq)
+        )
+
+    assert captured == [expected_bytes(3)]
+    assert reader.calls == [(0, 0), (1, 3)]
+    assert reader.close_calls == 1
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+    assert delays == []
+
+
+def test_v5_semantic_refill_error_is_never_retried() -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader([RefillError("semantic metadata failure")])
+    delays: list[float] = []
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        delay=delays.append,
+    )
+
+    with pytest.raises(RefillError, match="semantic metadata failure"):
+        radio.acquire_segment_with_metadata(request(3), lambda _iq, _item: None)
+
+    assert reader.calls == [(0, 0)]
+    assert reader.close_calls == 1
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+    assert delays == []
+
+
+@pytest.mark.parametrize("failing_boundary", ["interleaver", "callback"])
+def test_v5_retry_scope_excludes_interleaving_and_callback(
+    failing_boundary: str,
+) -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader([(refill(0, 3), metadata(0, 0, 100))])
+    delays: list[float] = []
+
+    def interleaver(value: object, channels: int) -> bytes:
+        if failing_boundary == "interleaver":
+            raise OSError(errno.EIO, "interleaver failure")
+        return pure_interleaver(value, channels)
+
+    def callback(_iq: bytes, _item: RefillMetadata | None) -> None:
+        if failing_boundary == "callback":
+            raise OSError(errno.EBUSY, "callback failure")
+
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=interleaver,
+        metadata_reader=reader,
+        delay=delays.append,
+    )
+
+    with pytest.raises(RadioDisconnectedError, match=f"{failing_boundary} failure"):
+        radio.acquire_segment_with_metadata(request(3), callback)
+
+    assert reader.calls == [(0, 0)]
+    assert reader.close_calls == 1
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+    assert delays == []
 
 
 def test_v5_fails_closed_without_metadata_but_opt_in_fallback_is_labeled() -> None:
@@ -295,6 +711,254 @@ def test_manual_gain_and_tuning_are_set_and_read_back() -> None:
     assert device.gain_control_mode_chan0 == device.gain_control_mode_chan1 == "manual"
     assert device.rx_hardwaregain_chan0 == device.rx_hardwaregain_chan1 == 42.5
     assert manifest.actual_gain == GainSetting(GainMode.MANUAL, 42.5)
+    assert dict(manifest.diagnostics)["configuration_readback_attempts"] == 1
+    assert dict(manifest.diagnostics)["configuration_write_attempts"] == 1
+
+
+def test_configuration_readback_poll_converges_without_rewriting() -> None:
+    class DelayedSampleRateReadback(ConfigurationCountingPluto):
+        def __init__(self) -> None:
+            self._sample_rate = 0
+            self.pending_mismatches = 2
+            super().__init__([refill(0, 3)])
+
+        @property
+        def sample_rate(self) -> int:
+            if self._sample_rate and self.pending_mismatches:
+                self.pending_mismatches -= 1
+                return self._sample_rate + 100
+            return self._sample_rate
+
+        @sample_rate.setter
+        def sample_rate(self, value: int) -> None:
+            self._sample_rate = value
+
+    device = DelayedSampleRateReadback()
+    now = [3.0]
+    delays: list[float] = []
+
+    def delay(seconds: float) -> None:
+        delays.append(seconds)
+        now[0] += seconds
+
+    radio = PlutoPairedRadio(
+        config(),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        clock=FakeClock(),
+        monotonic=lambda: now[0],
+        delay=delay,
+    )
+
+    manifest = radio.acquire_segment(request(2), lambda _iq: None)
+
+    assert delays == [0.01, 0.01]
+    assert device.write_count("sample_rate") == 1
+    assert dict(manifest.diagnostics)["configuration_readback_attempts"] == 3
+
+
+def test_configuration_first_write_stays_stale_then_second_write_converges() -> None:
+    class FirstWriteStale(ConfigurationCountingPluto):
+        def __init__(self) -> None:
+            self._sample_rate = 0
+            self.sample_rate_reads = 0
+            super().__init__([refill(0, 3)])
+
+        @property
+        def sample_rate(self) -> int:
+            if self._sample_rate:
+                self.sample_rate_reads += 1
+            if self.write_count("sample_rate") == 1:
+                return self._sample_rate + 100
+            return self._sample_rate
+
+        @sample_rate.setter
+        def sample_rate(self, value: int) -> None:
+            self._sample_rate = value
+
+    device = FirstWriteStale()
+    reader = ScriptedMetadataReader([(refill(0, 3), metadata(0, 0, 100))])
+    now = [11.0]
+    delays: list[float] = []
+
+    def delay(seconds: float) -> None:
+        delays.append(seconds)
+        now[0] += seconds
+
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        monotonic=lambda: now[0],
+        delay=delay,
+    )
+
+    radio.prepare_segment_with_metadata(request(3))
+    assert reader.calls == []
+    manifest = radio.acquire_segment_with_metadata(request(3), lambda _iq, _item: None)
+    diagnostics = dict(manifest.diagnostics)
+
+    assert sum(delays) == pytest.approx(0.30)
+    assert delays.count(0.05) == 1
+    assert device.destroy_calls == 2
+    assert device.write_count("sample_rate") == 2
+    assert diagnostics["configuration_write_attempts"] == 2
+    assert diagnostics["configuration_readback_attempts"] == (
+        device.sample_rate_reads - 1
+    )
+
+
+def test_configuration_readback_poll_exhausts_after_two_full_writes() -> None:
+    class WrongSampleRateReadback(ConfigurationCountingPluto):
+        @property
+        def sample_rate(self) -> int:
+            return self._sample_rate + 100 if self._sample_rate else 0
+
+        @sample_rate.setter
+        def sample_rate(self, value: int) -> None:
+            self._sample_rate = value
+
+    device = WrongSampleRateReadback([refill(0, 3)])
+    now = [7.0]
+    delays: list[float] = []
+
+    def delay(seconds: float) -> None:
+        delays.append(seconds)
+        now[0] += seconds
+
+    radio = PlutoPairedRadio(
+        config(),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        monotonic=lambda: now[0],
+        delay=delay,
+    )
+
+    with pytest.raises(RadioConfigurationError, match="sample rate"):
+        radio.acquire_segment(request(2), lambda _iq: None)
+
+    assert sum(delays) == pytest.approx(0.55)
+    assert delays.count(0.05) == 1
+    assert all(0 < item <= 0.01 for item in delays if item != 0.05)
+    assert device.destroy_calls == 2
+    assert device.write_count("sample_rate") == 2
+
+
+def test_configuration_readback_io_error_is_not_polled() -> None:
+    class ReadbackIoFailure(ConfigurationCountingPluto):
+        def __init__(self) -> None:
+            self._sample_rate = 0
+            self.fail_readback = False
+            super().__init__([refill(0, 3)])
+            self.fail_readback = True
+
+        @property
+        def sample_rate(self) -> int:
+            if self.fail_readback:
+                raise OSError(errno.EIO, "configuration readback I/O failure")
+            return self._sample_rate
+
+        @sample_rate.setter
+        def sample_rate(self, value: int) -> None:
+            self._sample_rate = value
+
+    device = ReadbackIoFailure()
+    delays: list[float] = []
+    radio = PlutoPairedRadio(
+        config(),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        delay=delays.append,
+    )
+
+    with pytest.raises(TuningError, match="configuration readback I/O failure"):
+        radio.acquire_segment(request(2), lambda _iq: None)
+
+    assert delays == []
+    assert device.write_count("sample_rate") == 1
+
+
+def test_configuration_write_retry_stops_on_metadata_close_failure() -> None:
+    class AlwaysStale(ConfigurationCountingPluto):
+        @property
+        def sample_rate(self) -> int:
+            return self._sample_rate + 100 if self._sample_rate else 0
+
+        @sample_rate.setter
+        def sample_rate(self, value: int) -> None:
+            self._sample_rate = value
+
+    class CloseFailsOnRecovery(ScriptedMetadataReader):
+        def close(self) -> None:
+            self.close_calls += 1
+            if self.close_calls == 2:
+                raise RefillError("semantic metadata close failure")
+
+    device = AlwaysStale([])
+    reader = CloseFailsOnRecovery([])
+    now = [13.0]
+    delays: list[float] = []
+
+    def delay(seconds: float) -> None:
+        delays.append(seconds)
+        now[0] += seconds
+
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        monotonic=lambda: now[0],
+        delay=delay,
+    )
+
+    with pytest.raises(TuningError, match="semantic metadata close failure"):
+        radio.acquire_segment_with_metadata(request(3), lambda _iq, _item: None)
+
+    assert reader.close_calls == 2
+    assert device.destroy_calls == 1
+    assert device.write_count("sample_rate") == 1
+    assert sum(delays) == pytest.approx(0.25)
+
+
+def test_configuration_write_retry_stops_on_buffer_destroy_failure() -> None:
+    class AlwaysStale(ConfigurationCountingPluto):
+        @property
+        def sample_rate(self) -> int:
+            return self._sample_rate + 100 if self._sample_rate else 0
+
+        @sample_rate.setter
+        def sample_rate(self, value: int) -> None:
+            self._sample_rate = value
+
+        def rx_destroy_buffer(self) -> None:
+            self.destroy_calls += 1
+            if self.destroy_calls == 2:
+                raise RuntimeError("buffer destroy recovery failure")
+
+    device = AlwaysStale([])
+    now = [17.0]
+    delays: list[float] = []
+
+    def delay(seconds: float) -> None:
+        delays.append(seconds)
+        now[0] += seconds
+
+    radio = PlutoPairedRadio(
+        config(),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        monotonic=lambda: now[0],
+        delay=delay,
+    )
+
+    with pytest.raises(TuningError, match="buffer destroy recovery failure"):
+        radio.acquire_segment(request(2), lambda _iq: None)
+
+    assert device.destroy_calls == 2
+    assert device.write_count("sample_rate") == 1
+    assert sum(delays) == pytest.approx(0.25)
 
 
 def test_agc_sets_both_channels_without_writing_manual_gain() -> None:
@@ -370,6 +1034,64 @@ def test_default_numpy_interleaver_round_trips_full_ci16_range() -> None:
     assert b"".join(captured) == struct.pack(
         "<8h", -32768, 32767, 300, -400, 1, -2, -5, 6
     )
+
+
+def test_verified_capture_rejects_constant_ci16_before_writing() -> None:
+    np = pytest.importorskip("numpy")
+    components = (
+        np.full(3, 1549, dtype="<i2"),
+        np.full(3, 137, dtype="<i2"),
+        np.zeros(3, dtype="<i2"),
+        np.zeros(3, dtype="<i2"),
+    )
+    reader = ScriptedMetadataReader([(components, metadata(0, 0, 100))])
+    radio = PlutoPairedRadio(
+        config(
+            continuity_policy=ContinuityPolicy.REQUIRE_VERIFIED,
+            host_libiio_version="0.25.c26258b",
+        ),
+        device_factory=DeviceFactory(FakePluto([])),
+        metadata_reader=reader,
+        signal_integrity_validator=require_ci16_component_variation,
+    )
+    captured: list[bytes] = []
+
+    with pytest.raises(RefillError, match="constant component"):
+        radio.acquire_segment_with_metadata(
+            request(3), lambda data, _metadata: captured.append(data)
+        )
+
+    assert captured == []
+
+
+def test_ordinary_capture_rejects_constant_ci16_before_writing() -> None:
+    np = pytest.importorskip("numpy")
+    components = tuple(np.full(3, index, dtype="<i2") for index in range(4))
+    radio = PlutoPairedRadio(
+        config(),
+        device_factory=DeviceFactory(FakePluto([components])),
+        signal_integrity_validator=require_ci16_component_variation,
+    )
+    captured: list[bytes] = []
+
+    with pytest.raises(RefillError, match="constant component"):
+        radio.acquire_segment(request(3), captured.append)
+
+    assert captured == []
+
+
+def test_generic_capture_allows_constant_ci16_without_science_policy() -> None:
+    np = pytest.importorskip("numpy")
+    components = tuple(np.full(3, index, dtype="<i2") for index in range(4))
+    radio = PlutoPairedRadio(
+        config(), device_factory=DeviceFactory(FakePluto([components]))
+    )
+    captured: list[bytes] = []
+
+    manifest = radio.acquire_segment(request(3), captured.append)
+
+    assert len(captured) == 1
+    assert dict(manifest.diagnostics)["signal_integrity"] == "not_validated"
 
 
 def test_default_native_interleaver_rejects_non_ci16_components() -> None:

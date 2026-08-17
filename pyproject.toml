@@ -10,9 +10,20 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+leo-dashboard = "leo_flow.deployments.dashboard_operator:main"
+leo-v5-capture = "leo_flow.deployments.v5_capture_operator:main"
+leo-v5-dual-capture = "leo_flow.deployments.v5_dual_capture_operator:main"
+leo-v5-campaign = "leo_flow.deployments.gauss_v5_campaign_operator:main"
+leo-v5-continuous = "leo_flow.deployments.gauss_v5_continuous_operator:main"
+leo-gauss-analysis = "leo_station.analysis_operator:main"
+leo-verify-release = "leo_flow.deployments.release_verifier:main"
+leo-v5-supercycle-canary = "leo_flow.deployments.gauss_v5_supercycle_canary_operator:main"
+
 [project.optional-dependencies]
 dev = [
   "mypy>=1.17",
+  "playwright>=1.55",
   "pytest>=8",
   "pytest-cov>=5",
   "ruff>=0.12",
@@ -32,7 +43,7 @@ orbit = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/leo_flow"]
+packages = ["src/leo_flow", "src/leo_station"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"

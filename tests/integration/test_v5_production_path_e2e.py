@@ -530,6 +530,7 @@ def test_composed_postgres_path_replays_without_capture_or_analysis_duplication(
     assert row_counts["dwell_request_ingress"] == 1
     assert row_counts["recording"] == 2
     assert row_counts["feature_set"] == 2
+    assert row_counts["feature_projection_work"] == 2
     assert row_counts["object_blob"] == 6
     assert row_counts["job"] == 3
     assert database["closure_exact"] is True
@@ -614,7 +615,7 @@ def test_changed_migration_byte_fails_before_any_catalog_write(
     source = _source_fixture(tmp_path / "source")
     candidate = tmp_path / "candidate-migrations"
     shutil.copytree(ROOT / "migrations", candidate)
-    head = candidate / "0019_dwell_request_ingress.sql"
+    head = candidate / "0032_campaign_online_analysis.sql"
     head.write_bytes(head.read_bytes() + b"\n-- changed candidate\n")
     tx_checks: list[object] = []
     with _scoped_connections(postgres_dsn) as connections:

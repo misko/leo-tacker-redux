@@ -1,0 +1,11 @@
+[Unit]
+Description=Run campaign-scoped R20/R21 analysis as terminal windows arrive
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=1s
+Unit=leo-v5-main-r20-r21-online-analysis.service
+
+[Install]
+WantedBy=timers.target

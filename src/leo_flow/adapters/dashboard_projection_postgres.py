@@ -34,6 +34,10 @@ from leo_flow.contracts.model import ModelSnapshotBundle
 from leo_flow.contracts.storage import RecordingObjectRef
 
 from . import dashboard_projection_postgres_sql as sql
+from .dashboard_recording_postgres import (
+    publish_recording_capture_detail,
+    recording_capture_detail_view_v0_1,
+)
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 
@@ -139,7 +143,18 @@ class PostgresCaptureProjectionWriter:
                     activity_sequences.append(sequence)
                 if identity_rows[(identity.kind, identity.logical_id)] is None:
                     _insert_identity(connection, identity, sequence, capture_owned=True)
-        return ProjectionReceipt((recording_sequence, *activity_sequences))
+            detail_sequence = publish_recording_capture_detail(
+                connection,
+                recording_capture_detail_view_v0_1(
+                    manifest,
+                    command.published_ref,
+                    analysis_state="pending",
+                    recording_object_available=command.recording_object_available,
+                ),
+            )
+        return ProjectionReceipt(
+            (recording_sequence, *activity_sequences, detail_sequence)
+        )
 
 
 class PostgresAnalysisProjectionWriter:

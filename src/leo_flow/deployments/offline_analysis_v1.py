@@ -98,6 +98,25 @@ EXPECTED_MIGRATIONS = tuple(
         (11, "recording_hardware_link"),
         (12, "detector_evaluation_catalog"),
         (13, "object_retention_gc"),
+        (14, "unregistered_object_reconciliation"),
+        (15, "job_parking"),
+        (16, "tracking_input_catalog"),
+        (17, "security_definer_hardening"),
+        (18, "tracking_model_snapshot_catalog"),
+        (19, "dwell_request_ingress"),
+        (20, "feature_projection_work"),
+        (21, "dashboard_capture_batch_projection"),
+        (22, "analysis_migration_receipt_read"),
+        (23, "campaign_projection_receipt"),
+        (24, "capture_analysis_inactive"),
+        (25, "recording_waterfall_analysis"),
+        (26, "dashboard_recording_detail_waterfall_projection"),
+        (27, "capture_analysis_waterfall_drain"),
+        (28, "recording_starlink_candidate_pipeline"),
+        (29, "starlink_detector_suite_v0_2"),
+        (30, "campaign_scoped_analysis_claims"),
+        (31, "radio_lifecycle_detection"),
+        (32, "campaign_online_analysis"),
     )
 )
 
@@ -643,11 +662,220 @@ def _preflight_analysis(dsn: str, blobs: _DeferredFileSystemBlobStore) -> None:
               has_table_privilege(current_user, 'dataset_snapshot', 'SELECT') AS datasets,
               has_table_privilege(current_user, 'dataset_member', 'SELECT') AS members,
               has_table_privilege(current_user, 'feature_set', 'SELECT,INSERT') AS features,
+              has_table_privilege(
+                  current_user, 'recording_waterfall', 'SELECT'
+              ) AS waterfalls,
+              has_table_privilege(
+                  current_user, 'recording_starlink_candidate', 'SELECT'
+              ) AS starlink_candidates,
+              has_table_privilege(
+                  current_user, 'recording_starlink_detector_suite', 'SELECT'
+              ) AS starlink_detector_suites,
               has_table_privilege(current_user, 'ephemeris_snapshot', 'SELECT') AS ephemerides,
               has_table_privilege(current_user, 'hardware_snapshot', 'SELECT') AS hardware,
               has_table_privilege(current_user, 'hardware_radio', 'SELECT') AS radios,
               has_table_privilege(current_user, 'hardware_receiver_chain', 'SELECT') AS chains,
-              has_table_privilege(current_user, 'model_snapshot', 'SELECT,INSERT') AS models
+              has_table_privilege(current_user, 'model_snapshot', 'SELECT,INSERT') AS models,
+              NOT has_table_privilege(
+                  current_user, 'feature_projection_work', 'SELECT,INSERT,UPDATE'
+              ) AS projection_work_private,
+              NOT has_table_privilege(
+                  current_user, 'waterfall_projection_work', 'SELECT,INSERT,UPDATE'
+              ) AS waterfall_projection_work_private,
+              NOT has_table_privilege(
+                  current_user, 'dashboard_recording_waterfall_projection',
+                  'SELECT,INSERT,UPDATE'
+              ) AS dashboard_waterfall_private,
+              NOT has_table_privilege(
+                  current_user, 'starlink_projection_work',
+                  'SELECT,INSERT,UPDATE'
+              ) AS starlink_projection_work_private,
+              NOT has_table_privilege(
+                  current_user, 'dashboard_recording_starlink_projection',
+                  'SELECT,INSERT,UPDATE'
+              ) AS dashboard_starlink_private,
+              NOT has_table_privilege(
+                  current_user, 'starlink_detector_suite_projection_work',
+                  'SELECT,INSERT,UPDATE'
+              ) AS starlink_suite_projection_work_private,
+              NOT has_table_privilege(
+                  current_user,
+                  'dashboard_recording_starlink_detector_suite_projection',
+                  'SELECT,INSERT,UPDATE'
+              ) AS dashboard_starlink_suite_private,
+              has_function_privilege(
+                  current_user,
+                  'publish_feature_projection_work(text,text,text,bigint,text,text,text,text,text,text,text)',
+                  'EXECUTE'
+              ) AS projection_publish,
+              has_function_privilege(
+                  current_user, 'claim_feature_projection_work(text,interval)',
+                  'EXECUTE'
+              ) AS projection_claim,
+              has_function_privilege(
+                  current_user,
+                  'heartbeat_feature_projection_work(text,text,bigint,interval)',
+                  'EXECUTE'
+              ) AS projection_heartbeat,
+              has_function_privilege(
+                  current_user,
+                  'complete_feature_projection_work(text,text,bigint)', 'EXECUTE'
+              ) AS projection_complete,
+              has_function_privilege(
+                  current_user,
+                  'retry_feature_projection_work(text,text,bigint,text,interval)',
+                  'EXECUTE'
+              ) AS projection_retry,
+              has_function_privilege(
+                  current_user,
+                  'park_feature_projection_work(text,text,bigint,text)', 'EXECUTE'
+              ) AS projection_park,
+              has_function_privilege(
+                  current_user,
+                  'read_feature_projection_receipt(text)', 'EXECUTE'
+              ) AS projection_receipt_read,
+              has_function_privilege(
+                  current_user,
+                  'publish_recording_waterfall(text,text,text,text,text,text,text,text,text,integer,integer,text)',
+                  'EXECUTE'
+              ) AS waterfall_publish,
+              has_function_privilege(
+                  current_user,
+                  'publish_waterfall_projection_work(text,text,text,text,text,text,text)',
+                  'EXECUTE'
+              ) AS waterfall_projection_publish,
+              has_function_privilege(
+                  current_user, 'claim_waterfall_projection_work(text,interval)',
+                  'EXECUTE'
+              ) AS waterfall_projection_claim,
+              has_function_privilege(
+                  current_user,
+                  'heartbeat_waterfall_projection_work(text,text,bigint,interval)',
+                  'EXECUTE'
+              ) AS waterfall_projection_heartbeat,
+              has_function_privilege(
+                  current_user,
+                  'complete_waterfall_projection_work(text,text,bigint)', 'EXECUTE'
+              ) AS waterfall_projection_complete,
+              has_function_privilege(
+                  current_user,
+                  'retry_waterfall_projection_work(text,text,bigint,text,interval)',
+                  'EXECUTE'
+              ) AS waterfall_projection_retry,
+              has_function_privilege(
+                  current_user,
+                  'park_waterfall_projection_work(text,text,bigint,text)', 'EXECUTE'
+              ) AS waterfall_projection_park,
+              has_function_privilege(
+                  current_user,
+                  'read_waterfall_analysis_receipt(text)', 'EXECUTE'
+              ) AS waterfall_receipt_read,
+              has_function_privilege(
+                  current_user,
+                  'publish_dashboard_recording_waterfall(jsonb)', 'EXECUTE'
+              ) AS dashboard_waterfall_publish,
+              has_function_privilege(
+                  current_user,
+                  'publish_recording_starlink_candidate(text,text,text,text,text,text,text,text,integer,integer,text)',
+                  'EXECUTE'
+              ) AS starlink_publish,
+              has_function_privilege(
+                  current_user,
+                  'publish_starlink_projection_work(text,text,text,bigint,text,text,text,text)',
+                  'EXECUTE'
+              ) AS starlink_projection_publish,
+              has_function_privilege(
+                  current_user, 'claim_starlink_projection_work(text,interval)',
+                  'EXECUTE'
+              ) AS starlink_projection_claim,
+              has_function_privilege(
+                  current_user,
+                  'complete_starlink_projection_work(text,text,bigint)',
+                  'EXECUTE'
+              ) AS starlink_projection_complete,
+              has_function_privilege(
+                  current_user,
+                  'retry_starlink_projection_work(text,text,bigint,text,interval)',
+                  'EXECUTE'
+              ) AS starlink_projection_retry,
+              has_function_privilege(
+                  current_user,
+                  'park_starlink_projection_work(text,text,bigint,text)',
+                  'EXECUTE'
+              ) AS starlink_projection_park,
+              has_function_privilege(
+                  current_user, 'read_starlink_analysis_receipt(text)',
+                  'EXECUTE'
+              ) AS starlink_receipt_read,
+              has_function_privilege(
+                  current_user,
+                  'publish_dashboard_recording_starlink(jsonb,text,text,bigint)',
+                  'EXECUTE'
+              ) AS dashboard_starlink_publish,
+              has_function_privilege(
+                  current_user,
+                  'publish_recording_starlink_detector_suite(text,text,text,text,text,text,text,text,text,integer,integer,text)',
+                  'EXECUTE'
+              ) AS starlink_suite_publish,
+              has_function_privilege(
+                  current_user,
+                  'publish_starlink_detector_suite_projection_work(text,text,text,bigint,text,text,text,text)',
+                  'EXECUTE'
+              ) AS starlink_suite_projection_publish,
+              has_function_privilege(
+                  current_user,
+                  'claim_starlink_detector_suite_projection_work(text,interval)',
+                  'EXECUTE'
+              ) AS starlink_suite_projection_claim,
+              has_function_privilege(
+                  current_user,
+                  'complete_starlink_detector_suite_projection_work(text,text,bigint)',
+                  'EXECUTE'
+              ) AS starlink_suite_projection_complete,
+              has_function_privilege(
+                  current_user,
+                  'retry_starlink_detector_suite_projection_work(text,text,bigint,text,interval)',
+                  'EXECUTE'
+              ) AS starlink_suite_projection_retry,
+              has_function_privilege(
+                  current_user,
+                  'park_starlink_detector_suite_projection_work(text,text,bigint,text)',
+                  'EXECUTE'
+              ) AS starlink_suite_projection_park,
+              has_function_privilege(
+                  current_user, 'read_starlink_detector_suite_receipt(text)',
+                  'EXECUTE'
+              ) AS starlink_suite_receipt_read,
+              has_function_privilege(
+                  current_user,
+                  'publish_dashboard_recording_starlink_detector_suite(jsonb,text,text,bigint)',
+                  'EXECUTE'
+              ) AS dashboard_starlink_suite_publish,
+              has_function_privilege(
+                  current_user,
+                  'claim_campaign_analysis_job(text[],text,text,interval)',
+                  'EXECUTE'
+              ) AS campaign_analysis_job_claim,
+              has_function_privilege(
+                  current_user,
+                  'claim_campaign_feature_projection(text[],text,interval)',
+                  'EXECUTE'
+              ) AS campaign_feature_projection_claim,
+              has_function_privilege(
+                  current_user,
+                  'claim_campaign_waterfall_projection(text[],text,interval)',
+                  'EXECUTE'
+              ) AS campaign_waterfall_projection_claim,
+              has_function_privilege(
+                  current_user,
+                  'claim_campaign_starlink_suite_projection(text[],text,interval)',
+                  'EXECUTE'
+              ) AS campaign_starlink_suite_projection_claim,
+              has_function_privilege(
+                  current_user,
+                  'read_campaign_analysis_lane_status(text,text[])',
+                  'EXECUTE'
+              ) AS campaign_analysis_lane_status_read
             """
         ).fetchone()
         if privileges is None or not all(

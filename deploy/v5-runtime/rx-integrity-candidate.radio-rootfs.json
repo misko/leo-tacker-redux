@@ -1,0 +1,54 @@
+{
+  "schema": "leo-flow.v5-radio-rootfs-build-receipt/v1",
+  "candidate_id": "gauss-v5-rx-integrity-close-barrier-1",
+  "release_identity": "v0.38-plutoplus-spf-libiio-metadata-v5-rx-integrity-candidate1",
+  "source": {
+    "repository": "git@github.com:misko/plutosdr-fw.git",
+    "commit": "de830094a177daf4f577b60b9d3324b41f99ae58",
+    "buildroot_commit": "684ecbcbe44bc82043caae7091f12c02cbd02d8b",
+    "libiio_base_commit": "c26258bfa33098c2b215e19cf85d448e89499b1a",
+    "libiio_patch_sha256": "195bddceada230ef32b662cfd7149186a623d1d4cfac234b0660770f32f901d4",
+    "spf_metadata_source_commit": "ab270f9e3128187372f27de887be65353f9e195d"
+  },
+  "build": {
+    "target": "zynq_pluto_defconfig",
+    "host_compiler": "gcc 12.5.0",
+    "target_compiler": "arm-linux-gnueabihf-gcc 7.3.1",
+    "artifact_kind": "rootfs.cpio.gz",
+    "artifact_path": "/home/mouse9911/gits/plutosdr-fw/build/rootfs.cpio.gz",
+    "artifact_size_bytes": 7115868,
+    "artifact_sha256": "a57ed73a07693b3ac94a456a87392897d49430dc8a6d9cc7aa10b0ed37642269"
+  },
+  "contents": {
+    "opt/VERSIONS": {
+      "sha256": "0a230e8b63d438ecbabfa526a0d7cd519872ba3e04c696e78d1d19dc36f24e15",
+      "device_fw": "v0.38-plutoplus-spf-libiio-metadata-v5-rx-integrity-candidate1"
+    },
+    "usr/sbin/iiod": {
+      "sha256": "87a65a439b323ac6aa75cc52004f398796b4336e5c50c73c7a1c4c62a0995fd5",
+      "size_bytes": 83356,
+      "elf": "ELF32 ARM EABI5 hard-float, stripped",
+      "build_id_sha1": "e8ba20db519126e5d842dbaf2e3ac748bc2cef3e"
+    },
+    "usr/lib/libiio.so.0.25": {
+      "sha256": "29e24ce1f175a1c35ee25ee601ca95bca85689eb33686711fbe1df98e1eb827c",
+      "size_bytes": 111876,
+      "elf": "ELF32 ARM EABI5 hard-float, stripped",
+      "build_id_sha1": "26e807a1aaa23645f74d162e037383105be9e6c7"
+    }
+  },
+  "qualification": {
+    "source_patch_applied": true,
+    "arm_compile_succeeded": true,
+    "rootfs_packaging_succeeded": true,
+    "full_itb_or_frm_built": false,
+    "flashable": false,
+    "radio_installed": false,
+    "hardware_qualified": false,
+    "blockers": [
+      "No attested system_top.xsa/system_top.bit is present for full ITB/FRM packaging",
+      "The candidate has not been installed on either radio",
+      "Fresh signal-integrity and nine-cell hardware qualification have not run"
+    ]
+  }
+}

@@ -23,10 +23,17 @@ from .pluto import (
     PlutoDevice,
     PlutoPairedRadio,
     PlutoRadioConfig,
+    SignalIntegrityValidator,
     TimeoutSetter,
     set_libiio_timeout,
 )
 
+TX1_DDS_CHANNEL_IDS = (
+    "altvoltage0",
+    "altvoltage1",
+    "altvoltage2",
+    "altvoltage3",
+)
 TX2_DDS_CHANNEL_IDS = (
     "altvoltage4",
     "altvoltage5",
@@ -103,6 +110,9 @@ class ExpectedV5Radio:
     component_layout: tuple[str, ...] = ("I0", "Q0", "I1", "Q1")
     maximum_tx2_hardware_gain_db: float = -80.0
     tx2_dds_channel_ids: tuple[str, ...] = TX2_DDS_CHANNEL_IDS
+    require_both_tx_muted: bool = False
+    maximum_tx1_hardware_gain_db: float = -80.0
+    tx1_dds_channel_ids: tuple[str, ...] = TX1_DDS_CHANNEL_IDS
 
     def __post_init__(self) -> None:
         if not all(
@@ -120,6 +130,14 @@ class ExpectedV5Radio:
             raise ValueError("V5 TX2 DDS channel expectations must be unique")
         if not isfinite(self.maximum_tx2_hardware_gain_db):
             raise ValueError("V5 TX2 hardware gain ceiling must be finite")
+        if not isinstance(self.require_both_tx_muted, bool):
+            raise TypeError("V5 both-TX mute requirement must be a boolean")
+        if not self.tx1_dds_channel_ids or len(set(self.tx1_dds_channel_ids)) != len(
+            self.tx1_dds_channel_ids
+        ):
+            raise ValueError("V5 TX1 DDS channel expectations must be unique")
+        if not isfinite(self.maximum_tx1_hardware_gain_db):
+            raise ValueError("V5 TX1 hardware gain ceiling must be finite")
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +150,8 @@ class ObservedV5Radio:
     component_layout: tuple[str, ...]
     tx2_hardware_gain_db: float
     tx2_dds_scales: tuple[tuple[str, float], ...]
+    tx1_hardware_gain_db: float | None = None
+    tx1_dds_scales: tuple[tuple[str, float], ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +201,23 @@ def attest_v5(
         capability=observed_radio.metadata_capability,
     )
     return V5Attestation(transport, provenance, observed_runtime, observed_radio)
+
+
+def attest_v5_host(
+    *,
+    uri: str,
+    expected_runtime: ExpectedV5Runtime,
+    observed_runtime: ObservedV5Runtime,
+) -> StandardLibiioTransport:
+    """Attest only the current process runtime without opening a radio."""
+
+    transport = standard_libiio_transport(uri)
+    mismatches = _host_mismatches(transport, expected_runtime, observed_runtime)
+    if mismatches:
+        raise RadioConfigurationError(
+            "V5 host preflight failed: " + "; ".join(mismatches)
+        )
+    return transport
 
 
 def _host_mismatches(
@@ -342,6 +379,41 @@ def _radio_mismatches(
     )
     if nonzero_scales:
         mismatches.append(f"TX2 DDS scales are not muted: observed {nonzero_scales!r}")
+    if expected_radio.require_both_tx_muted:
+        if (
+            observed_radio.tx1_hardware_gain_db is None
+            or not isfinite(observed_radio.tx1_hardware_gain_db)
+            or (
+                observed_radio.tx1_hardware_gain_db
+                > expected_radio.maximum_tx1_hardware_gain_db
+            )
+        ):
+            mismatches.append(
+                "TX1 hardware gain exceeds passive-capture ceiling: "
+                f"expected <= {expected_radio.maximum_tx1_hardware_gain_db!r}, "
+                f"observed {observed_radio.tx1_hardware_gain_db!r}"
+            )
+        observed_tx1_scales = dict(observed_radio.tx1_dds_scales or ())
+        expected_tx1_ids = set(expected_radio.tx1_dds_channel_ids)
+        if (
+            observed_radio.tx1_dds_scales is None
+            or len(observed_tx1_scales) != len(observed_radio.tx1_dds_scales)
+            or set(observed_tx1_scales) != expected_tx1_ids
+        ):
+            mismatches.append(
+                "TX1 DDS channel layout mismatch: "
+                f"expected {expected_radio.tx1_dds_channel_ids!r}, "
+                f"observed {tuple(observed_tx1_scales)!r}"
+            )
+        nonzero_tx1_scales = tuple(
+            (channel_id, scale)
+            for channel_id, scale in (observed_radio.tx1_dds_scales or ())
+            if scale != 0.0
+        )
+        if nonzero_tx1_scales:
+            mismatches.append(
+                f"TX1 DDS scales are not muted: observed {nonzero_tx1_scales!r}"
+            )
     return mismatches
 
 
@@ -354,6 +426,7 @@ def create_attested_v5_radio(
     observe_radio: RadioObserver,
     device_factory: DeviceFactory,
     metadata_reader: MetadataReader,
+    signal_integrity_validator: SignalIntegrityValidator | None = None,
     interleaver: Interleaver | None = None,
     health_reader: HealthReader | None = None,
     timeout_setter: TimeoutSetter | None = None,
@@ -418,6 +491,7 @@ def create_attested_v5_radio(
         interleaver=interleaver,
         health_reader=health_reader,
         metadata_reader=metadata_reader,
+        signal_integrity_validator=signal_integrity_validator,
         timeout_setter=attested_timeout_setter,
         attested_provenance=attestation.provenance,
     )

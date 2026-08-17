@@ -1,0 +1,54 @@
+{
+  "schema": "leo-flow.v5-runtime-source-overlay/v1",
+  "candidate_id": "gauss-v5-rx-integrity-close-barrier-1",
+  "base_runtime_manifest": {
+    "path": "deploy/v5-runtime/gauss-development.manifest.json",
+    "sha256": "1544c390d66a2a53c9b86dc0cf7a2fab63e9fca0a08563638744121b107f431f"
+  },
+  "candidate_runtime_manifest": {
+    "path": "deploy/v5-runtime/gauss-rx-integrity-candidate.manifest.json",
+    "sha256": "0a9cf278bf836655afbf7a9a324a21c5dc41235d1b251386a0013eb0f299f123"
+  },
+  "libiio": {
+    "repository": "https://github.com/misko/libiio.git",
+    "base_commit": "c26258bfa33098c2b215e19cf85d448e89499b1a",
+    "patch": {
+      "path": "deploy/v5-runtime/patches/libiio-final-close-barrier.patch",
+      "sha256": "195bddceada230ef32b662cfd7149186a623d1d4cfac234b0660770f32f901d4"
+    },
+    "files": {
+      "bindings/python/iio.py": {
+        "base_sha256": "c5b8a2b53ffc4ddfe4258dab4173edcd554e0ecf5a276b0fc47db0cb3dc8e12b",
+        "patched_sha256": "a138280cf01d9edd249ef0770fab7e641f1d1356b2e373cec1f5724289981191"
+      },
+      "iiod/ops.c": {
+        "base_sha256": "fb8533f904331e1b6dccac283238b561ffa2dfc459b0bb91a780802ba7800509",
+        "patched_sha256": "612162a0ed02c04342a252f908971631a2b0e16b80101f26523044db5a61aa01"
+      }
+    },
+    "required_builds": ["host", "radio"]
+  },
+  "spf": {
+    "repository": "https://github.com/misko/spf.git",
+    "base_commit": "c40ee4116546889effd72056115adaaa1bc3fd40",
+    "patch": {
+      "path": "deploy/v5-runtime/patches/spf-iio-metadata-rx-prime.patch",
+      "sha256": "c9113a6d75466b4d1de38b45ccaee785c6a13a677b1e02c0e7c39919b66669b1"
+    },
+    "files": {
+      "spf/direct_radio/iio_metadata.py": {
+        "base_sha256": "040b3238f8453a8a8fe2089fba844ba60774bc3a6952b89b77fab7f55f214175",
+        "patched_sha256": "3c7f87beeb8a1b812f99597773d06fdc3c142ae9b5b92d33c576e33979714058"
+      }
+    },
+    "required_builds": ["host"]
+  },
+  "promotion_requirements": {
+    "new_firmware_release_identity": true,
+    "new_host_runtime_identity": true,
+    "radio_flash_required": true,
+    "fresh_single_refill_qualification_required": true,
+    "fresh_nine_cell_qualification_required": true,
+    "reuse_prior_science_results": false
+  }
+}

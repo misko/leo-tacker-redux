@@ -112,6 +112,59 @@ os._exit(73)
     assert "restarted" in entry.last_error
 
 
+def test_failed_recordings_returns_bounded_sanitized_read_only_evidence(
+    tmp_path: Path,
+) -> None:
+    identifiers = iter(("rec_failed_a", "rec_failed_b"))
+    times = iter((100, 120, 200, 240))
+    local_spool = SQLiteLocalSpool(
+        tmp_path / "capture.sqlite3",
+        tmp_path / "recordings",
+        id_factory=lambda: RECORDING_ID.__class__(next(identifiers)),
+        now_ns=lambda: next(times),
+    )
+    first, _ = local_spool.allocate(plan_with_activities().plan_id)
+    local_spool.record_failure(first, "first sanitized failure")
+    second, _ = local_spool.allocate(
+        plan_with_activities().plan_id.__class__("plan_second")
+    )
+    local_spool.record_failure(second, "second sanitized failure")
+    database_before = local_spool.database_path.read_bytes()
+    mtime_before = local_spool.database_path.stat().st_mtime_ns
+
+    diagnostic = SQLiteLocalSpool.for_read_only_diagnostics(
+        local_spool.database_path, local_spool.recording_root
+    )
+    failures = diagnostic.failed_recordings(1)
+
+    assert len(failures) == 1
+    assert failures[0].recording_id == second
+    assert failures[0].plan_id == plan_with_activities().plan_id.__class__(
+        "plan_second"
+    )
+    assert failures[0].last_error == "second sanitized failure"
+    assert failures[0].created_utc_ns == 200
+    assert failures[0].updated_utc_ns == 240
+    assert not hasattr(failures[0], "destination")
+    assert local_spool.database_path.read_bytes() == database_before
+    assert local_spool.database_path.stat().st_mtime_ns == mtime_before
+    for invalid in (0, -1, True, 1.5):
+        with pytest.raises(ValueError, match="positive integer"):
+            diagnostic.failed_recordings(invalid)  # type: ignore[arg-type]
+
+
+def test_read_only_diagnostics_refuses_to_create_a_missing_spool(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing.sqlite3"
+
+    with pytest.raises(ValueError, match="existing absolute file"):
+        SQLiteLocalSpool.for_read_only_diagnostics(missing, tmp_path / "recordings")
+
+    assert not missing.exists()
+    assert not (tmp_path / "recordings").exists()
+
+
 def test_spool_refuses_to_clean_unacknowledged_recording(tmp_path) -> None:
     local_spool, completed = completed_in_spool(tmp_path)
     with pytest.raises(RuntimeError, match="requires acknowledgement"):

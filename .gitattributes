@@ -1,0 +1,2 @@
+*.patch -whitespace
+reports/canary-c01-radio-reboot-rca-20260816/REPORT.md -whitespace

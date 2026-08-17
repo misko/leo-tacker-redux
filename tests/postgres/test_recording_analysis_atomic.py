@@ -56,11 +56,22 @@ def test_feature_visibility_and_job_completion_share_one_transaction(
         feature = connection.execute(
             "SELECT feature_set_id FROM feature_set"
         ).fetchone()
+        projection_work = connection.execute(
+            """
+            SELECT source_job_id, feature_set_id, state
+            FROM feature_projection_work
+            """
+        ).fetchone()
         job = connection.execute(
             "SELECT state, result_ref FROM job WHERE job_id = %s",
             (str(lease.job_id),),
         ).fetchone()
     assert feature == (str(prepared.bundle.feature_set_id),)
+    assert projection_work == (
+        str(lease.job_id),
+        str(prepared.bundle.feature_set_id),
+        "ready",
+    )
     assert job[0] == "succeeded"
     assert job[1]["artifact_id"] == str(prepared.bundle.feature_set_id)
     assert job[1]["digest_value"] == result.digest.value
@@ -121,6 +132,9 @@ def test_completion_fault_rolls_back_feature_and_object_registration(
             assert connection.execute(
                 "SELECT count(*) FROM object_blob "
                 "WHERE format_id = 'feature-set-bundle-v0.1'"
+            ).fetchone() == (0,)
+            assert connection.execute(
+                "SELECT count(*) FROM feature_projection_work"
             ).fetchone() == (0,)
             assert connection.execute(
                 "SELECT state FROM job WHERE job_id = %s", (str(lease.job_id),)

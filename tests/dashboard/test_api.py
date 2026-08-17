@@ -4,9 +4,20 @@ import json
 from dataclasses import replace
 
 from leo_flow.contracts.storage import ObjectRef
-from leo_flow.dashboard.api import DashboardJsonApplication, JsonRequest
+from leo_flow.dashboard.api import (
+    DashboardJsonApplication,
+    DashboardJsonApplicationV2,
+    JsonRequest,
+)
 
-from ._fixtures import EVALUATION_ID, EVALUATION_RUN_ID, evaluation, repository
+from ._fixtures import (
+    BATCH_PEER_FAILED,
+    BATCH_READY,
+    EVALUATION_ID,
+    EVALUATION_RUN_ID,
+    evaluation,
+    repository,
+)
 
 
 def request(path: str, query: dict[str, str] | None = None, method: str = "GET"):
@@ -17,6 +28,13 @@ def request(path: str, query: dict[str, str] | None = None, method: str = "GET")
 
 def payload(response):
     return json.loads(response.body)
+
+
+def request_v2(path: str, query: dict[str, str] | None = None, method: str = "GET"):
+    queries = repository()
+    return DashboardJsonApplicationV2(queries, queries).handle(
+        JsonRequest(method, path, query or {})
+    )
 
 
 def test_recording_and_activity_routes_emit_contract_dtos() -> None:
@@ -194,3 +212,84 @@ def test_unexpected_repository_error_is_redacted() -> None:
         "code": "internal_error",
         "message": "dashboard query failed",
     }
+
+
+def test_v2_recent_and_exact_batch_routes_expose_bounded_operator_facts() -> None:
+    recent = request_v2(
+        "/api/v2/capture-batches",
+        {"start_utc_ns": "0", "stop_utc_ns": "500"},
+    )
+    assert recent.status == 200
+    items = payload(recent)["items"]
+    assert [item["batch_id"] for item in items] == [
+        str(BATCH_READY),
+        "cbatch_pending",
+    ]
+    assert items[0]["coordination_claim"] == "measured_software_coordination"
+    assert items[0]["paired_analysis_eligibility"] == "eligible"
+    assert len(items[0]["attempts"]) == 2
+
+    exact = payload(request_v2(f"/api/v2/capture-batches/{BATCH_PEER_FAILED}"))
+    assert exact["mode"] == "independent"
+    assert exact["coordination_claim"] == "none"
+    assert exact["paired_analysis_eligibility"] == "ineligible"
+    assert exact["attempts"][0]["recording_id"] == "rec_solo_preserved"
+    assert exact["attempts"][0]["analysis_result_available"] is True
+    assert exact["attempts"][1]["failure_reason"] == "radio_unreachable"
+
+
+def test_v2_capture_batch_time_filter_and_cursor_keep_every_attempt() -> None:
+    first = payload(
+        request_v2(
+            "/api/v2/capture-batches",
+            {"start_utc_ns": "190", "stop_utc_ns": "350"},
+        )
+    )
+    assert [item["batch_id"] for item in first["items"]] == [
+        "cbatch_pending",
+        "cbatch_peer_failed",
+    ]
+    assert [len(item["attempts"]) for item in first["items"]] == [2, 2]
+    assert first["next_cursor"] is None
+
+    paged = payload(
+        request_v2(
+            "/api/v2/capture-batches",
+            {"start_utc_ns": "0", "stop_utc_ns": "500"},
+        )
+    )
+    continuation = payload(
+        request_v2(
+            "/api/v2/capture-batches",
+            {
+                "start_utc_ns": "0",
+                "stop_utc_ns": "500",
+                "cursor": paged["next_cursor"],
+            },
+        )
+    )
+    identities = [
+        attempt["attempt_id"]
+        for item in (*paged["items"], *continuation["items"])
+        for attempt in item["attempts"]
+    ]
+    assert len(identities) == 8
+    assert len(set(identities)) == 8
+
+
+def test_v2_delegates_v1_and_has_deterministic_batch_errors() -> None:
+    v1 = request("/api/storage-health")
+    v2 = request_v2("/api/storage-health")
+    assert v2 == v1
+    assert request_v2("/api/v2/capture-batches").status == 400
+    assert request_v2("/api/v2/capture-batches/not-a-batch").status == 400
+    assert request_v2("/api/v2/capture-batches/cbatch_absent").status == 404
+    assert request_v2("/api/v2/capture-batches/cbatch_a/extra").status == 404
+    assert (
+        request_v2(
+            "/api/v2/capture-batches",
+            {"start_utc_ns": "0", "stop_utc_ns": "500"},
+            method="POST",
+        ).status
+        == 405
+    )

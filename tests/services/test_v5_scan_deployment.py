@@ -24,6 +24,7 @@ from leo_flow.deployments import v5_scan
 from leo_flow.deployments.v5_canary import (
     CaptureHostGuard,
     OneShotV5PlanCycle,
+    V5PlanCyclePhase,
     V5SpoolSpec,
 )
 from leo_flow.services import Capability, Process, load_service_config
@@ -273,9 +274,21 @@ def test_scan_capture_is_one_shot_and_durable_restart_does_not_reopen_radio(
     first_provider = _RadioProvider(_radio(clock))
     publisher = _Publisher()
     first = _cycle(tmp_path, first_provider, publisher, clock)
-    first.preflight()
-    assert first.capture_and_publish_once()
+    first_preflight_phases: list[V5PlanCyclePhase] = []
+    first_capture_phases: list[V5PlanCyclePhase] = []
+    first.preflight(first_preflight_phases.append)
+    assert first.capture_and_publish_once(first_capture_phases.append)
     first.close(0.1)
+    assert first_preflight_phases == [
+        V5PlanCyclePhase.CYCLE_PREFLIGHT,
+        V5PlanCyclePhase.HOST_SPOOL_PREFLIGHT,
+        V5PlanCyclePhase.CATALOG_PREFLIGHT,
+        V5PlanCyclePhase.RADIO_ATTESTATION,
+    ]
+    assert first_capture_phases == [
+        V5PlanCyclePhase.CAPTURE_ENGINE,
+        V5PlanCyclePhase.RECORDING_PUBLICATION,
+    ]
     assert first_provider.opens == 1
     assert len(publisher.calls) == 1
     assert [item.kind for item in publisher.calls[0][0].manifest.activities] == [
@@ -285,10 +298,52 @@ def test_scan_capture_is_one_shot_and_durable_restart_does_not_reopen_radio(
 
     restart_provider = _RadioProvider(None)
     restart = _cycle(tmp_path, restart_provider, _Publisher(), clock)
-    restart.preflight()
-    assert not restart.capture_and_publish_once()
+    restart_preflight_phases: list[V5PlanCyclePhase] = []
+    restart_capture_phases: list[V5PlanCyclePhase] = []
+    restart.preflight(restart_preflight_phases.append)
+    assert not restart.capture_and_publish_once(restart_capture_phases.append)
     restart.close(0.1)
+    assert restart_preflight_phases == [
+        V5PlanCyclePhase.CYCLE_PREFLIGHT,
+        V5PlanCyclePhase.HOST_SPOOL_PREFLIGHT,
+        V5PlanCyclePhase.CATALOG_PREFLIGHT,
+    ]
+    assert restart_capture_phases == [V5PlanCyclePhase.RECORDING_PUBLICATION]
     assert restart_provider.opens == 0
+
+
+def test_cycle_prepares_only_exact_first_segment_without_capture_or_publication(
+    tmp_path: Path,
+) -> None:
+    clock = FakeClock()
+    radio = _radio(clock)
+    prepared = []
+    original_acquire = radio.acquire_segment_with_metadata
+
+    def prepare(request):  # type: ignore[no-untyped-def]
+        prepared.append(request)
+
+    captured_after_prepare = False
+
+    def acquire(request, write_refill):  # type: ignore[no-untyped-def]
+        assert captured_after_prepare
+        return original_acquire(request, write_refill)
+
+    radio.prepare_segment_with_metadata = prepare  # type: ignore[attr-defined]
+    radio.acquire_segment_with_metadata = acquire  # type: ignore[method-assign]
+    publisher = _Publisher()
+    cycle = _cycle(tmp_path, _RadioProvider(radio), publisher, clock)
+
+    cycle.preflight()
+    cycle.prepare_first_segment()
+
+    assert prepared == [v5_scan.SCAN_PLAN.activities[0].segments[0]]
+    assert publisher.calls == []
+
+    captured_after_prepare = True
+    assert cycle.capture_and_publish_once()
+    cycle.close(0.1)
+    assert len(publisher.calls) == 1
 
 
 def test_operator_guide_contains_explicit_live_e2e_arm_and_output_contract() -> None:

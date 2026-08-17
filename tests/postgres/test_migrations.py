@@ -35,6 +35,19 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0017_security_definer_hardening.sql",),
         ("0018_tracking_model_snapshot_catalog.sql",),
         ("0019_dwell_request_ingress.sql",),
+        ("0020_feature_projection_work.sql",),
+        ("0021_dashboard_capture_batch_projection.sql",),
+        ("0022_analysis_migration_receipt_read.sql",),
+        ("0023_campaign_projection_receipt.sql",),
+        ("0024_capture_analysis_inactive.sql",),
+        ("0025_recording_waterfall_analysis.sql",),
+        ("0026_dashboard_recording_detail_waterfall_projection.sql",),
+        ("0027_capture_analysis_waterfall_drain.sql",),
+        ("0028_recording_starlink_candidate_pipeline.sql",),
+        ("0029_starlink_detector_suite_v0_2.sql",),
+        ("0030_campaign_scoped_analysis_claims.sql",),
+        ("0031_radio_lifecycle_detection.sql",),
+        ("0032_campaign_online_analysis.sql",),
     ]
 
 
@@ -71,6 +84,35 @@ def test_capability_roles_are_narrow(postgres_dsn: str) -> None:
 
 
 @pytest.mark.integration
+def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        analysis_select, analysis_insert, capture_select, dashboard_select = (
+            connection.execute(
+                """
+                SELECT has_table_privilege(
+                           'leo_analysis', 'schema_migration', 'SELECT'),
+                       has_table_privilege(
+                           'leo_analysis', 'schema_migration', 'INSERT'),
+                       has_table_privilege(
+                           'leo_capture', 'schema_migration', 'SELECT'),
+                       has_table_privilege(
+                           'leo_dashboard', 'schema_migration', 'SELECT')
+                """
+            ).fetchone()
+        )
+        connection.execute("SET ROLE leo_analysis")
+        receipts = connection.execute(
+            "SELECT name FROM schema_migration ORDER BY name"
+        ).fetchall()
+
+    assert analysis_select
+    assert not analysis_insert
+    assert not capture_select
+    assert not dashboard_select
+    assert receipts[-1] == ("0032_campaign_online_analysis.sql",)
+
+
+@pytest.mark.integration
 def test_dwell_ingress_capabilities_are_directional(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         row = connection.execute(
@@ -95,6 +137,55 @@ def test_dwell_ingress_capabilities_are_directional(postgres_dsn: str) -> None:
             """
         ).fetchone()
     assert row == (False, False, True, False, True, False, False)
+
+
+@pytest.mark.integration
+def test_feature_projection_work_capabilities_are_private_and_narrow(
+    postgres_dsn: str,
+) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        table_row = connection.execute(
+            """
+            SELECT has_table_privilege(
+                       'leo_analysis', 'feature_projection_work', 'SELECT'),
+                   has_table_privilege(
+                       'leo_analysis', 'feature_projection_work', 'INSERT'),
+                   has_table_privilege(
+                       'leo_dashboard', 'feature_projection_work', 'SELECT'),
+                   has_table_privilege(
+                       'leo_capture', 'feature_projection_work', 'SELECT')
+            """
+        ).fetchone()
+        function_rows = connection.execute(
+            """
+            SELECT function_name,
+                   has_function_privilege('leo_analysis', signature, 'EXECUTE'),
+                   has_function_privilege('leo_dashboard', signature, 'EXECUTE'),
+                   has_function_privilege('leo_capture', signature, 'EXECUTE')
+              FROM (VALUES
+                  ('publish',
+                   'publish_feature_projection_work(text,text,text,bigint,text,text,text,text,text,text,text)'),
+                  ('claim', 'claim_feature_projection_work(text,interval)'),
+                  ('heartbeat',
+                   'heartbeat_feature_projection_work(text,text,bigint,interval)'),
+                  ('complete',
+                   'complete_feature_projection_work(text,text,bigint)'),
+                  ('retry',
+                   'retry_feature_projection_work(text,text,bigint,text,interval)'),
+                  ('park', 'park_feature_projection_work(text,text,bigint,text)')
+              ) AS expected(function_name, signature)
+             ORDER BY function_name
+            """
+        ).fetchall()
+    assert table_row == (False, False, False, False)
+    assert function_rows == [
+        ("claim", True, False, False),
+        ("complete", True, False, False),
+        ("heartbeat", True, False, False),
+        ("park", True, False, False),
+        ("publish", True, False, False),
+        ("retry", True, False, False),
+    ]
 
 
 @pytest.mark.integration

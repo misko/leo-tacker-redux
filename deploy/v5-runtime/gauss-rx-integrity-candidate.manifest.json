@@ -1,0 +1,51 @@
+{
+  "schema": "leo-flow.v5-runtime/v1",
+  "runtime_id": "gauss-pluto-v5-rx-integrity-close-barrier-1",
+  "firmware": {
+    "release": "v0.38-plutoplus-spf-libiio-metadata-v5-rx-integrity-candidate1",
+    "metadata_protocol": 3
+  },
+  "libiio": {
+    "repository": "https://github.com/misko/libiio.git",
+    "ref": "spf-frame-metadata-source/v0.25-final-v3",
+    "commit": "c26258bfa33098c2b215e19cf85d448e89499b1a+patch.195bddceada230ef",
+    "base_commit": "c26258bfa33098c2b215e19cf85d448e89499b1a",
+    "patch_sha256": "195bddceada230ef32b662cfd7149186a623d1d4cfac234b0660770f32f901d4",
+    "version": [0, 25, "c26258b"],
+    "prefix": "/home/mouse9911/.cache/leo-flow/v5-runtime-rx-integrity-candidate1",
+    "binding_path": "/home/mouse9911/.cache/leo-flow/v5-runtime-rx-integrity-candidate1/lib/python3.11/site-packages/iio.py",
+    "required_backends": ["local", "ip", "usb"],
+    "python_distribution": "pylibiio",
+    "python_symbol": "iio.MetadataBuffer"
+  },
+  "pyadi": {
+    "distribution": "pyadi-iio",
+    "version": "0.0.21",
+    "module_path": "/home/mouse9911/gits/leo-tracker-redux/.venv/lib/python3.11/site-packages/adi/__init__.py"
+  },
+  "numpy": {
+    "distribution": "numpy",
+    "version": "2.4.6"
+  },
+  "psycopg": {
+    "distribution": "psycopg",
+    "version": "3.3.4"
+  },
+  "spf": {
+    "repository": "https://github.com/misko/spf.git",
+    "commit": "c40ee4116546889effd72056115adaaa1bc3fd40+patch.c9113a6d75466b4d",
+    "base_commit": "c40ee4116546889effd72056115adaaa1bc3fd40",
+    "patch_sha256": "c9113a6d75466b4d1de38b45ccaee785c6a13a677b1e02c0e7c39919b66669b1",
+    "import": "spf.direct_radio.iio_metadata:IioMetadataRx",
+    "module_path": "/home/mouse9911/.cache/leo-flow/v5-build/spf-rx-integrity-candidate1/spf/direct_radio/iio_metadata.py",
+    "files": {
+      "spf/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "spf/direct_radio/__init__.py": "1e7be7f870a428234ec3b2def11d1310d823478ba108832b614d9f09e9b998d9",
+      "spf/direct_radio/iio_metadata.py": "3c7f87beeb8a1b812f99597773d06fdc3c142ae9b5b92d33c576e33979714058",
+      "spf/direct_radio/sample_clock.py": "90c5ff03f879fb85044218b12299ca00b59771437c8e4b456fdb9a741f95b314",
+      "spf/direct_radio/usb_protocol.py": "8b16125f4ba8c4e31444b3548134b52f3ca5f6194510af1b10d91c159a6c1307"
+    }
+  },
+  "supported_transports": ["ip", "usb"],
+  "unsupported_transports": ["direct-ip", "direct-usb"]
+}

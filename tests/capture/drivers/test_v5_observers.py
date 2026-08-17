@@ -11,6 +11,7 @@ from leo_flow.capture.drivers.v5_observers import (
     observe_v5_radio,
 )
 from leo_flow.capture.errors import RadioConfigurationError
+from leo_flow.contracts.core import Digest
 
 
 def _runtime_fixture(tmp_path):  # type: ignore[no-untyped-def]
@@ -123,6 +124,31 @@ def test_runtime_observer_rejects_tampered_spf_and_missing_psycopg(tmp_path) -> 
         )
 
 
+def test_manifest_digest_is_verified_before_loading_any_runtime_module(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    manifest, _, versions, _ = _runtime_fixture(tmp_path)
+    original_digest = Digest.sha256(manifest.read_bytes())
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["runtime_id"] = "tampered-runtime"
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    loaded: list[str] = []
+
+    def forbidden_loader(name: str):  # type: ignore[no-untyped-def]
+        loaded.append(name)
+        raise AssertionError("digest mismatch must precede runtime imports")
+
+    with pytest.raises(RadioConfigurationError, match="runtime observation failed"):
+        observe_current_v5_runtime(
+            manifest,
+            expected_manifest_digest=original_digest,
+            module_loader=forbidden_loader,
+            distribution_version=versions.__getitem__,
+            maps_reader=lambda: "",
+        )
+    assert loaded == []
+
+
 class _Attribute:
     def __init__(self, value: str) -> None:
         self.value = value
@@ -131,6 +157,11 @@ class _Attribute:
 def _tx_context(attrs):  # type: ignore[no-untyped-def]
     phy = SimpleNamespace(
         channels=(
+            SimpleNamespace(
+                id="voltage0",
+                output=True,
+                attrs={"hardwaregain": _Attribute("-81 dB")},
+            ),
             SimpleNamespace(
                 id="voltage1",
                 output=True,
@@ -145,12 +176,7 @@ def _tx_context(attrs):  # type: ignore[no-untyped-def]
                 output=True,
                 attrs={"scale": _Attribute("0")},
             )
-            for channel_id in (
-                "altvoltage4",
-                "altvoltage5",
-                "altvoltage6",
-                "altvoltage7",
-            )
+            for channel_id in tuple(f"altvoltage{index}" for index in range(8))
         )
     )
     devices = {
@@ -183,6 +209,13 @@ def test_radio_observer_reads_selected_context_and_scan_layout() -> None:
     assert observed.enabled_scan_mask == 0x0F
     assert observed.channel_count == 2
     assert observed.component_layout == ("I0", "Q0", "I1", "Q1")
+    assert observed.tx1_hardware_gain_db == -81.0
+    assert observed.tx1_dds_scales == (
+        ("altvoltage0", 0.0),
+        ("altvoltage1", 0.0),
+        ("altvoltage2", 0.0),
+        ("altvoltage3", 0.0),
+    )
     assert observed.tx2_hardware_gain_db == -80.0
     assert observed.tx2_dds_scales == (
         ("altvoltage4", 0.0),

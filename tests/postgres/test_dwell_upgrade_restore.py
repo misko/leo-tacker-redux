@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -23,14 +24,6 @@ from leo_flow.contracts.core import Digest, PlanId
 from leo_flow.jobs.ports import StaleLeaseError
 from leo_flow.maintenance import create_backup, restore_backup, verify_backup
 from leo_flow.maintenance.postgres_backup import CommandResult
-from leo_flow.qualification.offhost import (
-    REQUIRED_MIGRATION_HEAD,
-    CasExpectation,
-    PostgresExpectation,
-    QualificationConfig,
-    inspect_database_audit,
-    inspect_database_role,
-)
 from leo_flow.storage.postgres_migrations import apply_migrations
 from tests.postgres.test_dwell_request_ingress import _request
 from tests.postgres.test_feature_sets import _repository
@@ -201,11 +194,60 @@ def _database_fingerprint(dsn: str) -> str:
     ).hexdigest()
 
 
+def _dwell_capability_boundary(dsn: str) -> tuple[object, ...]:
+    with psycopg.connect(dsn) as connection:
+        row = connection.execute(
+            """
+            SELECT pg_catalog.pg_get_userbyid(p.proowner),
+                   has_function_privilege(
+                       'leo_capture',
+                       'public.claim_dwell_request(text,text,text,interval)',
+                       'EXECUTE'),
+                   has_function_privilege(
+                       'leo_capture', 'public.publish_dwell_request(jsonb)',
+                       'EXECUTE'),
+                   has_table_privilege(
+                       'leo_capture', 'public.dwell_request_ingress', 'SELECT'),
+                   has_function_privilege(
+                       'leo_analysis', 'public.publish_dwell_request(jsonb)',
+                       'EXECUTE'),
+                   has_function_privilege(
+                       'leo_analysis',
+                       'public.claim_dwell_request(text,text,text,interval)',
+                       'EXECUTE'),
+                   has_table_privilege(
+                       'leo_analysis', 'public.dwell_request_ingress', 'INSERT'),
+                   has_table_privilege(
+                       'leo_dashboard', 'public.dwell_request_ingress', 'SELECT')
+              FROM pg_catalog.pg_proc AS p
+             WHERE p.oid =
+                   'public.claim_dwell_request(text,text,text,interval)'::regprocedure
+            """
+        ).fetchone()
+    assert row is not None
+    return row
+
+
+_EXPECTED_DWELL_CAPABILITY_BOUNDARY = (
+    "leo_routine_owner",
+    True,
+    False,
+    False,
+    True,
+    False,
+    False,
+    False,
+)
+
+
 @pytest.mark.integration
 def test_0018_to_0019_backup_restore_preserves_dwell_and_restart_integrity(
     postgres_dsn: str, tmp_path: Path
 ) -> None:
     """Rehearse upgrade and owner/ACL-preserving restore on PostgreSQL 16."""
+
+    if os.environ.get("LEO_TEST_POSTGRES_DSN"):
+        pytest.skip("restart rehearsal requires fixture-owned Docker PostgreSQL")
 
     suffix = uuid.uuid4().hex[:10]
     upgrade_name = f"wave7_upgrade_{suffix}"
@@ -214,10 +256,14 @@ def test_0018_to_0019_backup_restore_preserves_dwell_and_restart_integrity(
 
     migration_source = Path(__file__).resolve().parents[2] / "migrations"
     migrations_0018 = tmp_path / "migrations-0018"
+    migrations_0019 = tmp_path / "migrations-0019"
     migrations_0018.mkdir()
+    migrations_0019.mkdir()
     for path in sorted(migration_source.glob("[0-9][0-9][0-9][0-9]_*.sql")):
         if path.name < "0019_":
             shutil.copy2(path, migrations_0018 / path.name)
+        if path.name <= "0019_dwell_request_ingress.sql":
+            shutil.copy2(path, migrations_0019 / path.name)
     with psycopg.connect(upgrade_dsn) as connection:
         applied_0018 = apply_migrations(connection, migrations_0018)
     assert applied_0018[-1] == "0018_tracking_model_snapshot_catalog.sql"
@@ -228,19 +274,14 @@ def test_0018_to_0019_backup_restore_preserves_dwell_and_restart_integrity(
         assert connection.execute("SELECT count(*) FROM feature_set").fetchone() == (1,)
 
     with psycopg.connect(upgrade_dsn) as connection:
-        assert apply_migrations(connection, migration_source) == (
+        assert apply_migrations(connection, migrations_0019) == (
             "0019_dwell_request_ingress.sql",
         )
 
-    with psycopg.connect(upgrade_dsn) as connection:
-        system_identifier = connection.execute(
-            "SELECT system_identifier::text FROM pg_control_system()"
-        ).fetchone()[0]
     parameters = conninfo_to_dict(postgres_dsn)
     database_user = parameters["user"]
     capture_login = f"wave7_capture_{suffix}"
     analysis_login = f"wave7_analysis_{suffix}"
-    dashboard_login = f"wave7_dashboard_{suffix}"
     capture_dsn = _create_runtime_login(
         postgres_dsn,
         upgrade_name,
@@ -255,61 +296,9 @@ def test_0018_to_0019_backup_restore_preserves_dwell_and_restart_integrity(
         f"analysis-{suffix}-password",
         "leo_analysis",
     )
-    dashboard_dsn = _create_runtime_login(
-        postgres_dsn,
-        upgrade_name,
-        dashboard_login,
-        f"dashboard-{suffix}-password",
-        "leo_dashboard",
+    assert (
+        _dwell_capability_boundary(upgrade_dsn) == _EXPECTED_DWELL_CAPABILITY_BOUNDARY
     )
-    qualification = QualificationConfig(
-        station_id="station_ingress",
-        cas=CasExpectation(tmp_path / "feature-cas", "temporary", "local", "unused"),
-        migration_directory=migration_source,
-        credential_names={
-            "leo_capture": "capture-dsn",
-            "leo_analysis": "analysis-dsn",
-            "leo_dashboard": "dashboard-dsn",
-            "postgres_audit": "audit-dsn",
-        },
-        pipeline=None,
-        config_digest="sha256:disposable-wave7",
-        postgres=PostgresExpectation(
-            upgrade_name,
-            database_user,
-            16,
-            system_identifier,
-            REQUIRED_MIGRATION_HEAD,
-            {
-                "leo_capture": capture_login,
-                "leo_analysis": analysis_login,
-                "leo_dashboard": dashboard_login,
-                "postgres_audit": database_user,
-            },
-        ),
-    )
-
-    class Credentials:
-        def resolve(self, name: str) -> str:
-            return {
-                "capture-dsn": capture_dsn,
-                "analysis-dsn": analysis_dsn,
-                "dashboard-dsn": dashboard_dsn,
-                "audit-dsn": upgrade_dsn,
-            }[name]
-
-    assert all(
-        gate.passed
-        for gate in inspect_database_audit(qualification, credentials=Credentials())
-    )
-    for role in ("leo_capture", "leo_analysis", "leo_dashboard"):
-        assert all(
-            gate.passed
-            for gate in inspect_database_role(
-                qualification, role, credentials=Credentials()
-            )
-        )
-
     ingress = PostgresDwellRequestIngress(_runtime_connect(analysis_dsn))
     publication = ingress.publish(request)
     queue = PostgresDwellRequestQueue(
@@ -363,26 +352,9 @@ def test_0018_to_0019_backup_restore_preserves_dwell_and_restart_integrity(
     with features.open(request.source.feature_set_ref) as view:
         assert view.ref == request.source.feature_set_ref
 
-    with psycopg.connect(restore_dsn) as connection:
-        owner_and_acl = connection.execute(
-            """
-            SELECT pg_catalog.pg_get_userbyid(p.proowner),
-                   has_function_privilege(
-                       'leo_capture',
-                       'public.claim_dwell_request(text,text,text,interval)',
-                       'EXECUTE'),
-                   has_table_privilege(
-                       'leo_capture', 'public.dwell_request_ingress', 'SELECT'),
-                   has_function_privilege(
-                       'leo_analysis',
-                       'public.publish_dwell_request(jsonb)', 'EXECUTE'),
-                   has_table_privilege(
-                       'leo_analysis', 'public.dwell_request_ingress', 'INSERT')
-              FROM pg_catalog.pg_proc AS p
-             WHERE p.oid = 'public.claim_dwell_request(text,text,text,interval)'::regprocedure
-            """
-        ).fetchone()
-    assert owner_and_acl == ("leo_routine_owner", True, False, True, False)
+    assert (
+        _dwell_capability_boundary(restore_dsn) == _EXPECTED_DWELL_CAPABILITY_BOUNDARY
+    )
 
     time.sleep(0.06)
     restored_capture_dsn = _database_dsn(capture_dsn, restore_name)

@@ -1,5 +1,9 @@
 # One-shot V5 edge scan
 
+For the ordered Gauss capture-to-analysis-to-dashboard procedure, use the
+[Gauss local pipeline runbook](gauss-local-pipeline.md). This document retains
+the detailed single-radio deployment and qualification gates.
+
 The V5 scan deployment captures one immutable, passive receive-only Starlink
 edge scan on the radio at `192.168.1.15`. Production capture contains no
 detector, analysis worker, scheduler, dwell decision, dashboard call, transmit
@@ -66,6 +70,89 @@ recording and job references; it does not carry sample bytes. This bulk handoff
 creates roughly one data object and one metadata object per recording, not one
 file or marker per scan segment.
 
+## Station-bound operator CLI
+
+The capture operator also accepts one strict, secret-free station document.
+The checked development document is
+`deploy/v5-scan/development-radio-15.station.json`; it binds `.15` to its exact
+serial, logical radio and receiver IDs, firmware, hardware snapshot, plan and
+digest, exact expected runtime, runtime-manifest content digest, user-local
+private state/spool paths, shared CAS root, per-radio process lock, shared mode
+lock, and explicit CAS-mount policy. Unknown fields, relative paths, a changed
+plan, and a digest mismatch fail closed. There is no environment-variable
+override for any of these values.
+
+The default is the same built-in checked `.15` specification. Supplying
+`--station` selects an explicit JSON document instead. These two commands are
+offline and do not read credentials, inspect mounts, connect to PostgreSQL, or
+open a radio:
+
+```console
+python3 -m leo_flow.deployments.v5_capture_operator validate \
+  --station deploy/v5-scan/development-radio-15.station.json
+python3 -m leo_flow.deployments.v5_capture_operator show-plan \
+  --station deploy/v5-scan/development-radio-15.station.json
+```
+
+Both write one machine-readable JSON object. `show-plan` includes the full
+canonical plan. Review its station-specification digest and exact plan digest
+before arming capture.
+
+On Gauss, explicitly attest the checked manifest bytes and the libraries loaded
+in the current process with this radio-free command:
+
+```console
+env \
+  PYTHONPATH=/home/mouse9911/.cache/leo-flow/v5-runtime/lib/python3.11/site-packages:/home/mouse9911/.cache/leo-flow/v5-build/spf \
+  LD_LIBRARY_PATH=/home/mouse9911/.cache/leo-flow/v5-runtime/lib:/home/mouse9911/.cache/leo-flow/v5-build/sysroot/usr/lib/x86_64-linux-gnu \
+  .venv/bin/python -m leo_flow.deployments.v5_capture_operator validate-runtime \
+  --station deploy/v5-scan/development-radio-15.station.json
+```
+
+`runtime_valid` proves the manifest content digest, patched generated Python
+binding (including `iio.MetadataBuffer`), native libiio prefix/backends, pyadi,
+NumPy, psycopg, and exact SPF source/module identity before any radio context is
+opened. An ordinary PyPI pylibiio binding or any fallback module/native path is
+rejected.
+
+The capture command is intentionally harder to invoke. It requires the exact
+serial and plan digest as independent arms and reads `catalog-dsn` from the
+explicit credential directory. The DSN is never a command-line argument or
+output field:
+
+```console
+python3 -m leo_flow.deployments.v5_capture_operator capture \
+  --station deploy/v5-scan/development-radio-15.station.json \
+  --arm \
+  --confirm-radio-serial 104000b29905000e17000800065934759d \
+  --confirm-plan-digest sha256:bf6947c46dbe06eaf9efcd2039785a1f432015610080c6e32965f1a58a560ab6 \
+  --credential-directory /run/credentials/leo-v5-scan
+```
+
+This last command performs the same restart-safe `OneShotV5PlanCycle` as the
+service and therefore can contact the mounted CAS, PostgreSQL, and the selected
+radio. Run it only through the qualified V5 runtime after the live gates below.
+`forward_progress: false` means the durable plan was already reconciled; it
+does not mean another acquisition was attempted.
+
+After arming, the operator first owns the shared nonblocking pipeline-mode
+lock, resolves the `leo_capture` catalog credential, and asks PostgreSQL for
+one fail-closed capture-admission decision. Admission is refused while the
+latest recording dashboard state is pending or running, while any recording
+analysis job is ready, leased, or failed, or while any feature-projection work
+is ready, leased, or failed. Succeeded and deliberately parked work are
+terminal for this gate. A false decision or database error emits only
+`capture_admission_blocked`, releases the mode lock, and constructs no capture
+cycle, CAS reader/writer, or radio driver. The offline commands above never
+resolve the credential or call this gate.
+
+For a second radio, create a separately reviewed station document with a new
+URI, attested serial, logical radio and receiver IDs, immutable plan ID/digest,
+state root, spool database, and per-radio lock. The CAS root and shared mode
+lock are intentionally common to a Gauss pair. The station-pair validator
+rejects every other alias and rejects different mode locks before dual
+coordination.
+
 ## Hardware-free gates
 
 Run these before installing or starting the live unit:
@@ -73,6 +160,9 @@ Run these before installing or starting the live unit:
 ```console
 .venv/bin/pytest -q \
   tests/capture/test_scan_plan.py \
+  tests/capture/test_v5_station.py \
+  tests/capture/test_v5_operator.py \
+  tests/capture/drivers/test_v5_preflight.py \
   tests/services/test_v5_scan_deployment.py \
   tests/services/test_v5_scan_e2e.py \
   tests/integration/test_v5_scan_e2e.py

@@ -1,0 +1,52 @@
+[Unit]
+Description=Gauss sealed R20/R21 finite supercycle canary staged analysis
+ConditionPathExists=@RELEASE_ROOT@/release.manifest.json
+ConditionPathExists=@RELEASE_ROOT@/validation.receipt.json
+ConditionPathExists=/home/mouse9911/.local/state/leo-flow/campaigns/qual_gauss_r20_r21_20260816_v8/qualification.receipt.json
+ConditionPathExists=/home/mouse9911/.local/state/leo-flow/canary-supercycles/@CANARY_ID@/definition.json
+ConditionPathExists=/home/mouse9911/.local/state/leo-flow/canary-supercycles/@CANARY_ID@/journal.sqlite3
+
+[Service]
+Type=exec
+WorkingDirectory=@RELEASE_ROOT@
+Environment="PYTHONPATH=@RELEASE_ROOT@/native/lib/python3.11/site-packages:@RELEASE_ROOT@/native/spf"
+Environment="LD_LIBRARY_PATH=@RELEASE_ROOT@/native/lib"
+Environment="OPENBLAS_NUM_THREADS=1"
+Environment="OMP_NUM_THREADS=1"
+Environment="MKL_NUM_THREADS=1"
+Environment="NUMEXPR_NUM_THREADS=1"
+ExecStartPre=@RELEASE_ROOT@/venv/bin/leo-verify-release --manifest @RELEASE_ROOT@/release.manifest.json --receipt @RELEASE_ROOT@/validation.receipt.json --expected-manifest-sha256 @RELEASE_MANIFEST_SHA256@ --expected-receipt-sha256 @RELEASE_RECEIPT_SHA256@
+ExecStart=@RELEASE_ROOT@/venv/bin/leo-v5-supercycle-canary --runtime-config @RELEASE_ROOT@/config/runtime.json drain-analysis --definition /home/mouse9911/.local/state/leo-flow/canary-supercycles/@CANARY_ID@/definition.json --qualification-receipt /home/mouse9911/.local/state/leo-flow/campaigns/qual_gauss_r20_r21_20260816_v8/qualification.receipt.json --station-a @RELEASE_ROOT@/config/r20.station.json --station-b @RELEASE_ROOT@/config/r21.station.json --journal /home/mouse9911/.local/state/leo-flow/canary-supercycles/@CANARY_ID@/journal.sqlite3 --canary-state-root /home/mouse9911/.local/state/leo-flow/canary-supercycles --capacity-margin-bytes 10737418240 --maximum-transitions 37 --analysis-deadline-seconds 21600 --receipt-output /home/mouse9911/.local/state/leo-flow/canary-supercycles/@CANARY_ID@/receipt.json --arm --confirm-definition-digest @CANARY_DEFINITION_DIGEST@
+Restart=no
+RuntimeMaxSec=6h10m
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+MemoryHigh=80G
+MemoryMax=96G
+TasksMax=64
+LimitNOFILE=16384
+OOMPolicy=stop
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=read-only
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+ReadOnlyPaths=@RELEASE_ROOT@
+ReadOnlyPaths=/home/mouse9911/.local/state/leo-flow/campaigns/qual_gauss_r20_r21_20260816_v8/qualification.receipt.json
+ReadOnlyPaths=/home/mouse9911/.local/state/leo-flow/canary-supercycles/@CANARY_ID@/definition.json
+ReadWritePaths=/home/mouse9911/.local/state/leo-flow /home/mouse9911/.local/share/leo-flow

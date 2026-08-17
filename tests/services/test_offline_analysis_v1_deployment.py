@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,7 @@ from leo_flow.contracts.ports import (
     RecordingAnalyzer,
 )
 from leo_flow.deployments.offline_analysis_v1 import (
+    EXPECTED_MIGRATIONS,
     FEATURE_PUBLISHER_REF,
     JOB_REPOSITORY_REF,
     MODEL_PUBLISHER_REF,
@@ -48,6 +50,7 @@ from leo_flow.deployments.offline_analysis_v1 import (
     OfflineAnalysisCompositionError,
     OfflineAnalysisCycle,
     StationScientificFactories,
+    _preflight_analysis,
     build_station_plugin,
 )
 from leo_flow.jobs import InMemoryJobLeaseRepository, JobPayload, JobType
@@ -69,6 +72,31 @@ from testkit import digest
 
 def _artifact(name: str) -> ArtifactRef:
     return ArtifactRef(name, digest(name), SchemaRef(f"org.example.{name}"))
+
+
+def test_offline_analysis_requires_the_current_immutable_migration_chain() -> None:
+    root = Path(__file__).resolve().parents[2]
+    approved = tuple(
+        path.name
+        for path in sorted((root / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    )
+
+    assert EXPECTED_MIGRATIONS == approved
+
+
+def test_offline_analysis_preflight_requires_campaign_scoped_claim_capabilities() -> (
+    None
+):
+    source = inspect.getsource(_preflight_analysis)
+    required = (
+        "claim_campaign_analysis_job(text[],text,text,interval)",
+        "claim_campaign_feature_projection(text[],text,interval)",
+        "claim_campaign_waterfall_projection(text[],text,interval)",
+        "claim_campaign_starlink_suite_projection(text[],text,interval)",
+        "read_campaign_analysis_lane_status(text,text[])",
+    )
+
+    assert all(f"'{signature}'" in source for signature in required)
 
 
 def test_example_configuration_is_strictly_parseable() -> None:

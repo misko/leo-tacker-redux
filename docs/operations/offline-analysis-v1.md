@@ -37,10 +37,13 @@ committers. It requires an absolute CAS root, one systemd `catalog-dsn`
 credential, and complete non-empty exact registries for both lanes. The DSN
 login must be a member of `leo_analysis` and able to read migration receipts;
 all operational queries execute after `SET ROLE leo_analysis`. Readiness proves
-the required migration receipts, role privileges, and a write/fsync/unlink probe
-inside the configured CAS temporary directory. Connections are scoped to each
-operation and close on every exit; the filesystem adapter owns no background
-resource.
+the required migration receipts through
+`0032_campaign_online_analysis.sql` (including the waterfall and
+Starlink candidate catalogs and dashboard projection migrations), role privileges
+(including function-only access to both durable projection outboxes), and a
+write/fsync/unlink probe inside the configured CAS
+temporary directory. Connections are scoped to each operation and close on
+every exit; the filesystem adapter owns no background resource.
 
 The checked-in [example configuration](../../deploy/offline-analysis-v1/analysis.json)
 uses the stable process configuration schema. Adapter names are exact selections,
@@ -49,15 +52,70 @@ detector/fitter pair has passed the locked scientific promotion gate.
 
 ## Safe station materialization
 
-There is intentionally no runnable checked-in rehearsal plugin. Even a
-refusal-only worker would claim and mutate the first matching durable job before
-it learned that the science was unapproved. Pointing such a rehearsal at the
-production DSN would damage queue state.
+There is no repository-wide fallback plugin. A worker can claim work only when
+an explicit station package exports complete exact scientific registries. The
+checked Gauss development package is `leo_station.analysis_v1`; its matching
+service config, immutable science approval, post-capture submission command, and
+bounded analysis/projection commands live under `deploy/gauss-analysis-v1/`.
+They pin the current development algorithms and Python 3.11.16 environment and are
+not a production scientific promotion.
 
-The checked config, schema, and non-installable `leo-offline-analysis@.service`
-template live under `deploy/offline-analysis-v1/`. The template names the deliberately absent
-operator module `leo_station.analysis_v1:PLUGIN` and has no `[Install]` section,
-so this repository alone cannot start an analysis worker or claim a job.
+The Gauss package also accepts one explicitly supplied canonical public
+`CaptureBatchSnapshot`. Its closed-batch submission service requires both
+attempts terminal, verifies each successful `PublishedRecordingRef` against the
+public catalog, and enqueues only the pinned per-recording jobs in canonical
+attempt order. It retains one successful recording after peer failure and
+reports paired eligibility without creating or implying paired science. The
+submission and processing operators hold Gauss's shared capture/analysis mode
+lock before credential, database, or CAS use. The bounded `drain-batch` command
+reports whether its final immediate claims found no work; it does not call
+delayed or parked work globally quiescent. It never scans capture SQLite, the
+CAS, or filenames for work.
+The Gauss deployment first republishes the deterministic initial batch
+dashboard view, so exact replay repairs a prior projection outage and projection
+failure prevents recording-job enqueue. This dashboard coupling remains in the
+station deployment; the public closed-batch submission service is
+dashboard-agnostic.
+
+Gauss additionally exposes a versioned, bounded waterfall lane. It is not part
+of capture completion and is not claimed by the generic two-lane offline
+service router: `submit-waterfall` selects one exact published recording,
+`process-waterfall-one` produces and atomically catalogs one bounded bundle,
+and `project-waterfall-one` resolves that exact public reference into the
+dashboard projection. Each step is fenced, retryable or parkable, and protected
+by the same shared capture/analysis mode lock. The dashboard never reads CAS.
+
+The checked Gauss package also exposes one authoritative Starlink candidate
+lane: `submit-starlink`, `process-starlink-one`, and
+`project-starlink-one`. Submission opens only the exact catalog-selected
+recording, accepts the approved 2.5 or 5 MS/s full-pilot scan geometry, selects
+the exact rate-specific search config and probe bound, and derives each
+lower/upper Qin template pair from immutable segment tags and actual sample
+rate. Both profiles cover the same 8 ms and 583-cell bank; 5 MS/s is valid
+because its sampled 5 MHz band fully contains the 1.875 MHz pilot allocation.
+The 1.25 MS/s arm is short by 625 kHz and remains ineligible. The checked
+scientific approval's canonical digest is
+`sha256:99a44bd3c31affe541d4891bb16d6a42ed634cdbe542da59caefc0e491518003`.
+Processing is post-capture and local to Gauss. Catalog publication, the
+projection outbox, and dashboard publication are independently lease-fenced;
+the dashboard receives a bounded semantic projection and no CAS locator.
+Candidate scores are not detections and never receive a detection count without
+an exact matching approved whole-search calibration artifact.
+
+Release D rollout requires the exact 30-file migration chain through
+`0032_campaign_online_analysis.sql` as one reviewed maintenance action.
+Verify migration 0030's frozen SHA-256
+(`005d5408a24d2d507fe6ebaa3d4b8b86fe46b92a0a498f1f1151cbe2bc8e4cab`),
+apply it once, run readiness, and only then start the staged analysis service.
+The 1.25 MS/s records remain explicitly `Not evaluated`; do not coerce them
+into a full-pilot config. Continuous 2.5 or 5 MS/s captures use the approved
+suite profile. Replay is content-addressed and idempotent, so interruption does
+not require catalog or CAS discovery.
+
+The generic checked config, schema, and non-installable
+`leo-offline-analysis@.service` template live under
+`deploy/offline-analysis-v1/`. The template still has no `[Install]` section,
+so installing the Python package alone cannot enable or start a worker.
 
 Production installation still requires exactly one operator-owned, importable
 module, for example `leo_station.analysis_v1:PLUGIN`, containing:

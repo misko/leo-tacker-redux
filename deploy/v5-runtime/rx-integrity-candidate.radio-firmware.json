@@ -1,0 +1,119 @@
+{
+  "schema": "leo-flow.v5-radio-firmware-build-receipt/v1",
+  "candidate_id": "gauss-v5-rx-integrity-close-barrier-1",
+  "release_identity": "v0.38-plutoplus-spf-libiio-metadata-v5-rx-integrity-candidate1",
+  "candidate_runtime_manifest": {
+    "path": "deploy/v5-runtime/gauss-rx-integrity-candidate.manifest.json",
+    "sha256": "0a9cf278bf836655afbf7a9a324a21c5dc41235d1b251386a0013eb0f299f123"
+  },
+  "candidate_rootfs_receipt": {
+    "path": "deploy/v5-runtime/rx-integrity-candidate.radio-rootfs.json",
+    "sha256": "4c3867422ec1a75bb9a5978dfc478ed5cc697ad92768c2000990cb084eed7472"
+  },
+  "platform_source": {
+    "repository": "git@github.com:misko/plutosdr-fw.git",
+    "commit": "de830094a177daf4f577b60b9d3324b41f99ae58",
+    "release_tag": "v0.38-plutoplus-spf-libiio-metadata-v5",
+    "release_bundle": {
+      "url": "https://github.com/misko/plutosdr-fw/releases/download/v0.38-plutoplus-spf-libiio-metadata-v5/plutoplus-spf-libiio-metadata-v5-d7c87a9a2809.tar.gz",
+      "size_bytes": 102428236,
+      "sha256": "013f6174bd989e0e9f5cfc36179141f38fe905f730561899f2361b7f834f4007"
+    },
+    "release_dfu": {
+      "url": "https://github.com/misko/plutosdr-fw/releases/download/v0.38-plutoplus-spf-libiio-metadata-v5/plutoplus-spf-libiio-metadata-v5-d7c87a9a2809-pluto.dfu",
+      "size_bytes": 12743875,
+      "sha256": "948b46506febacb087f3955be86015e074f8c0e3370a9dfc6a942e735d97f882"
+    },
+    "release_xsa": {
+      "url": "https://github.com/misko/plutosdr-fw/releases/download/v0.38-plutoplus-spf-libiio-metadata-v5/plutoplus-spf-libiio-metadata-v5-d7c87a9a2809-system_top.xsa",
+      "size_bytes": 801344,
+      "sha256": "05d5b9d17cab1c0efc208686309ffbb7f22cd341c302247b999421bf22211cb8"
+    }
+  },
+  "fit_components": [
+    {
+      "index": 0,
+      "name": "zynq-pluto-sdr.dtb",
+      "size_bytes": 22143,
+      "sha256": "43767e4d8d0cfbfd4f9b97a22a61719d1fffae587f90269fb85aa8fd851df116",
+      "source": "exact release DFU"
+    },
+    {
+      "index": 1,
+      "name": "zynq-pluto-sdr-revb.dtb",
+      "size_bytes": 22219,
+      "sha256": "31c552e28736e1f7bebf4feacabca7460e0386dbb61cdeb93cc313f990f81591",
+      "source": "exact release DFU"
+    },
+    {
+      "index": 2,
+      "name": "zynq-pluto-sdr-revc.dtb",
+      "size_bytes": 26366,
+      "sha256": "298ea3a35c655f1fd47e4bdb10901707bee1a1d166c30ac70c8e0abf0d1e54a3",
+      "source": "exact release DFU"
+    },
+    {
+      "index": 3,
+      "name": "system_top.bit",
+      "size_bytes": 969296,
+      "sha256": "365780eef2c99e4f09d1bed94ad093a2284163893f6cb619c1313b3f05bd58ee",
+      "source": "exact release XSA and DFU"
+    },
+    {
+      "index": 4,
+      "name": "zImage",
+      "size_bytes": 4553608,
+      "sha256": "67ab0fba439980cee4e2d3c1a674b3274a899f10694d357d3dee02055a2bc5da",
+      "source": "exact release DFU"
+    },
+    {
+      "index": 5,
+      "name": "rootfs.cpio.gz",
+      "size_bytes": 7115868,
+      "sha256": "a57ed73a07693b3ac94a456a87392897d49430dc8a6d9cc7aa10b0ed37642269",
+      "source": "candidate rootfs receipt"
+    }
+  ],
+  "artifacts": {
+    "itb": {
+      "path": "/home/mouse9911/gits/plutosdr-fw/build/plutoplus-spf-libiio-metadata-v5-rx-integrity-candidate1.itb",
+      "size_bytes": 12712727,
+      "sha256": "7e78616a52deea6a4055e5ec51ab71b59c431e24b359e3ab16e0fac000717efd",
+      "md5": "650a7c07ba6f30cf5b71437d6c25821d"
+    },
+    "dfu": {
+      "path": "/home/mouse9911/gits/plutosdr-fw/build/plutoplus-spf-libiio-metadata-v5-rx-integrity-candidate1.dfu",
+      "size_bytes": 12712743,
+      "sha256": "4118a4f3a7130e407f4314e76415bbcf9183501e74faae1824ef2b52be616503",
+      "suffix": {
+        "bcd_device": "ffff",
+        "product_id": "b673",
+        "vendor_id": "0456",
+        "bcd_dfu": "0100",
+        "length_bytes": 16,
+        "crc32": "7d976188"
+      }
+    },
+    "frm": {
+      "path": "/home/mouse9911/gits/plutosdr-fw/build/plutoplus-spf-libiio-metadata-v5-rx-integrity-candidate1.frm",
+      "size_bytes": 12712760,
+      "sha256": "df391788052ef9a647d0b7b530e33dffea874f53f0e2beff9cd5f0228c25b8bb",
+      "embedded_itb_md5": "650a7c07ba6f30cf5b71437d6c25821d"
+    }
+  },
+  "verification": {
+    "fit_all_six_components_extracted": true,
+    "platform_components_match_exact_release": true,
+    "ramdisk_matches_candidate_rootfs": true,
+    "dfu_suffix_valid": true,
+    "frm_footer_valid": true,
+    "flashable_format": true,
+    "radio_installed": false,
+    "hardware_qualified": false,
+    "blockers": [
+      "The candidate has not been installed and re-attested on either radio",
+      "Fresh single-refill signal-integrity qualification has not run",
+      "Fresh synchronized nine-cell qualification has not run"
+    ]
+  }
+}

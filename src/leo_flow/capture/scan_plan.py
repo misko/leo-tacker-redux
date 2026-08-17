@@ -43,6 +43,10 @@ EDGE_ORDERS = {
     ),
 }
 SCAN_EXPERIMENT_SCHEMA = "org.leo-flow.starlink-edge-scan/v1"
+CLIPPED_PILOT_NOTE = (
+    "the sampled band does not contain the full edge-pilot band; do not pool "
+    "this arm with arms whose pilot band fits"
+)
 
 
 def _checked_u32(value: int, name: str) -> int:
@@ -117,6 +121,7 @@ class StarlinkEdgeScanSpec:
     edge_order_draw_u32: int | None = None
     arm_name: str = "fixed"
     hardware_block_samples: int | None = None
+    allow_clipped_pilot: bool = False
 
     def __post_init__(self) -> None:
         if self.edge_order not in EDGE_ORDERS:
@@ -131,10 +136,13 @@ class StarlinkEdgeScanSpec:
             or self.sample_count <= 0
         ):
             raise ValueError("scan sample count must be positive")
-        if self.sample_rate_hz < STARLINK_PILOT_BANDWIDTH_HZ:
-            raise ValueError("scan rate does not contain the full edge-pilot band")
-        if self.bandwidth_hz < STARLINK_PILOT_BANDWIDTH_HZ:
-            raise ValueError("scan bandwidth does not contain the full edge-pilot band")
+        if not self.allow_clipped_pilot:
+            if self.sample_rate_hz < STARLINK_PILOT_BANDWIDTH_HZ:
+                raise ValueError("scan rate does not contain the full edge-pilot band")
+            if self.bandwidth_hz < STARLINK_PILOT_BANDWIDTH_HZ:
+                raise ValueError(
+                    "scan bandwidth does not contain the full edge-pilot band"
+                )
         if self.bandwidth_hz > self.sample_rate_hz:
             raise ValueError("scan bandwidth cannot exceed sample rate")
         if self.edge_order_draw_u32 is not None:
@@ -159,6 +167,26 @@ def build_starlink_edge_scan_plan(spec: StarlinkEdgeScanSpec) -> CapturePlan:
 
     limiting_bandwidth_hz = min(spec.sample_rate_hz, spec.bandwidth_hz)
     pilot_guard_hz = (limiting_bandwidth_hz - STARLINK_PILOT_BANDWIDTH_HZ) / 2
+    pilot_band_outside_hz = max(
+        0.0, STARLINK_PILOT_BANDWIDTH_HZ - limiting_bandwidth_hz
+    )
+    pilot_band_clipped = pilot_band_outside_hz > 0
+    pilot_tags: dict[str, object] = {
+        "pilot_bandwidth_hz": STARLINK_PILOT_BANDWIDTH_HZ,
+        "pilot_guard_hz": pilot_guard_hz,
+        "pilot_band_fits": not pilot_band_clipped,
+    }
+    if pilot_band_clipped:
+        pilot_tags.update(
+            {
+                "pilot_band_clipped": True,
+                "pilot_band_outside_hz": pilot_band_outside_hz,
+                "pilot_band_outside_fraction": (
+                    pilot_band_outside_hz / STARLINK_PILOT_BANDWIDTH_HZ
+                ),
+                "pilot_band_note": CLIPPED_PILOT_NOTE,
+            }
+        )
     segments = tuple(
         SegmentRequest.create(
             segment_id=SegmentId(f"seg_{spec.plan_id}_{index:02d}_ch{channel}_{edge}"),
@@ -179,9 +207,7 @@ def build_starlink_edge_scan_plan(spec: StarlinkEdgeScanSpec) -> CapturePlan:
                 "lnb_lo_hz": spec.lnb_lo_hz,
                 "rf_edge_pilot_center_hz": starlink_edge_pilot_rf_hz(channel, edge),
                 "arm_name": spec.arm_name,
-                "pilot_bandwidth_hz": STARLINK_PILOT_BANDWIDTH_HZ,
-                "pilot_guard_hz": pilot_guard_hz,
-                "pilot_band_fits": True,
+                **pilot_tags,
             },
         )
         for index, (channel, edge) in enumerate(EDGE_ORDERS[spec.edge_order])
@@ -195,6 +221,8 @@ def build_starlink_edge_scan_plan(spec: StarlinkEdgeScanSpec) -> CapturePlan:
         "analysis_on_capture_host": False,
         "automatic_dwell": False,
     }
+    if pilot_band_clipped:
+        experiment_tags.update(pilot_tags)
     if spec.edge_order_draw_u32 is not None:
         experiment_tags["edge_order_draw_u32"] = spec.edge_order_draw_u32
         experiment_tags["edge_order_assignment"] = "draw modulo 2"

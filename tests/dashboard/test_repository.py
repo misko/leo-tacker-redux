@@ -1,16 +1,28 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from leo_flow.contracts.capture import ActivityKind
-from leo_flow.contracts.core import RadioId, RecordingId, UtcNs
+from leo_flow.contracts.core import CaptureBatchId, RadioId, RecordingId, UtcNs
 from leo_flow.contracts.dashboard import TimeRangeQuery
+from leo_flow.contracts.dashboard_batch import CaptureBatchTimeRangeQuery
 from leo_flow.dashboard.repository import (
     DashboardNotFound,
     InMemoryDashboardRepository,
+    InvalidCursor,
 )
 
-from ._fixtures import RADIO_A, RADIO_B, recording, repository
+from ._fixtures import (
+    BATCH_EXCESSIVE_SKEW,
+    BATCH_READY,
+    RADIO_A,
+    RADIO_B,
+    capture_batches,
+    recording,
+    repository,
+)
 
 
 def query(start: int = 100, stop: int = 140, *radios: RadioId) -> TimeRangeQuery:
@@ -149,3 +161,41 @@ def test_projection_sequence_collision_fails_instead_of_choosing_by_input_order(
     repo = InMemoryDashboardRepository(recordings=rows)
     with pytest.raises(RuntimeError, match="collision"):
         repo.recent_recordings(query())
+
+
+def test_recent_capture_batches_are_snapshot_stable_and_exactly_addressable() -> None:
+    rows = capture_batches()
+    repo = InMemoryDashboardRepository(capture_batches=rows, page_size=2)
+    interval = CaptureBatchTimeRangeQuery(UtcNs(0), UtcNs(500))
+    first = repo.recent_capture_batches(interval)
+    assert [item.batch_id for item in first.items] == [
+        BATCH_READY,
+        CaptureBatchId("cbatch_pending"),
+    ]
+    rows.append(
+        type(rows[0])(
+            replace(rows[0].view, batch_id=CaptureBatchId("cbatch_new")),
+            5,
+        )
+    )
+    second = repo.recent_capture_batches(interval, first.next_cursor)
+    assert [item.batch_id for item in second.items] == [
+        CaptureBatchId("cbatch_peer_failed"),
+        BATCH_EXCESSIVE_SKEW,
+    ]
+    assert repo.capture_batch(BATCH_READY) == first.items[0]
+    with pytest.raises(DashboardNotFound, match="cbatch_absent"):
+        repo.capture_batch(CaptureBatchId("cbatch_absent"))
+
+
+def test_capture_batch_cursor_is_bound_to_its_time_range_and_endpoint() -> None:
+    repo = repository(page_size=1)
+    interval = CaptureBatchTimeRangeQuery(UtcNs(0), UtcNs(500))
+    cursor = repo.recent_capture_batches(interval).next_cursor
+    assert cursor is not None
+    with pytest.raises(InvalidCursor):
+        repo.recent_capture_batches(
+            CaptureBatchTimeRangeQuery(UtcNs(0), UtcNs(401)), cursor
+        )
+    with pytest.raises(InvalidCursor):
+        repo.recent_recordings(query(), cursor)

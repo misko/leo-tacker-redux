@@ -1,0 +1,97 @@
+diff --git a/spf/direct_radio/iio_metadata.py b/spf/direct_radio/iio_metadata.py
+index 9a103116..4a4ce7cd 100644
+--- a/spf/direct_radio/iio_metadata.py
++++ b/spf/direct_radio/iio_metadata.py
+@@ -21,13 +21,14 @@ from spf.direct_radio.usb_protocol import (
+     TimeAnchorV1,
+ )
+ 
+-
+ ADC_SAMPLE_COUNTER_LOW_REG = 0x800000B8
+ DEFAULT_METADATA_CAPACITY = 64 * 1024
+ INITIAL_TIME_ANCHOR_COUNT = 8
+ MAX_TIME_ANCHORS = 32
+ TIME_ANCHOR_WINDOW_NS = 10_000_000_000
+ MAX_STARTUP_FRAME_DISCARDS = 64
++_METADATA_OPEN_MAX_ATTEMPTS = 3
++_METADATA_OPEN_RETRY_DELAY_SECONDS = 0.05
+ 
+ 
+ class IioMetadataRx:
+@@ -77,28 +78,49 @@ class IioMetadataRx:
+                 "install the patched SPF libiio 0.25 or 0.26 binding"
+             )
+ 
+-        # Let pyadi configure precisely the channels it would use for rx().
+-        # Its v0.x compatibility layer also creates an ordinary buffer, which
+-        # must be closed before the metadata owner is opened.
+-        self._sdr.rx_destroy_buffer()
+-        self._sdr._rx_init_channels()
+-        ordinary_buffer = self._sdr._rxbuf
+-        self._sdr._rxbuf = None
+-        del ordinary_buffer
+-        gc.collect()
++        # Exercise the ordinary dual-channel path once before opting in to
++        # metadata RX.  Pluto+ shares this DMA path, so merely creating and
++        # destroying an unfilled ordinary buffer does not perform the required
++        # receive transition.
++        self._prime_ordinary_rx()
+ 
+         try:
+-            self._buffer = metadata_buffer_type(
+-                self._sdr._rxadc,
+-                self._samples_per_channel,
+-                self._metadata_capacity,
+-            )
++            self._buffer = self._open_metadata_buffer(metadata_buffer_type)
+             self._sdr._rxbuf = self._buffer
+             self._refresh_time_anchors(initial=True)
+         except BaseException:
+             self.close()
+             raise
+ 
++    def _prime_ordinary_rx(self) -> None:
++        self._sdr.rx_destroy_buffer()
++        try:
++            signal = np.asarray(self._sdr.rx())
++            expected_shape = (2, self._samples_per_channel)
++            if signal.shape != expected_shape or not np.iscomplexobj(signal):
++                raise RuntimeError(
++                    "ordinary IIO prime did not return dual-channel complex IQ"
++                )
++        finally:
++            ordinary_buffer = getattr(self._sdr, "_rxbuf", None)
++            self._sdr.rx_destroy_buffer()
++            del ordinary_buffer
++            gc.collect()
++
++    def _open_metadata_buffer(self, metadata_buffer_type):
++        for attempt in range(1, _METADATA_OPEN_MAX_ATTEMPTS + 1):
++            try:
++                return metadata_buffer_type(
++                    self._sdr._rxadc,
++                    self._samples_per_channel,
++                    self._metadata_capacity,
++                )
++            except OSError as error:
++                if error.errno != errno.EBUSY or attempt == _METADATA_OPEN_MAX_ATTEMPTS:
++                    raise
++                time.sleep(_METADATA_OPEN_RETRY_DELAY_SECONDS)
++        raise RuntimeError("metadata IIO open attempts were not exhausted")
++
+     def close(self) -> None:
+         buffer = self._buffer
+         self._buffer = None
+@@ -154,9 +176,9 @@ class IioMetadataRx:
+         if self._next_anchor_request_id == 0:
+             self._next_anchor_request_id = 1
+         host_before_ns = time.monotonic_ns()
+-        sample_counter = int(
+-            self._sdr._rxadc.reg_read(ADC_SAMPLE_COUNTER_LOW_REG)
+-        ) & 0xFFFFFFFF
++        sample_counter = (
++            int(self._sdr._rxadc.reg_read(ADC_SAMPLE_COUNTER_LOW_REG)) & 0xFFFFFFFF
++        )
+         host_after_ns = time.monotonic_ns()
+         anchor = TimeAnchorV1(
+             flags=(

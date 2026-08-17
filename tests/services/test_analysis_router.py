@@ -58,21 +58,22 @@ def test_router_claims_and_dispatches_each_implemented_type_exactly_once() -> No
         (JobType.EPHEMERIS_LINK_BACKFILL, "d_backfill"),
     ):
         _enqueue(jobs, job_type, suffix)
+    executors = {
+        JobType.RECORDING_ANALYSIS: recording,
+        JobType.MODEL_ANALYSIS: model,
+        JobType.EPHEMERIS_RETRIEVAL: ephemeris,
+        JobType.EPHEMERIS_LINK_BACKFILL: backfill,
+    }
     router = TypedAnalysisRouterCycle(
         jobs,
-        executors={
-            JobType.RECORDING_ANALYSIS: recording,
-            JobType.MODEL_ANALYSIS: model,
-            JobType.EPHEMERIS_RETRIEVAL: ephemeris,
-            JobType.EPHEMERIS_LINK_BACKFILL: backfill,
-        },
+        executors=executors,
         worker_id="router",
         lease_ttl_s=10,
     )
 
     assert [router.process_one_job() for _ in range(4)] == [True] * 4
     assert not router.process_one_job()
-    assert router.claimed_types == tuple(sorted(JobType, key=lambda kind: kind.value))
+    assert router.claimed_types == tuple(sorted(executors, key=lambda kind: kind.value))
     assert all(
         len(executor.calls) == 1 for executor in (recording, model, ephemeris, backfill)
     )

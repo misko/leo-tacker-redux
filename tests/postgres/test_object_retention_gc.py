@@ -83,6 +83,18 @@ def test_reference_inventory_matches_every_current_object_blob_fk(
             "detector_evaluation_report",
             ("report_digest_algorithm", "report_digest_value"),
         ),
+        (
+            "recording_waterfall",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_starlink_candidate",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_starlink_detector_suite",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
         ("object_retention_assignment", ("digest_algorithm", "digest_value")),
     }
     with psycopg.connect(postgres_dsn) as connection:

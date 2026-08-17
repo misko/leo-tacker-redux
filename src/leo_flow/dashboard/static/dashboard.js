@@ -2,9 +2,18 @@
 
 const HOUR_NS = 3_600_000_000_000n;
 const STALE_AFTER_MS = 120_000;
+// UI-only V1 display aliases. Stable radio IDs remain the durable identity.
+const RADIO_DISPLAY_ALIASES_V1 = Object.freeze({
+  radio_pluto_5d4d: Object.freeze({ short: ".20", address: "192.168.1.20" }),
+  radio_pluto_19f2: Object.freeze({ short: ".21", address: "192.168.1.21" }),
+});
 let currentBounds = null;
 let lastSuccessfulRefresh = null;
 let detailGeneration = 0;
+let captureBatchCursor = null;
+let loadedCaptureBatches = [];
+let currentCaptureBounds = null;
+let captureBatchGeneration = 0;
 
 const byId = (id) => document.getElementById(id);
 
@@ -66,7 +75,9 @@ async function fetchJson(path) {
   }
   if (!response.ok) {
     const message = body?.error?.message || `Dashboard request failed (${response.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.dashboardStatus = response.status;
+    throw error;
   }
   return body;
 }
@@ -86,9 +97,297 @@ function describeBounds(bounds) {
 }
 
 function badgeTone(state) {
-  if (state === "complete") return "ok";
-  if (state === "failed") return "error";
+  if (["complete", "succeeded", "eligible"].includes(state)) return "ok";
+  if (["failed", "ineligible"].includes(state)) return "error";
   return "warning";
+}
+
+function formatNanoseconds(value) {
+  return value === null || value === undefined ? "Not available" : `${value} ns`;
+}
+
+function captureModeText(item) {
+  if (item.mode === "independent") {
+    return "Independent — no synchronization claim";
+  }
+  return "Coordinated — measured software coordination; not hardware synchronization";
+}
+
+function eligibilityText(value) {
+  if (value === "eligible") return "Paired analysis eligible";
+  if (value === "ineligible") return "Paired analysis ineligible";
+  return "Paired analysis pending";
+}
+
+function captureRadioFilter() {
+  return byId("capture-radio-filter").value.trim().toLowerCase();
+}
+
+function radioDisplayName(radioId) {
+  const stableId = String(radioId);
+  const alias = RADIO_DISPLAY_ALIASES_V1[stableId];
+  return alias ? `${alias.short} · ${stableId}` : stableId;
+}
+
+function radioMatchesFilter(radioId, radioFilter) {
+  if (radioFilter === "") return true;
+  const stableId = String(radioId).toLowerCase();
+  const alias = RADIO_DISPLAY_ALIASES_V1[stableId];
+  return [stableId, alias?.short, alias?.address]
+    .filter((value) => value !== undefined)
+    .some((value) => value.includes(radioFilter));
+}
+
+function captureRows() {
+  const radioFilter = captureRadioFilter();
+  return loadedCaptureBatches.flatMap((batch) =>
+    (batch.attempts || [])
+      .filter((attempt) => radioMatchesFilter(attempt.radio_id, radioFilter))
+      .map((attempt) => ({ batch, attempt })),
+  );
+}
+
+function refreshCaptureRadioOptions() {
+  const options = byId("capture-radio-options");
+  const radios = new Set(
+    loadedCaptureBatches.flatMap((batch) =>
+      (batch.attempts || []).map((attempt) => String(attempt.radio_id)),
+    ),
+  );
+  options.replaceChildren();
+  for (const radio of [...radios].sort((left, right) => left.localeCompare(right))) {
+    const option = document.createElement("option");
+    const alias = RADIO_DISPLAY_ALIASES_V1[radio];
+    option.value = alias?.short || radio;
+    option.label = alias ? `${alias.address} · ${radio}` : radio;
+    options.append(option);
+  }
+}
+
+function appendBatchContext(cell, batch, attempt) {
+  const disclosure = document.createElement("details");
+  disclosure.className = "batch-context";
+  const summary = appendText(disclosure, "summary", batch.batch_id);
+  summary.setAttribute("aria-label", `Show context for batch ${batch.batch_id}`);
+  appendText(disclosure, "p", captureModeText(batch));
+  appendText(disclosure, "p", eligibilityText(batch.paired_analysis_eligibility));
+  appendText(
+    disclosure,
+    "p",
+    `Attempt ${attempt.attempt_id}; plan ${attempt.plan_id}; requested ${formatUtcNs(attempt.requested_start_utc_ns)}.`,
+  );
+  appendText(
+    disclosure,
+    "p",
+    `Requested skew ${formatNanoseconds(batch.requested_start_skew_ns)}; observed skew ${formatNanoseconds(batch.observed_start_skew_ns)}; limit ${formatNanoseconds(batch.maximum_observed_start_skew_ns)}.`,
+  );
+  const lifecycle = document.createElement("details");
+  lifecycle.className = "radio-lifecycle-context";
+  const lifecycleSummary = appendText(lifecycle, "summary", "Radio lifecycle");
+  lifecycleSummary.setAttribute(
+    "aria-label",
+    `Show radio lifecycle evidence for ${attempt.attempt_id}`,
+  );
+  const state = appendText(lifecycle, "p", "Open to load bounded lifecycle evidence.");
+  lifecycle.addEventListener("toggle", async () => {
+    if (!lifecycle.open || lifecycle.dataset.loaded === "true") return;
+    state.textContent = "Loading radio lifecycle evidence…";
+    try {
+      const payload = await fetchJson(
+        `/api/v5/capture-attempts/${encodeURIComponent(attempt.attempt_id)}/radio-lifecycle`,
+      );
+      lifecycle.dataset.loaded = "true";
+      state.textContent = payload.reason === null
+        ? "No lifecycle change observed."
+        : `${String(payload.reason).replaceAll("_", " ")} · ${payload.confidence} confidence.`;
+      const facts = document.createElement("dl");
+      facts.className = "facts compact-facts";
+      replaceFacts(facts, [
+        ["Preflight boot", payload.preflight_boot_id || "Unavailable"],
+        ["Terminal boot", payload.terminal_boot_id || "Unavailable"],
+        ["Evidence", (payload.evidence_codes || []).join(", ") || "No change"],
+        ["Terminal observer", payload.observer_available_at_terminal ? "Available" : "Unavailable"],
+      ]);
+      lifecycle.append(facts);
+    } catch (error) {
+      state.textContent = error?.status === 404
+        ? "Lifecycle evidence was not recorded for this capture."
+        : `Lifecycle evidence unavailable: ${safeError(error)}`;
+    }
+  });
+  disclosure.append(lifecycle);
+  cell.append(disclosure);
+}
+
+function makeCaptureRowNavigable(row, detailLink, attempt) {
+  row.classList.add("capture-row-link");
+  row.tabIndex = 0;
+  row.title = `View capture details for ${attempt.recording_id}`;
+  const navigate = () => detailLink.click();
+  row.addEventListener("click", (event) => {
+    if (event.target.closest("a, button, input, select, textarea, summary")) return;
+    navigate();
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.target !== row || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    navigate();
+  });
+}
+
+function appendBatchAttemptRow(body, batch, attempt) {
+  const row = document.createElement("tr");
+  row.dataset.batchId = batch.batch_id;
+  row.dataset.attemptId = attempt.attempt_id;
+  row.dataset.radioId = attempt.radio_id;
+
+  const startedCell = document.createElement("th");
+  startedCell.scope = "row";
+  const observed = attempt.observed_start_utc_ns !== null;
+  appendText(
+    startedCell,
+    "span",
+    formatUtcNs(observed ? attempt.observed_start_utc_ns : attempt.requested_start_utc_ns),
+  );
+  appendText(startedCell, "span", observed ? "Observed first sample" : "Requested start", "cell-note");
+  row.append(startedCell);
+  const radioCell = appendText(row, "td", radioDisplayName(attempt.radio_id));
+  radioCell.title = RADIO_DISPLAY_ALIASES_V1[attempt.radio_id]?.address || "";
+
+  const captureCell = document.createElement("td");
+  const captureBadge = appendText(captureCell, "span", attempt.capture_state, "status-badge");
+  captureBadge.dataset.tone = badgeTone(attempt.capture_state);
+  if (attempt.failure_reason) {
+    appendText(captureCell, "span", `Failure: ${attempt.failure_reason}`, "failure-reason");
+  }
+  row.append(captureCell);
+
+  const recordingCell = document.createElement("td");
+  if (attempt.recording_id) {
+    appendText(recordingCell, "span", attempt.recording_id, "recording-identity");
+  } else {
+    appendText(
+      recordingCell,
+      "span",
+      attempt.capture_state === "failed" ? "None — capture failed" : "Not published",
+    );
+  }
+  row.append(recordingCell);
+
+  const analysisCell = document.createElement("td");
+  if (attempt.analysis_state === "unavailable") {
+    appendText(analysisCell, "span", "Not available");
+  } else {
+    const analysisBadge = appendText(
+      analysisCell,
+      "span",
+      attempt.analysis_state,
+      "status-badge",
+    );
+    analysisBadge.dataset.tone = badgeTone(attempt.analysis_state);
+    appendText(
+      analysisCell,
+      "span",
+      attempt.analysis_result_available ? "Results ready" : "No result yet",
+      "cell-note",
+    );
+  }
+  row.append(analysisCell);
+
+  const detailsCell = document.createElement("td");
+  if (attempt.recording_id) {
+    const detailLink = appendText(detailsCell, "a", "View capture", "capture-detail-link");
+    detailLink.href = `/recordings/${encodeURIComponent(attempt.recording_id)}`;
+    detailLink.setAttribute(
+      "aria-label",
+      `View capture details, waterfall, and analysis for ${attempt.recording_id}`,
+    );
+    makeCaptureRowNavigable(row, detailLink, attempt);
+  } else {
+    appendText(detailsCell, "span", "No capture details", "cell-note");
+  }
+  row.append(detailsCell);
+
+  const contextCell = document.createElement("td");
+  appendBatchContext(contextCell, batch, attempt);
+  row.append(contextCell);
+  body.append(row);
+}
+
+function captureBatchProgress(visibleCount) {
+  const attempts = loadedCaptureBatches.flatMap((item) => item.attempts || []);
+  const radioFilter = byId("capture-radio-filter").value.trim();
+  const filtered = radioFilter ? ` matching radio “${radioFilter}”` : "";
+  const paging = captureBatchCursor
+    ? "More batches are available."
+    : "All matching batches are loaded.";
+  return `${visibleCount} capture${visibleCount === 1 ? "" : "s"}${filtered}; ${attempts.length} capture${attempts.length === 1 ? "" : "s"} loaded from ${loadedCaptureBatches.length} batch${loadedCaptureBatches.length === 1 ? "" : "es"}. ${paging}`;
+}
+
+function renderCaptureRows() {
+  const body = byId("capture-attempts-body");
+  body.replaceChildren();
+  const rows = captureRows();
+  for (const { batch, attempt } of rows) appendBatchAttemptRow(body, batch, attempt);
+  const loadMore = byId("capture-batches-more");
+  loadMore.hidden = captureBatchCursor === null || captureRadioFilter() !== "";
+  if (loadedCaptureBatches.length === 0) {
+    setState("capture-batches-state", "empty", "No captures were requested in this time range.");
+  } else if (rows.length === 0) {
+    setState("capture-batches-state", "empty", "No captures match this radio filter in the selected time range.");
+  } else {
+    setState("capture-batches-state", "ready", captureBatchProgress(rows.length));
+  }
+}
+
+async function loadCaptureBatches(bounds, cursor = null, drainForRadio = false) {
+  const append = cursor !== null;
+  const generation = append ? captureBatchGeneration : ++captureBatchGeneration;
+  setState(
+    "capture-batches-state",
+    "loading",
+    drainForRadio ? "Searching all stable pages for this radio…" : append ? "Loading more captures…" : "Loading captures…",
+  );
+  const loadMore = byId("capture-batches-more");
+  loadMore.disabled = true;
+  if (!append) {
+    byId("capture-attempts-body").replaceChildren();
+    captureBatchCursor = null;
+    loadedCaptureBatches = [];
+    currentCaptureBounds = bounds;
+    byId("capture-window-label").textContent = describeBounds(bounds);
+  }
+  try {
+    let nextCursor = cursor;
+    do {
+      const cursorQuery = nextCursor === null ? "" : `&cursor=${encodeURIComponent(nextCursor)}`;
+      const payload = await fetchJson(`/api/v2/capture-batches?${timeQuery(bounds)}${cursorQuery}`);
+      if (generation !== captureBatchGeneration) return;
+      loadedCaptureBatches.push(...(payload.items || []));
+      captureBatchCursor = payload.next_cursor || null;
+      refreshCaptureRadioOptions();
+      renderCaptureRows();
+      nextCursor = captureBatchCursor;
+    } while (drainForRadio && nextCursor !== null);
+    loadMore.disabled = false;
+    renderCaptureRows();
+  } catch (error) {
+    if (generation !== captureBatchGeneration) return;
+    loadMore.disabled = false;
+    if (error?.dashboardStatus === 404) {
+      loadMore.hidden = true;
+      setState("capture-batches-state", "missing", "Capture-batch projection is not enabled on this dashboard service.");
+      return;
+    }
+    setState("capture-batches-state", "error", `Capture batches unavailable: ${safeError(error)}`);
+    throw error;
+  }
+}
+
+function selectedCaptureBounds() {
+  const hours = BigInt(byId("capture-window-hours").value);
+  const stop = BigInt(Date.now()) * 1_000_000n;
+  return { start: stop - hours * HOUR_NS, stop };
 }
 
 async function loadActivity(bounds) {
@@ -140,6 +439,9 @@ async function loadRecordings(bounds) {
       const button = appendText(identityCell, "button", item.recording_id, "recording-link");
       button.type = "button";
       button.addEventListener("click", () => loadRecordingDetail(item.recording_id));
+      const detailLink = appendText(identityCell, "a", "Full capture", "full-capture-link");
+      detailLink.href = `/recordings/${encodeURIComponent(item.recording_id)}`;
+      detailLink.setAttribute("aria-label", `Open full capture page for ${item.recording_id}`);
       row.append(identityCell);
       appendText(row, "td", item.radio_id);
       appendText(row, "td", formatUtcNs(item.started_utc_ns));
@@ -341,12 +643,14 @@ async function loadModel(identity) {
 
 async function refreshDashboard() {
   currentBounds = selectedBounds();
+  byId("capture-window-hours").value = byId("window-hours").value;
   byId("window-label").textContent = describeBounds(currentBounds);
   const appStatus = byId("app-status");
   appStatus.dataset.state = "loading";
   byId("app-status-text").textContent = "Refreshing catalog views…";
   const results = await Promise.allSettled([
     loadActivity(currentBounds),
+    loadCaptureBatches(currentBounds, null, captureRadioFilter() !== ""),
     loadRecordings(currentBounds),
     loadTracks(currentBounds),
     loadStorage(),
@@ -372,6 +676,19 @@ async function refreshDashboard() {
 byId("window-form").addEventListener("submit", (event) => {
   event.preventDefault();
   refreshDashboard();
+});
+byId("capture-batches-more").addEventListener("click", () => {
+  if (currentCaptureBounds === null || captureBatchCursor === null) return;
+  loadCaptureBatches(currentCaptureBounds, captureBatchCursor).catch(() => {});
+});
+byId("capture-filters").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const bounds = selectedCaptureBounds();
+  loadCaptureBatches(bounds, null, captureRadioFilter() !== "").catch(() => {});
+});
+byId("capture-filters-clear").addEventListener("click", () => {
+  byId("capture-radio-filter").value = "";
+  renderCaptureRows();
 });
 byId("evaluation-form").addEventListener("submit", (event) => {
   event.preventDefault();

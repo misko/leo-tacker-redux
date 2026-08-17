@@ -51,7 +51,7 @@
         "database_owner": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
         "server_major": {"const": 16},
         "system_identifier": {"type": "string", "pattern": "^[0-9]{10,20}$"},
-        "migration_head": {"const": "0019_dwell_request_ingress.sql"},
+        "migration_head": {"const": "0032_campaign_online_analysis.sql"},
         "login_names": {
           "type": "object",
           "additionalProperties": false,

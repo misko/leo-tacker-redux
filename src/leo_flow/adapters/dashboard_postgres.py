@@ -11,7 +11,14 @@ from typing import Any, Final, cast
 import psycopg
 
 from leo_flow.contracts.capture import ActivityKind
-from leo_flow.contracts.core import ModelSnapshotId, RadioId, RecordingId, UtcNs
+from leo_flow.contracts.core import (
+    CaptureAttemptId,
+    CaptureBatchId,
+    ModelSnapshotId,
+    RadioId,
+    RecordingId,
+    UtcNs,
+)
 from leo_flow.contracts.dashboard import (
     ActivityCount,
     ActivitySummary,
@@ -24,11 +31,23 @@ from leo_flow.contracts.dashboard import (
     TimeRangeQuery,
     TrackView,
 )
+from leo_flow.contracts.dashboard_batch import (
+    CaptureBatchDashboardView,
+    CaptureBatchTimeRangeQuery,
+)
+from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
+from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
+from leo_flow.contracts.radio_lifecycle import CaptureAttemptLifecycleDashboardViewV0_1
+from leo_flow.contracts.starlink_pipeline import RecordingStarlinkCandidateViewV0_1
+from leo_flow.contracts.starlink_suite_pipeline import RecordingStarlinkSuiteViewV0_2
 from leo_flow.dashboard import DashboardNotFound, InvalidCursor
 
 from . import dashboard_postgres_sql as sql
+from .dashboard_batch_postgres import PostgresCaptureBatchDashboardRepository
+from .dashboard_recording_postgres import PostgresRecordingDashboardRepository
 from .evaluation_dashboard_postgres import PostgresEvaluationDashboard
+from .radio_lifecycle_postgres import PostgresRadioLifecycleRepositoryV0_1
 
 _CURSOR_VERSION: Final = 1
 _MAX_PAGE_SIZE: Final = 200
@@ -44,6 +63,16 @@ class PostgresDashboardRepository:
         self._connect = connect
         self._page_size = page_size
         self._evaluations = PostgresEvaluationDashboard(connect)
+        self._capture_batches = PostgresCaptureBatchDashboardRepository(
+            connect, page_size=page_size
+        )
+        self._recording_pages = PostgresRecordingDashboardRepository(connect)
+        self._radio_lifecycle = PostgresRadioLifecycleRepositoryV0_1(connect)
+
+    def capture_attempt_radio_lifecycle(
+        self, attempt_id: CaptureAttemptId
+    ) -> CaptureAttemptLifecycleDashboardViewV0_1:
+        return self._radio_lifecycle.capture_attempt_radio_lifecycle(attempt_id)
 
     def recent_recordings(
         self, query: TimeRangeQuery, cursor: str | None = None
@@ -104,6 +133,26 @@ class PostgresDashboardRepository:
             _int(row["segment_count"], "segment_count"),
             _bool(row["recording_object_available"], "recording_object_available"),
         )
+
+    def recording_capture_detail(
+        self, recording_id: RecordingId
+    ) -> RecordingCaptureDetailViewV0_1:
+        return self._recording_pages.recording_capture_detail(recording_id)
+
+    def recording_waterfall(
+        self, recording_id: RecordingId
+    ) -> RecordingWaterfallViewV0_1:
+        return self._recording_pages.recording_waterfall(recording_id)
+
+    def recording_starlink_decision(
+        self, recording_id: RecordingId
+    ) -> RecordingStarlinkCandidateViewV0_1:
+        return self._recording_pages.recording_starlink_decision(recording_id)
+
+    def recording_starlink_suite(
+        self, recording_id: RecordingId
+    ) -> RecordingStarlinkSuiteViewV0_2:
+        return self._recording_pages.recording_starlink_suite(recording_id)
 
     def recording_features(
         self, recording_id: RecordingId, selector: str, cursor: str | None = None
@@ -210,6 +259,14 @@ class PostgresDashboardRepository:
             _optional_int(row["total_bytes"], "total_bytes"),
             _optional_int(row["free_bytes"], "free_bytes"),
         )
+
+    def recent_capture_batches(
+        self, query: CaptureBatchTimeRangeQuery, cursor: str | None = None
+    ) -> Page[CaptureBatchDashboardView]:
+        return self._capture_batches.recent_capture_batches(query, cursor)
+
+    def capture_batch(self, batch_id: CaptureBatchId) -> CaptureBatchDashboardView:
+        return self._capture_batches.capture_batch(batch_id)
 
     @contextmanager
     def _reader(self) -> Iterator[psycopg.Connection[dict[str, object]]]:

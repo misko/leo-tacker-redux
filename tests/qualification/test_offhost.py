@@ -370,6 +370,18 @@ def test_expected_migration_receipts_bind_names_to_exact_bytes(tmp_path) -> None
     assert first != second
 
 
+def test_analysis_role_requires_campaign_scoped_claim_capabilities() -> None:
+    required = {
+        "claim_campaign_analysis_job(text[],text,text,interval)",
+        "claim_campaign_feature_projection(text[],text,interval)",
+        "claim_campaign_waterfall_projection(text[],text,interval)",
+        "claim_campaign_starlink_suite_projection(text[],text,interval)",
+        "read_campaign_analysis_lane_status(text,text[])",
+    }
+
+    assert required <= set(offhost._REQUIRED_FUNCTION_PRIVILEGES["leo_analysis"])
+
+
 def test_database_inspection_sets_read_only_and_proves_receipts_and_role(
     tmp_path, monkeypatch
 ) -> None:
@@ -465,7 +477,7 @@ def test_database_inspection_sets_read_only_and_proves_receipts_and_role(
                     for name, digest in receipts.items()
                 ]
                 if self.extra_migration:
-                    rows.append({"name": "0020_extra.sql", "sha256": "f" * 64})
+                    rows.append({"name": "0022_extra.sql", "sha256": "f" * 64})
                 return Result(rows)
             if "has_table_privilege" in normalized:
                 assert params is not None

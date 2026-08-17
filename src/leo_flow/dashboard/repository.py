@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Final, cast
 
 from leo_flow.contracts.capture import ActivityKind
-from leo_flow.contracts.core import RadioId, RecordingId, UtcNs
+from leo_flow.contracts.core import CaptureBatchId, RadioId, RecordingId, UtcNs
 from leo_flow.contracts.dashboard import (
     ActivityCount,
     ActivitySummary,
@@ -23,6 +23,12 @@ from leo_flow.contracts.dashboard import (
     TimeRangeQuery,
     TrackView,
 )
+from leo_flow.contracts.dashboard_batch import (
+    CaptureBatchDashboardView,
+    CaptureBatchTimeRangeQuery,
+)
+from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
+from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 
 _CURSOR_VERSION: Final = 1
@@ -95,6 +101,36 @@ class TrackProjection:
             raise ValueError("projection sequence must be non-negative")
 
 
+@dataclass(frozen=True)
+class CaptureBatchProjection:
+    view: CaptureBatchDashboardView
+    projection_sequence: int
+
+    def __post_init__(self) -> None:
+        if self.projection_sequence < 0:
+            raise ValueError("projection sequence must be non-negative")
+
+
+@dataclass(frozen=True)
+class RecordingCaptureDetailProjection:
+    view: RecordingCaptureDetailViewV0_1
+    projection_sequence: int
+
+    def __post_init__(self) -> None:
+        if self.projection_sequence < 0:
+            raise ValueError("projection sequence must be non-negative")
+
+
+@dataclass(frozen=True)
+class RecordingWaterfallProjection:
+    view: RecordingWaterfallViewV0_1
+    projection_sequence: int
+
+    def __post_init__(self) -> None:
+        if self.projection_sequence < 0:
+            raise ValueError("projection sequence must be non-negative")
+
+
 class InMemoryDashboardRepository:
     """DTO-only projection reader.
 
@@ -113,6 +149,9 @@ class InMemoryDashboardRepository:
         models: Sequence[ModelProjection] = (),
         evaluations: Sequence[DetectorEvaluationView] = (),
         tracks: Sequence[TrackProjection] = (),
+        capture_batches: Sequence[CaptureBatchProjection] = (),
+        recording_capture_details: Sequence[RecordingCaptureDetailProjection] = (),
+        recording_waterfalls: Sequence[RecordingWaterfallProjection] = (),
         storage_health: StorageHealth = _UNAVAILABLE_STORAGE,
         page_size: int = 50,
     ) -> None:
@@ -124,6 +163,9 @@ class InMemoryDashboardRepository:
         self._models = models
         self._evaluations = evaluations
         self._tracks = tracks
+        self._capture_batches = capture_batches
+        self._recording_capture_details = recording_capture_details
+        self._recording_waterfalls = recording_waterfalls
         self._storage_health = storage_health
         self._page_size = page_size
 
@@ -187,6 +229,34 @@ class InMemoryDashboardRepository:
         return RecordingDetail(
             row.summary, row.segment_count, row.recording_object_available
         )
+
+    def recording_capture_detail(
+        self, recording_id: RecordingId
+    ) -> RecordingCaptureDetailViewV0_1:
+        matches = [
+            row
+            for row in self._recording_capture_details
+            if row.view.recording_id == recording_id
+        ]
+        if not matches:
+            raise DashboardNotFound(
+                f"capture detail for recording {recording_id} was not found"
+            )
+        return max(matches, key=lambda item: item.projection_sequence).view
+
+    def recording_waterfall(
+        self, recording_id: RecordingId
+    ) -> RecordingWaterfallViewV0_1:
+        matches = [
+            row
+            for row in self._recording_waterfalls
+            if row.view.recording_id == recording_id
+        ]
+        if not matches:
+            raise DashboardNotFound(
+                f"waterfall for recording {recording_id} was not found"
+            )
+        return max(matches, key=lambda item: item.projection_sequence).view
 
     def recording_features(
         self, recording_id: RecordingId, selector: str, cursor: str | None = None
@@ -295,6 +365,52 @@ class InMemoryDashboardRepository:
     def storage_health(self) -> StorageHealth:
         return self._storage_health
 
+    def recent_capture_batches(
+        self, query: CaptureBatchTimeRangeQuery, cursor: str | None = None
+    ) -> Page[CaptureBatchDashboardView]:
+        fingerprint = f"{int(query.start_utc_ns)}:{int(query.stop_utc_ns)}"
+        state = _decode_cursor(cursor, "capture_batches", fingerprint)
+        if state is not None and not _pair_cursor_key(state["after"]):
+            raise InvalidCursor("cursor is invalid for this query")
+        anchor = state["anchor"] if state else _max_sequence(self._capture_batches)
+        after = tuple(state["after"]) if state else None
+        snapshot = _latest_by(
+            (row for row in self._capture_batches if row.projection_sequence <= anchor),
+            lambda row: row.view.batch_id,
+        )
+        eligible = [
+            row
+            for row in snapshot
+            if query.start_utc_ns <= row.view.requested_start_utc_ns < query.stop_utc_ns
+        ]
+        eligible.sort(key=_capture_batch_key, reverse=True)
+        if after is not None:
+            eligible = [row for row in eligible if _capture_batch_key(row) < after]
+        selected = eligible[: self._page_size]
+        next_cursor = None
+        if len(eligible) > len(selected):
+            next_cursor = _encode_cursor(
+                "capture_batches",
+                fingerprint,
+                anchor,
+                list(_capture_batch_key(selected[-1])),
+            )
+        return Page(tuple(row.view for row in selected), next_cursor)
+
+    def capture_batch(self, batch_id: CaptureBatchId) -> CaptureBatchDashboardView:
+        matches = [
+            row for row in self._capture_batches if row.view.batch_id == batch_id
+        ]
+        if not matches:
+            raise DashboardNotFound(f"capture batch {batch_id} was not found")
+        latest = max(matches, key=lambda row: row.projection_sequence)
+        if any(
+            row != latest and row.projection_sequence == latest.projection_sequence
+            for row in matches
+        ):
+            raise RuntimeError("projection sequence collision")
+        return latest.view
+
 
 def _in_time_query(started: UtcNs, radio_id: RadioId, query: TimeRangeQuery) -> bool:
     return query.start_utc_ns <= started < query.stop_utc_ns and (
@@ -308,6 +424,10 @@ def _recording_key(row: RecordingProjection) -> tuple[int, str]:
 
 def _track_key(row: TrackProjection) -> tuple[int, str]:
     return int(row.view.started_utc_ns), row.view.track_id
+
+
+def _capture_batch_key(row: CaptureBatchProjection) -> tuple[int, str]:
+    return int(row.view.requested_start_utc_ns), str(row.view.batch_id)
 
 
 def _max_sequence(rows: Sequence[Any]) -> int:

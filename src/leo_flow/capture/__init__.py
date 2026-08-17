@@ -1,5 +1,16 @@
 """Capture acquisition, local durability, and publication orchestration."""
 
+from .dual import (
+    CaptureAttemptControl,
+    CaptureAttemptRunner,
+    CaptureAttemptRunResult,
+    CaptureBatchRecorder,
+    DualCaptureCleanupError,
+    DualCaptureConfigurationError,
+    DualCaptureError,
+    DualCaptureExecutor,
+    DualCaptureStateError,
+)
 from .engine import CaptureIdentity, PlanCaptureEngine
 from .fake_radio import (
     Delay,
@@ -20,12 +31,22 @@ from .scan_plan import (
     edge_order_for_draw,
     starlink_edge_pilot_if_hz,
 )
-from .spool import SpoolEntry, SpoolState, SQLiteLocalSpool
+from .spool import FailedSpoolRecording, SpoolEntry, SpoolState, SQLiteLocalSpool
 
 __all__ = [
+    "CaptureAttemptControl",
+    "CaptureAttemptRunResult",
+    "CaptureAttemptRunner",
+    "CaptureBatchRecorder",
     "CaptureIdentity",
     "Delay",
     "Disconnect",
+    "DualCaptureCleanupError",
+    "DualCaptureConfigurationError",
+    "DualCaptureError",
+    "DualCaptureExecutor",
+    "DualCaptureStateError",
+    "FailedSpoolRecording",
     "FakePairedRadio",
     "FakeV5PairedRadio",
     "MissingRefill",

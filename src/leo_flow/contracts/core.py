@@ -70,6 +70,14 @@ class RecordingId(ContractId):
     prefix = "rec"
 
 
+class CaptureBatchId(ContractId):
+    prefix = "cbatch"
+
+
+class CaptureAttemptId(ContractId):
+    prefix = "cattempt"
+
+
 class StationId(ContractId):
     prefix = "station"
 

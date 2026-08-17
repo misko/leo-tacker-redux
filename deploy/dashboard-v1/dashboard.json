@@ -11,8 +11,8 @@
   },
   "adapters": {
     "query_projection_ref": "dashboard.postgres-projection-v1",
-    "server_ref": "dashboard.stdlib-loopback-http-v1",
-    "bind_host": "127.0.0.1",
+    "server_ref": "dashboard.stdlib-explicit-remote-http-v1",
+    "bind_host": "0.0.0.0",
     "bind_port": 8090
   }
 }

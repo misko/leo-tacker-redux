@@ -53,7 +53,7 @@
       "offhost_config": {
         "source_path": "deploy/offhost-qualification/qualification.example.json",
         "destination_path": "/etc/leo-flow/offhost-qualification.json",
-        "sha256": "sha256:95b3615b2aea4dca1db7762ae9ea07a5fa8da351a4e15c7cd6f63d396fec0da5"
+        "sha256": "sha256:5708984144788d39a75b89bd630b8d026a28d0cd2963a1581309908dd6c502d3"
       }
     },
     "health": {

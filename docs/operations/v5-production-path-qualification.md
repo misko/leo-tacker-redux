@@ -27,7 +27,7 @@ capture spool.
 | Source | Local CAS from the immutable 2026-08-14 qualified scan; both source objects are re-hashed through the public blob-reader port |
 | Output | New or empty absolute directory on an approved local filesystem: `ext2`, `ext3`, `ext4`, `xfs`, `btrfs`, `f2fs`, `bcachefs`, `zfs`, `tmpfs`, or `overlay` |
 | Database | Approved disposable PostgreSQL 16 database and owner on one exact pinned cluster system identifier; every application table must be empty |
-| Migrations | Private reviewed directory whose 19 exact file hashes match all database receipts through `0019_dwell_request_ingress.sql` |
+| Migrations | Private reviewed directory whose 32 exact file hashes match all database receipts through `0032_campaign_online_analysis.sql` |
 | Capture login | Authenticated non-owner, non-privileged login whose complete inherited-role closure is exactly `leo_capture` |
 | Analysis login | Authenticated non-owner, non-privileged login whose complete inherited-role closure is exactly `leo_analysis` |
 | Audit login | Disposable database owner, used only for read-only identity, migration, initial-closure, and final evidence queries |
@@ -126,12 +126,12 @@ paired samples, approximately 2.097 seconds at 2 MHz.
 | Boundary | Evidence |
 |---|---|
 | Database identity | Every DSN observed the approved PostgreSQL 16 database, owner, and cluster system identifier |
-| Schema | Exactly 19 immutable migration names and byte hashes ending in `0019`; no extra public application table |
+| Schema | Exactly 20 immutable migration names and byte hashes ending in `0020`; no extra public application table |
 | Authority | Separate authenticated capture and analysis session users; exact recursive role closure, no ownership, and only the approved `pg_control_system()` direct grant |
 | Ingress | Stable request/job digest and same-content publication replay |
 | Lease | Initial claim, expiry/reclaim generation increment, stale heartbeat rejection, active heartbeat, fenced completion |
 | Capture | Stable plan/recording receipt, exact V5 continuity, re-hashed object pair, stopped health |
-| Catalog | Exact final closure: two recordings, two FeatureSets, six objects, one dwell ingress, three jobs, and zero rows in every other application table |
+| Catalog | Exact final closure: two recordings, two FeatureSets, two durable feature-projection work items, six objects, one dwell ingress, three jobs, and zero rows in every other application table |
 | Analysis | Source and dwell jobs atomically publish exact FeatureSets; both analysis jobs and the dwell job finish `succeeded` with result references |
 | Replay | Fresh queue, supervisor, catalog, blob store, job repository, and worker instances neither recapture nor reanalyze |
 | Cleanup | Capture spool is `cleaned` and contains no remaining recording files |

@@ -22,13 +22,17 @@ class StdlibDashboardServer:
     """Single-request-at-a-time HTTP adapter with a finite idle wait.
 
     The default listener policy permits loopback only. A distinct deployment
-    adapter must make any future authenticated/TLS remote exposure explicit.
+    adapter must make remote exposure explicit; authentication and TLS remain
+    deployment-network responsibilities.
     """
 
-    def __init__(self, *, request_timeout_s: float = 0.25) -> None:
+    def __init__(
+        self, *, request_timeout_s: float = 0.25, allow_remote: bool = False
+    ) -> None:
         if request_timeout_s <= 0:
             raise ValueError("request_timeout_s must be positive")
         self._request_timeout_s = request_timeout_s
+        self._allow_remote = allow_remote
         self._server: HTTPServer | None = None
         self._handler: JsonDashboardHandler | None = None
         self._handled = threading.Event()
@@ -42,7 +46,7 @@ class StdlibDashboardServer:
     def preflight(self, bind_host: str, bind_port: int) -> None:
         if self._server is not None:
             return
-        if not _is_loopback(bind_host):
+        if not self._allow_remote and not _is_loopback(bind_host):
             raise DashboardHttpError("dashboard v1 listener requires a loopback host")
         if not 0 <= bind_port <= 65535:
             raise DashboardHttpError("dashboard bind port is invalid")

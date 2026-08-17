@@ -1,0 +1,55 @@
+{
+  "schema": "org.leo-flow.v5-capture-station/v1",
+  "station_id": "station_gauss",
+  "hardware_snapshot_id": "hw_gauss_pluto_5d4d_lnb_ab_20260815_v1",
+  "clock_status": "system-realtime-v5-metadata",
+  "capture_implementation": "leo-flow-v5-edge-scan-v1",
+  "runtime_manifest": "/home/mouse9911/gits/leo-tracker-redux/deploy/v5-runtime/gauss-development.manifest.json",
+  "runtime_manifest_digest": "sha256:1544c390d66a2a53c9b86dc0cf7a2fab63e9fca0a08563638744121b107f431f",
+  "expected_runtime": {
+    "runtime_id": "gauss-pluto-v5-libiio-0.25-spfmeta3",
+    "schema": "leo-flow.v5-runtime/v1",
+    "iio_module_path": "/home/mouse9911/.cache/leo-flow/v5-runtime/lib/python3.11/site-packages/iio.py",
+    "iio_version": [0, 25, "c26258b"],
+    "iio_commit": "c26258bfa33098c2b215e19cf85d448e89499b1a",
+    "native_libiio_prefix": "/home/mouse9911/.cache/leo-flow/v5-runtime",
+    "required_backends": ["local", "ip", "usb"],
+    "pyadi_version": "0.0.21",
+    "pyadi_module_path": "/home/mouse9911/gits/leo-tracker-redux/.venv/lib/python3.11/site-packages/adi/__init__.py",
+    "spf_module_path": "/home/mouse9911/.cache/leo-flow/v5-build/spf/spf/direct_radio/iio_metadata.py",
+    "spf_revision": "c40ee4116546889effd72056115adaaa1bc3fd40",
+    "spf_import": "spf.direct_radio.iio_metadata:IioMetadataRx",
+    "metadata_protocol": "spf-radio-metadata-v3"
+  },
+  "radio": {
+    "uri": "ip:192.168.1.20",
+    "expected_serial": "1040005e0b100007100010000bf33a5d4d",
+    "radio_id": "radio_pluto_5d4d",
+    "receiver_chain_ids": ["rx_lnb_a", "rx_lnb_b"],
+    "firmware_release": "v0.38-plutoplus-spf-libiio-metadata-v5",
+    "firmware_commit": "d7c87a9a28094ee6f0b23cb47df9ff737b5a69d8",
+    "io_timeout_ms": 5000
+  },
+  "plan": {
+    "plan_id": "plan_v5_dual_independent_pluto_5d4d_20260815_v1",
+    "plan_digest": "sha256:a5a069532b9a83f9b6d54d2b70a86ca4c5b17ed94d8eefacacf18cadd0650c14",
+    "sample_rate_hz": 2083332.0,
+    "bandwidth_hz": 2000000.0,
+    "sample_count": 262144,
+    "edge_order": "L",
+    "edge_order_draw_u32": 0,
+    "arm_name": "gauss-v5-live-independent-dual-1x262144-20260815-v1",
+    "lnb_lo_hz": 9750000000.0,
+    "hardware_block_samples": 262144
+  },
+  "state": {
+    "state_root": "/home/mouse9911/.local/state/leo-flow/v5-scan/dual-independent-20260815-v1/pluto-5d4d",
+    "recording_root": "/home/mouse9911/.local/state/leo-flow/v5-scan/dual-independent-20260815-v1/pluto-5d4d/recordings",
+    "spool_database": "/home/mouse9911/.local/state/leo-flow/v5-scan/dual-independent-20260815-v1/pluto-5d4d/capture-spool.sqlite3",
+    "cas_root": "/home/mouse9911/.local/share/leo-flow/objects",
+    "lock_path": "/home/mouse9911/.local/state/leo-flow/v5-scan/dual-independent-20260815-v1/pluto-5d4d/instance.lock",
+    "mode_lock_path": "/home/mouse9911/.local/state/leo-flow/pipeline-mode.lock",
+    "minimum_free_bytes": 1073741824,
+    "require_cas_mount": false
+  }
+}

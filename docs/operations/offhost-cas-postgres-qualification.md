@@ -45,7 +45,7 @@ configuration is:
     "database_owner": "leo_catalog_owner",
     "server_major": 16,
     "system_identifier": "7612345678901234567",
-    "migration_head": "0019_dwell_request_ingress.sql",
+    "migration_head": "0032_campaign_online_analysis.sql",
     "login_names": {
       "leo_capture": "leo_capture_station_login",
       "leo_analysis": "leo_analysis_station_login",
@@ -71,8 +71,9 @@ service users must each be members of that group.
 The configuration contains credential *names*, never DSNs. The commands resolve
 only systemd credentials. `migration_directory` must contain the exact ordered
 SQL files used to migrate the catalog; every corresponding `schema_migration`
-name and SHA-256 receipt must match. Missing, changed, extra, or forward
-migration receipts all fail this release's gate.
+name and SHA-256 receipt through `0032_campaign_online_analysis.sql`
+must match. Missing, changed, extra, or forward migration receipts all fail
+this release's gate.
 
 Copy
 `deploy/offhost-qualification/qualification.example.json` to the managed
@@ -91,7 +92,7 @@ The site-specific inputs intentionally absent from the repository are:
 | Exact CAS backing source, filesystem type, and mount root | Approved storage provisioning record, confirmed against `/proc/self/mountinfo` | Yes |
 | PostgreSQL database name and database owner | Approved database provisioning record | Yes |
 | PostgreSQL major version (`16`) and cluster system identifier | Approved cluster provisioning/backup record, confirmed with `server_version_num` and `pg_control_system()` | Yes |
-| Required migration head (`0019_dwell_request_ingress.sql`) | Release manifest | Yes |
+| Required migration head (`0032_campaign_online_analysis.sql`) | Release manifest | Yes |
 | Four exact, distinct authenticated login names | Database role provisioning record | Yes |
 | PostgreSQL endpoint and login secret for each role | Secret-management owner | No; store each DSN in its named systemd credential |
 | Exact published recording/job IDs | Catalog output from the conducted run | Yes, only after the pipeline exists |
@@ -179,14 +180,17 @@ service watches them.
 Database inspection begins read-only transactions. The audit credential alone
 proves the exact database name, owner, PostgreSQL 16 major version, cluster
 system identifier, and an inventory equal to the local migration receipt hashes
-through `0019`; it may receive the separately reviewed monitoring access needed
+through `0027`; it may receive the separately reviewed monitoring access needed
 for cluster identity. Runtime logins do not need `pg_monitor`. Each runtime
 credential must authenticate as its exact configured `session_user`, must be a
 distinct non-elevated login with exactly one application capability membership,
 must own no database objects, and must have no direct ACL entries. In particular,
 `leo_analysis` may publish dwell requests and `leo_capture` may lease or
 transition them only through the approved security-definer routines; neither
-role receives direct access to `dwell_request_ingress`.
+role receives direct access to `dwell_request_ingress`. The analysis role also
+publishes, leases, and transitions durable FeatureSet projection work only
+through the `0020` security-definer routines; capture, analysis, and dashboard
+roles receive no direct access to `feature_projection_work`.
 
 Transfer the two evidence documents through the operator management plane and
 compare them on either host:

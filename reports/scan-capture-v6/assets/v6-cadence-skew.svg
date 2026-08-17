@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+<rect width="100%" height="100%" fill="#0b1220"/>
+<style>text{font-family:ui-monospace,monospace;fill:#dbeafe}.axis{stroke:#64748b}.muted{fill:#94a3b8}.small{font-size:12px}.label{font-size:14px}.title{font-size:19px;font-weight:700}</style>
+<text x="40" y="36" class="title">v6 immutable cadence and measured first-sample skew</text>
+<text x="40" y="59" class="muted small">Markers are software-coordinated first-sample evidence; they do not imply a shared RF/sample clock.</text>
+<line x1="110" y1="85.00" x2="1140" y2="85.00" stroke="#ef4444" stroke-width="2"/>
+<text x="100" y="89.00" text-anchor="end" class="small">100 ms limit</text>
+<line x1="110" y1="475" x2="1140" y2="475" class="axis"/>
+<line x1="110" y1="85" x2="110" y2="475" class="axis"/>
+<line x1="110" y1="475.00" x2="1140" y2="475.00" stroke="#1e293b"/>
+<text x="100" y="479.00" text-anchor="end" class="muted small">0</text>
+<line x1="110" y1="397.00" x2="1140" y2="397.00" stroke="#1e293b"/>
+<text x="100" y="401.00" text-anchor="end" class="muted small">20</text>
+<line x1="110" y1="319.00" x2="1140" y2="319.00" stroke="#1e293b"/>
+<text x="100" y="323.00" text-anchor="end" class="muted small">40</text>
+<line x1="110" y1="241.00" x2="1140" y2="241.00" stroke="#1e293b"/>
+<text x="100" y="245.00" text-anchor="end" class="muted small">60</text>
+<line x1="110" y1="163.00" x2="1140" y2="163.00" stroke="#1e293b"/>
+<text x="100" y="167.00" text-anchor="end" class="muted small">80</text>
+<line x1="110" y1="85.00" x2="1140" y2="85.00" stroke="#1e293b"/>
+<text x="100" y="89.00" text-anchor="end" class="muted small">100</text>
+<circle cx="110.00" cy="465.77" r="7" fill="#22d3ee"/>
+<text x="110.00" y="453.77" text-anchor="middle" class="small">2.37</text>
+<text x="110.00" y="499" text-anchor="middle" class="small">u0 40ms</text>
+<circle cx="238.75" cy="464.88" r="7" fill="#22d3ee"/>
+<text x="238.75" y="452.88" text-anchor="middle" class="small">2.60</text>
+<text x="238.75" y="499" text-anchor="middle" class="small">u1 80ms</text>
+<circle cx="367.50" cy="444.11" r="7" fill="#22d3ee"/>
+<text x="367.50" y="432.11" text-anchor="middle" class="small">7.92</text>
+<text x="367.50" y="499" text-anchor="middle" class="small">u2 160ms</text>
+<circle cx="496.25" cy="452.99" r="7" fill="#a78bfa"/>
+<text x="496.25" y="440.99" text-anchor="middle" class="small">5.64</text>
+<text x="496.25" y="499" text-anchor="middle" class="small">u3 40ms</text>
+<circle cx="625.00" cy="156.29" r="7" fill="#a78bfa"/>
+<text x="625.00" y="144.29" text-anchor="middle" class="small">81.72</text>
+<text x="625.00" y="499" text-anchor="middle" class="small">u4 80ms</text>
+<circle cx="753.75" cy="436.47" r="7" fill="#a78bfa"/>
+<text x="753.75" y="424.47" text-anchor="middle" class="small">9.88</text>
+<text x="753.75" y="499" text-anchor="middle" class="small">u5 160ms</text>
+<circle cx="882.50" cy="389.24" r="7" fill="#f59e0b"/>
+<text x="882.50" y="377.24" text-anchor="middle" class="small">21.99</text>
+<text x="882.50" y="499" text-anchor="middle" class="small">u6 40ms</text>
+<circle cx="1011.25" cy="406.15" r="7" fill="#f59e0b"/>
+<text x="1011.25" y="394.15" text-anchor="middle" class="small">17.65</text>
+<text x="1011.25" y="499" text-anchor="middle" class="small">u7 80ms</text>
+<circle cx="1140.00" cy="-112.68" r="7" fill="#f59e0b"/>
+<text x="1140.00" y="-124.68" text-anchor="middle" class="small">150.69</text>
+<text x="1140.00" y="499" text-anchor="middle" class="small">u8 160ms</text>
+<text x="25" y="280" transform="rotate(-90 25 280)" text-anchor="middle" class="label">Observed first-sample skew (ms)</text>
+<text x="625" y="535" text-anchor="middle" class="label">Scheduled offset from first release (seconds)</text>
+<circle cx="840" cy="55" r="6" fill="#22d3ee"/><text x="852" y="60" class="small">1.25 MS/s</text>
+<circle cx="950" cy="55" r="6" fill="#a78bfa"/><text x="962" y="60" class="small">2.5 MS/s</text>
+<circle cx="1060" cy="55" r="6" fill="#f59e0b"/><text x="1072" y="60" class="small">5 MS/s</text>
+<text x="40" y="520" class="muted small">Observed 9/9 · maximum 150.687 ms</text>
+</svg>

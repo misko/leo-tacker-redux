@@ -75,7 +75,7 @@ def recording_manifest(index: int) -> RecordingManifest:
         ActivityId(f"act_projection_{index}"),
         ActivityKind.SCAN,
         UtcNs(index * 1_000),
-        UtcNs(index * 1_000 + 100),
+        UtcNs(index * 1_000 + 64_000),
         (segment_id,),
     )
     return RecordingManifest(
@@ -83,7 +83,7 @@ def recording_manifest(index: int) -> RecordingManifest:
         RecordingId(f"rec_projection_{index}"),
         UtcNs(index * 1_000 - 1),
         UtcNs(index * 1_000),
-        UtcNs(index * 1_000 + 100),
+        UtcNs(index * 1_000 + 64_000),
         StationId("station_projection"),
         RadioId("radio_projection"),
         "serial-projection",

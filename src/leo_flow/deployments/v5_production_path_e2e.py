@@ -120,7 +120,7 @@ from leo_flow.storage.recording_codec import (
 
 REPORT_SCHEMA = "org.leo-flow.v5-production-path-qualification/v2"
 EXPECTED_CLOCK_CONFIRMATION = "host-ntp-synchronized"
-EXPECTED_MIGRATION_HEAD = "0019_dwell_request_ingress.sql"
+EXPECTED_MIGRATION_HEAD = "0032_campaign_online_analysis.sql"
 EXPECTED_POSTGRES_MAJOR = 16
 MAX_DSN_BYTES = 4096
 _DATABASE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}")
@@ -147,12 +147,21 @@ _CAPABILITY_ROLES = (
     "leo_routine_owner",
 )
 _APPLICATION_TABLES = (
+    "campaign_analysis_job_scope",
+    "campaign_analysis_window_scope",
+    "capture_attempt_radio_lifecycle_fact",
     "dashboard_activity_projection",
     "dashboard_analysis_projection_identity",
+    "dashboard_capture_attempt_projection",
+    "dashboard_capture_batch_projection",
     "dashboard_capture_projection_identity",
     "dashboard_feature_projection",
     "dashboard_model_projection",
     "dashboard_recording_projection",
+    "dashboard_recording_detail_projection",
+    "dashboard_recording_starlink_detector_suite_projection",
+    "dashboard_recording_starlink_projection",
+    "dashboard_recording_waterfall_projection",
     "dashboard_storage_health_projection",
     "dashboard_track_projection",
     "dataset_member",
@@ -162,6 +171,7 @@ _APPLICATION_TABLES = (
     "dwell_request_ingress",
     "ephemeris_snapshot",
     "feature_set",
+    "feature_projection_work",
     "hardware_radio",
     "hardware_receiver_chain",
     "hardware_snapshot",
@@ -175,16 +185,24 @@ _APPLICATION_TABLES = (
     "object_retention_assignment",
     "object_retention_policy",
     "recording",
+    "recording_starlink_candidate",
+    "recording_starlink_detector_suite",
+    "recording_waterfall",
     "recording_ephemeris_link",
     "recording_hardware_link",
+    "radio_lifecycle_interval_fact",
     "tracking_input_entry",
     "tracking_input_snapshot",
     "tracking_model_snapshot",
+    "waterfall_projection_work",
+    "starlink_projection_work",
+    "starlink_detector_suite_projection_work",
 )
 _FINAL_TABLE_COUNTS = {
     **{name: 0 for name in _APPLICATION_TABLES},
     "dwell_request_ingress": 1,
     "feature_set": 2,
+    "feature_projection_work": 2,
     "job": 3,
     "object_blob": 6,
     "recording": 2,
@@ -1196,7 +1214,7 @@ def _migration_evidence(
         or names[-1] != EXPECTED_MIGRATION_HEAD
     ):
         raise ProductionPathQualificationError(
-            "migration receipts do not exactly match the approved files through 0019"
+            "migration receipts do not exactly match the approved files through 0032"
         )
     return {
         "count": len(names),
@@ -1233,9 +1251,9 @@ def _expected_migration_receipts(directory: Path) -> dict[str, str]:
                 "migration file cannot be read"
             ) from error
         receipts[path.name] = hashlib.sha256(payload).hexdigest()
-    if len(receipts) != 19 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
+    if len(receipts) != 32 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
         raise ProductionPathQualificationError(
-            "migration directory is not exactly the approved 0019 release"
+            "migration directory is not exactly the approved 0032 release"
         )
     return receipts
 

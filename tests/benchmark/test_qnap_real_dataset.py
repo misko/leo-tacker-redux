@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,11 @@ def test_threshold_sources_are_content_addressed() -> None:
 
 @pytest.mark.integration
 def test_mounted_subset_hashes_and_detector_summary() -> None:
-    if not DEFAULT_ROOT.is_dir():
+    # os.path.isdir, not Path.is_dir: an automount whose host is unreachable
+    # answers stat with ENODEV or EHOSTDOWN rather than with "no such path",
+    # and Path.is_dir re-raises those.  An unreachable corpus is a corpus that
+    # is not mounted, which is a skip, not a failure.
+    if not os.path.isdir(DEFAULT_ROOT):
         pytest.skip("read-only QNAP corpus is not mounted")
     spec = load_dataset_spec()
 

@@ -11,9 +11,12 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from leo_flow.contracts.core import Digest
+
 from ..errors import RadioConfigurationError
 from .pluto import PlutoDevice
 from .v5_preflight import (
+    TX1_DDS_CHANNEL_IDS,
     TX2_DDS_CHANNEL_IDS,
     ObservedV5Radio,
     ObservedV5Runtime,
@@ -27,6 +30,7 @@ MapsReader = Callable[[], str]
 def observe_current_v5_runtime(
     manifest_path: Path = Path("/opt/leo-v5/runtime-manifest.json"),
     *,
+    expected_manifest_digest: Digest | None = None,
     module_loader: ModuleLoader = importlib.import_module,
     distribution_version: VersionReader = importlib.metadata.version,
     maps_reader: MapsReader | None = None,
@@ -38,7 +42,7 @@ def observe_current_v5_runtime(
     """
 
     try:
-        manifest = _load_manifest(manifest_path)
+        manifest = _load_manifest(manifest_path, expected_manifest_digest)
         libiio = _mapping(manifest["libiio"], "libiio")
         pyadi = _mapping(manifest["pyadi"], "pyadi")
         spf = _mapping(manifest["spf"], "spf")
@@ -135,7 +139,12 @@ def observe_v5_radio(device: PlutoDevice) -> ObservedV5Radio:
         ):
             raise ValueError("paired RX scan layout is absent or ambiguous")
         scanned.sort()
-        tx2_hardware_gain_db, tx2_dds_scales = _observe_tx2_mute_state(device)
+        (
+            tx1_hardware_gain_db,
+            tx1_dds_scales,
+            tx2_hardware_gain_db,
+            tx2_dds_scales,
+        ) = _observe_tx_mute_state(device)
         return ObservedV5Radio(
             serial=serial,
             firmware_release=firmware,
@@ -145,6 +154,8 @@ def observe_v5_radio(device: PlutoDevice) -> ObservedV5Radio:
             component_layout=tuple(component for _, _, component in scanned),
             tx2_hardware_gain_db=tx2_hardware_gain_db,
             tx2_dds_scales=tx2_dds_scales,
+            tx1_hardware_gain_db=tx1_hardware_gain_db,
+            tx1_dds_scales=tx1_dds_scales,
         )
     except Exception as error:
         raise RadioConfigurationError(
@@ -152,9 +163,14 @@ def observe_v5_radio(device: PlutoDevice) -> ObservedV5Radio:
         ) from error
 
 
-def _observe_tx2_mute_state(
+def _observe_tx_mute_state(
     device: PlutoDevice,
-) -> tuple[float, tuple[tuple[str, float], ...]]:
+) -> tuple[
+    float | None,
+    tuple[tuple[str, float], ...] | None,
+    float,
+    tuple[tuple[str, float], ...],
+]:
     context = getattr(device, "_ctx", getattr(device, "ctx", None))
     find_device = getattr(context, "find_device", None)
     if not callable(find_device):
@@ -164,28 +180,42 @@ def _observe_tx2_mute_state(
     if phy is None or dds is None:
         raise ValueError("selected context lacks TX2 PHY or DDS")
 
-    gain: float | None = None
+    gains: dict[str, float] = {}
     for channel in getattr(phy, "channels", ()):
-        if (
-            bool(getattr(channel, "output", False))
-            and getattr(channel, "id", None) == "voltage1"
-        ):
-            gain = _numeric_channel_attribute(channel, "hardwaregain")
-            break
-    if gain is None:
+        channel_id = str(getattr(channel, "id", ""))
+        if bool(getattr(channel, "output", False)) and channel_id in {
+            "voltage0",
+            "voltage1",
+        }:
+            gains[channel_id] = _numeric_channel_attribute(channel, "hardwaregain")
+    if "voltage1" not in gains:
         raise ValueError("selected context lacks TX2 hardware gain")
 
     scales: dict[str, float] = {}
     for channel in getattr(dds, "channels", ()):
         channel_id = str(getattr(channel, "id", ""))
         if bool(getattr(channel, "output", False)) and (
-            channel_id in TX2_DDS_CHANNEL_IDS
+            channel_id in TX1_DDS_CHANNEL_IDS + TX2_DDS_CHANNEL_IDS
         ):
             scales[channel_id] = _numeric_channel_attribute(channel, "scale")
-    if set(scales) != set(TX2_DDS_CHANNEL_IDS):
+    tx2_scales = {key: scales[key] for key in TX2_DDS_CHANNEL_IDS if key in scales}
+    if set(tx2_scales) != set(TX2_DDS_CHANNEL_IDS):
         raise ValueError("selected context lacks the complete TX2 DDS layout")
-    return gain, tuple(
-        (channel_id, scales[channel_id]) for channel_id in TX2_DDS_CHANNEL_IDS
+    tx1_scales = {key: scales[key] for key in TX1_DDS_CHANNEL_IDS if key in scales}
+    observed_tx1_scales = (
+        tuple(
+            (channel_id, tx1_scales[channel_id]) for channel_id in TX1_DDS_CHANNEL_IDS
+        )
+        if set(tx1_scales) == set(TX1_DDS_CHANNEL_IDS)
+        else None
+    )
+    return (
+        gains.get("voltage0"),
+        observed_tx1_scales,
+        gains["voltage1"],
+        tuple(
+            (channel_id, tx2_scales[channel_id]) for channel_id in TX2_DDS_CHANNEL_IDS
+        ),
     )
 
 
@@ -215,8 +245,13 @@ def _rx_component(identifier: str) -> tuple[int, str] | None:
     return receiver, f"{component}{receiver}"
 
 
-def _load_manifest(path: Path) -> Mapping[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+def _load_manifest(
+    path: Path, expected_digest: Digest | None = None
+) -> Mapping[str, Any]:
+    content = path.read_bytes()
+    if expected_digest is not None and Digest.sha256(content) != expected_digest:
+        raise ValueError("V5 runtime manifest content digest differs")
+    value = json.loads(content)
     manifest = _mapping(value, "runtime manifest")
     if manifest.get("schema") != "leo-flow.v5-runtime/v1":
         raise ValueError("unsupported V5 runtime manifest schema")

@@ -9,12 +9,27 @@ until the assembled service enters preflight or handles a request.
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
+from leo_flow.contracts.dashboard_batch import CaptureBatchDashboardQueryPortV0_1
+from leo_flow.contracts.dashboard_recording import (
+    RecordingCaptureDetailQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.ports import DashboardQueryPort
-from leo_flow.dashboard.api import DashboardJsonApplication, JsonDashboardHandler
+from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPortV0_1
+from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
+from leo_flow.contracts.starlink_suite_pipeline import (
+    RecordingStarlinkSuiteQueryPortV0_2,
+)
+from leo_flow.dashboard.api import (
+    DashboardJsonApplicationV3,
+    DashboardJsonApplicationV4,
+    DashboardJsonApplicationV5,
+    JsonDashboardHandler,
+)
 from leo_flow.dashboard.ui import DashboardUiApplication
 from leo_flow.services.bootstrap import (
     AdapterBuildContext,
@@ -33,6 +48,7 @@ if TYPE_CHECKING:
 
 QUERY_PROJECTION_REF = "dashboard.postgres-projection-v1"
 SERVER_REF = "dashboard.stdlib-loopback-http-v1"
+REMOTE_SERVER_REF = "dashboard.stdlib-explicit-remote-http-v1"
 SECRET_PROVIDER = "systemd-credential"
 DATABASE_SECRET = SecretRef(SECRET_PROVIDER, "catalog-dsn")
 _POSTGRES_TIMEOUT_S = 5
@@ -40,6 +56,26 @@ _POSTGRES_TIMEOUT_S = 5
 
 class DashboardRuntimeDependencyError(RuntimeError):
     """The selected dashboard runtime dependency is unavailable."""
+
+
+class DashboardV3QueryPort(
+    DashboardQueryPort,
+    CaptureBatchDashboardQueryPortV0_1,
+    RecordingCaptureDetailQueryPortV0_1,
+    RecordingWaterfallQueryPortV0_1,
+    RecordingStarlinkDecisionQueryPortV0_1,
+    Protocol,
+):
+    """Deployment composition of independently versioned read ports."""
+
+
+class DashboardV4QueryPort(
+    DashboardV3QueryPort,
+    RecordingStarlinkSuiteQueryPortV0_2,
+    CaptureLifecycleDashboardQueryPortV0_1,
+    Protocol,
+):
+    """Exact Release B dashboard read surface, including detector-suite v0.2."""
 
 
 class _ReadinessCheckedDashboardServer:
@@ -71,7 +107,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardQueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV4QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -109,6 +145,13 @@ def _stdlib_loopback_server(
     return StdlibDashboardServer()
 
 
+def _stdlib_explicit_remote_server(
+    context: AdapterBuildContext,
+) -> ReadOnlyDashboardServer:
+    del context
+    return StdlibDashboardServer(allow_remote=True)
+
+
 def _build_dashboard(
     config: ServiceConfig,
     adapters: AdapterSet,
@@ -116,7 +159,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardQueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV4QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -126,7 +169,17 @@ def _build_dashboard(
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(DashboardJsonApplication(queries)),
+        DashboardUiApplication(
+            DashboardJsonApplicationV5(
+                DashboardJsonApplicationV4(
+                    DashboardJsonApplicationV3(
+                        queries, queries, queries, queries, queries
+                    ),
+                    queries,
+                ),
+                queries,
+            )
+        ),
         diagnostics=diagnostics,
     )
 
@@ -137,7 +190,10 @@ MANIFEST = AdapterManifest(
             Capability.QUERY_PROJECTION: {
                 QUERY_PROJECTION_REF: _postgres_query_projection
             },
-            Capability.DASHBOARD_SERVER: {SERVER_REF: _stdlib_loopback_server},
+            Capability.DASHBOARD_SERVER: {
+                SERVER_REF: _stdlib_loopback_server,
+                REMOTE_SERVER_REF: _stdlib_explicit_remote_server,
+            },
         }
     }
 )

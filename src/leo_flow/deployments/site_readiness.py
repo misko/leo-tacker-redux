@@ -16,10 +16,10 @@ import re
 import shlex
 import stat
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Final, TextIO, TypeVar
+from typing import Any, Final, TextIO, TypeVar
 from urllib.parse import urlsplit
 
 from leo_flow.deployments.ephemeris_provider_canary import load_canary_config
@@ -74,6 +74,16 @@ _REQUIRED_UNITS: Final = {
     "leo-ephemeris-provider-canary.service",
     "leo-ephemeris-provider-canary.timer",
 }
+_LINUX_F_ADD_SEALS: Final = 1033
+_LINUX_F_GET_SEALS: Final = 1034
+_LINUX_F_SEAL_SEAL: Final = 0x0001
+_LINUX_F_SEAL_SHRINK: Final = 0x0002
+_LINUX_F_SEAL_GROW: Final = 0x0004
+_LINUX_F_SEAL_WRITE: Final = 0x0008
+_LINUX_MFD_CLOEXEC: Final = 0x0001
+_LINUX_MFD_ALLOW_SEALING: Final = 0x0002
+_DASHBOARD_LOOPBACK_SERVER_REF: Final = "dashboard.stdlib-loopback-http-v1"
+_DASHBOARD_REMOTE_SERVER_REF: Final = "dashboard.stdlib-explicit-remote-http-v1"
 _T = TypeVar("_T")
 
 
@@ -85,6 +95,56 @@ class SiteReadinessError(RuntimeError):
 class _CapturedCandidate:
     payload: bytes
     text: str
+
+
+def _linux_integer_constant(namespace: object, name: str, fallback: int) -> int:
+    """Return an exported Linux UAPI constant or its stable numeric value."""
+
+    value = getattr(namespace, name, fallback)
+    if type(value) is not int or value < 0:
+        raise SiteReadinessError("immutable candidate staging is unavailable")
+    return value
+
+
+def _open_sealed_candidate(payload: bytes) -> int:
+    """Copy bytes to a Linux memfd and prove that its complete seal is active."""
+
+    fd: int | None = None
+    completed = False
+    try:
+        cloexec = _linux_integer_constant(os, "MFD_CLOEXEC", _LINUX_MFD_CLOEXEC)
+        allow_sealing = _linux_integer_constant(
+            os, "MFD_ALLOW_SEALING", _LINUX_MFD_ALLOW_SEALING
+        )
+        add_seals = _linux_integer_constant(fcntl, "F_ADD_SEALS", _LINUX_F_ADD_SEALS)
+        get_seals = _linux_integer_constant(fcntl, "F_GET_SEALS", _LINUX_F_GET_SEALS)
+        seal_mask = (
+            _linux_integer_constant(fcntl, "F_SEAL_SEAL", _LINUX_F_SEAL_SEAL)
+            | _linux_integer_constant(fcntl, "F_SEAL_SHRINK", _LINUX_F_SEAL_SHRINK)
+            | _linux_integer_constant(fcntl, "F_SEAL_GROW", _LINUX_F_SEAL_GROW)
+            | _linux_integer_constant(fcntl, "F_SEAL_WRITE", _LINUX_F_SEAL_WRITE)
+        )
+        fd = os.memfd_create("leo-site-readiness", cloexec | allow_sealing)
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0 or written > len(view):
+                raise SiteReadinessError("immutable candidate staging is unavailable")
+            view = view[written:]
+        fcntl.fcntl(fd, add_seals, seal_mask)
+        observed_seals = fcntl.fcntl(fd, get_seals)
+        if type(observed_seals) is not int or observed_seals != seal_mask:
+            raise SiteReadinessError("immutable candidate staging is unavailable")
+        completed = True
+        return fd
+    except (AttributeError, OSError, OverflowError, TypeError, ValueError):
+        raise SiteReadinessError("immutable candidate staging is unavailable") from None
+    finally:
+        if fd is not None and not completed:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def _capture_candidate(root: Path, source_path: str) -> _CapturedCandidate:
@@ -142,27 +202,11 @@ def _capture_candidate(root: Path, source_path: str) -> _CapturedCandidate:
             os.close(opened_fd)
 
 
-def _load_captured(
-    candidate: _CapturedCandidate, loader: Callable[[Path], _T]
-) -> _T:
+def _load_captured(candidate: _CapturedCandidate, loader: Callable[[Path], _T]) -> _T:
     """Run an existing strict loader against the immutable captured bytes."""
 
-    fd = os.memfd_create(
-        "leo-site-readiness", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING
-    )
+    fd = _open_sealed_candidate(candidate.payload)
     try:
-        view = memoryview(candidate.payload)
-        while view:
-            written = os.write(fd, view)
-            view = view[written:]
-        fcntl.fcntl(
-            fd,
-            fcntl.F_ADD_SEALS,
-            fcntl.F_SEAL_SEAL
-            | fcntl.F_SEAL_SHRINK
-            | fcntl.F_SEAL_GROW
-            | fcntl.F_SEAL_WRITE,
-        )
         return loader(Path(f"/proc/self/fd/{fd}"))
     finally:
         os.close(fd)
@@ -214,9 +258,8 @@ class CredentialBinding:
     source_path: Path
 
     def __post_init__(self) -> None:
-        if (
-            not _TOKEN.fullmatch(self.name)
-            or not _is_exact_absolute_path(str(self.source_path))
+        if not _TOKEN.fullmatch(self.name) or not _is_exact_absolute_path(
+            str(self.source_path)
         ):
             raise SiteReadinessError("credential binding is invalid")
 
@@ -340,13 +383,10 @@ def load_manifest(path: Path) -> SiteManifest:
         _worker(value, index)
         for index, value in enumerate(_sequence(analysis["workers"], "workers"))
     )
-    if (
-        not 1 <= len(workers) <= 64
-        or len({worker.instance for worker in workers}) != len(workers)
-    ):
-        raise SiteReadinessError(
-            "analysis worker instances must be bounded and unique"
-        )
+    if not 1 <= len(workers) <= 64 or len(
+        {worker.instance for worker in workers}
+    ) != len(workers):
+        raise SiteReadinessError("analysis worker instances must be bounded and unique")
     dashboard = _mapping(inputs["dashboard"], "inputs.dashboard")
     _exact(dashboard, {"config"}, "inputs.dashboard")
     ephemeris = _mapping(inputs["ephemeris"], "inputs.ephemeris")
@@ -727,11 +767,19 @@ def _qualify_configs(
     dashboard = configs.get("dashboard")
     bind_host = getattr(dashboard, "bind_host", None)
     bind_port = getattr(dashboard, "bind_port", None)
+    server_ref = getattr(dashboard, "server_ref", None)
+    loopback_bind = server_ref == _DASHBOARD_LOOPBACK_SERVER_REF and bind_host in {
+        "127.0.0.1",
+        "::1",
+    }
+    explicit_remote_bind = (
+        server_ref == _DASHBOARD_REMOTE_SERVER_REF and bind_host == "0.0.0.0"
+    )
     gate(
-        "dashboard.loopback_bind",
+        "dashboard.explicit_bind_policy",
         getattr(dashboard, "process", None) == "dashboard"
-        and bind_host in {"127.0.0.1", "::1"},
-        f"{bind_host}:{bind_port}",
+        and (loopback_bind or explicit_remote_bind),
+        f"{server_ref}@{bind_host}:{bind_port}",
     )
     _credential_ref_gate("dashboard", dashboard, gate)
     origin = urlsplit(manifest.dashboard_public_origin)
@@ -902,8 +950,7 @@ def _qualify_units(
         analysis_exec is not None
         and _argument_value(analysis_exec, "--config")
         == "/etc/leo-flow/analysis-%i.json"
-        and _argument_value(analysis_exec, "--plugin")
-        == manifest.analysis_plugin_ref,
+        and _argument_value(analysis_exec, "--plugin") == manifest.analysis_plugin_ref,
         manifest.analysis_plugin_ref,
     )
 
@@ -915,9 +962,7 @@ def _qualify_units(
         "leo-dashboard.service": manifest.credentials["leo_dashboard"].source_path,
     }
     for unit, source in runtime_credentials.items():
-        values = _directive_values(
-            texts.get(unit, ""), "Service", "LoadCredential"
-        )
+        values = _directive_values(texts.get(unit, ""), "Service", "LoadCredential")
         gate(
             f"wiring.{unit}.credential",
             values == (f"catalog-dsn:{source}",),
@@ -930,10 +975,8 @@ def _qualify_units(
         gate(
             f"wiring.{unit}.cas",
             cas_root is not None
-            and _directive_words(text, "Unit", "RequiresMountsFor")
-            == {str(cas_root)}
-            and _directive_words(text, "Service", "ReadWritePaths")
-            == {str(cas_root)}
+            and _directive_words(text, "Unit", "RequiresMountsFor") == {str(cas_root)}
+            and _directive_words(text, "Service", "ReadWritePaths") == {str(cas_root)}
             and _directive_words(text, "Service", "SupplementaryGroups")
             == {manifest.cas_group_name},
             str(cas_root) if cas_root is not None else "missing",
@@ -947,9 +990,9 @@ def _qualify_units(
         == str(manifest.health_receipt_path),
         str(manifest.health_receipt_path),
     )
-    target_wants = _directive_words(
-        texts.get("leo-flow.target", ""), "Unit", "Wants"
-    ) or set()
+    target_wants = (
+        _directive_words(texts.get("leo-flow.target", ""), "Unit", "Wants") or set()
+    )
     expected_application_units = {
         "leo-v5-scan.service",
         "leo-dashboard.service",

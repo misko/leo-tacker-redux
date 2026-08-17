@@ -5,6 +5,9 @@ from __future__ import annotations
 from importlib.resources import files
 from types import MappingProxyType
 from typing import Final
+from urllib.parse import unquote
+
+from leo_flow.contracts.core import RecordingId
 
 from .api import JsonDashboardHandler, JsonRequest, JsonResponse
 
@@ -48,11 +51,23 @@ class DashboardUiApplication:
                     "public, max-age=300",
                     (package / "dashboard.js").read_bytes(),
                 ),
+                "/assets/recording-detail.js": (
+                    "text/javascript; charset=utf-8",
+                    "public, max-age=300",
+                    (package / "recording-detail.js").read_bytes(),
+                ),
             }
+        )
+        self._recording_page = (
+            "text/html; charset=utf-8",
+            "no-store",
+            (package / "recording.html").read_bytes(),
         )
 
     def handle(self, request: JsonRequest) -> JsonResponse:
         route = self._routes.get(request.path)
+        if route is None and _recording_page_id(request.path) is not None:
+            route = self._recording_page
         if route is None:
             if request.path.startswith("/assets/"):
                 return JsonResponse(
@@ -77,3 +92,16 @@ class DashboardUiApplication:
             ),
             body,
         )
+
+
+def _recording_page_id(path: str) -> RecordingId | None:
+    prefix = "/recordings/"
+    if not path.startswith(prefix):
+        return None
+    identity = unquote(path.removeprefix(prefix))
+    if not identity or "/" in identity:
+        return None
+    try:
+        return RecordingId(identity)
+    except ValueError:
+        return None

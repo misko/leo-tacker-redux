@@ -1,0 +1,74 @@
+{
+  "schema": "org.leo-flow.gauss-native-release-source/v1",
+  "files": [
+    {
+      "destination": "native/lib/libiio.so.0.25",
+      "sha256": "7233e356e2bcdf84a939b380770e43905cf9e5435f3b5d79fa82eff60d61f8be",
+      "source": "/home/mouse9911/.cache/leo-flow/v5-runtime-rx-integrity-candidate1/lib/libiio.so.0.25"
+    },
+    {
+      "destination": "native/lib/python3.11/site-packages/iio.py",
+      "sha256": "a138280cf01d9edd249ef0770fab7e641f1d1356b2e373cec1f5724289981191",
+      "source": "/home/mouse9911/.cache/leo-flow/v5-runtime-rx-integrity-candidate1/lib/python3.11/site-packages/iio.py"
+    },
+    {
+      "destination": "native/spf/spf/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source": "/home/mouse9911/.cache/leo-flow/v5-build/spf-rx-integrity-candidate1/spf/__init__.py"
+    },
+    {
+      "destination": "native/spf/spf/direct_radio/__init__.py",
+      "sha256": "1e7be7f870a428234ec3b2def11d1310d823478ba108832b614d9f09e9b998d9",
+      "source": "/home/mouse9911/.cache/leo-flow/v5-build/spf-rx-integrity-candidate1/spf/direct_radio/__init__.py"
+    },
+    {
+      "destination": "native/spf/spf/direct_radio/iio_metadata.py",
+      "sha256": "3c7f87beeb8a1b812f99597773d06fdc3c142ae9b5b92d33c576e33979714058",
+      "source": "/home/mouse9911/.cache/leo-flow/v5-build/spf-rx-integrity-candidate1/spf/direct_radio/iio_metadata.py"
+    },
+    {
+      "destination": "native/spf/spf/direct_radio/sample_clock.py",
+      "sha256": "90c5ff03f879fb85044218b12299ca00b59771437c8e4b456fdb9a741f95b314",
+      "source": "/home/mouse9911/.cache/leo-flow/v5-build/spf-rx-integrity-candidate1/spf/direct_radio/sample_clock.py"
+    },
+    {
+      "destination": "native/spf/spf/direct_radio/usb_protocol.py",
+      "sha256": "8b16125f4ba8c4e31444b3548134b52f3ca5f6194510af1b10d91c159a6c1307",
+      "source": "/home/mouse9911/.cache/leo-flow/v5-build/spf-rx-integrity-candidate1/spf/direct_radio/usb_protocol.py"
+    }
+  ],
+  "symlinks": {
+    "native/lib/libiio.so": "libiio.so.0",
+    "native/lib/libiio.so.0": "libiio.so.0.25"
+  },
+  "host_dependencies": [
+    {
+      "path": "/usr/lib/x86_64-linux-gnu/libusb-1.0.so.0",
+      "sha256": "e422dc361a501e8175a94e16228704de7ca6376037fc29a0e7272e8fe2c8edc1"
+    },
+    {
+      "path": "/usr/lib/x86_64-linux-gnu/libxml2.so.16",
+      "sha256": "facb359e716bc2be5ca6a91e08ee07d79c0438737f25949b52f0ec1b952b4e33"
+    },
+    {
+      "path": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "sha256": "a3947513a02831ec692ebf13053c07614882ab54a2101fb91a1b15724062ed0c"
+    },
+    {
+      "path": "/usr/lib/x86_64-linux-gnu/libudev.so.1",
+      "sha256": "17a934f550b880125c51294a261da6569ee7b8fae089730aeea6db8a8166f403"
+    },
+    {
+      "path": "/usr/lib/x86_64-linux-gnu/libz.so.1",
+      "sha256": "fbf56b0e59287033b6579bbbeae2f9de2fe86ad5bf2bd44d44aad67a15109318"
+    },
+    {
+      "path": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+      "sha256": "beea4eeacfcfa2cd96011b959a826c97cf4a774017e214f6a34d7eea3d49cd88"
+    },
+    {
+      "path": "/lib64/ld-linux-x86-64.so.2",
+      "sha256": "c5e80a563850d6ab5c2f2482e4202d9c1b71fbf44854b8c399e63527202c64e1"
+    }
+  ]
+}
