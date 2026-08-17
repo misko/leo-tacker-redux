@@ -49,6 +49,7 @@ _EXPECTED_MIGRATIONS = (
     "0030_campaign_scoped_analysis_claims.sql",
     "0031_radio_lifecycle_detection.sql",
     "0032_campaign_online_analysis.sql",
+    "0033_registered_analysis_during_capture.sql",
 )
 
 

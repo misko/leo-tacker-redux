@@ -615,7 +615,7 @@ def test_changed_migration_byte_fails_before_any_catalog_write(
     source = _source_fixture(tmp_path / "source")
     candidate = tmp_path / "candidate-migrations"
     shutil.copytree(ROOT / "migrations", candidate)
-    head = candidate / "0032_campaign_online_analysis.sql"
+    head = candidate / "0033_registered_analysis_during_capture.sql"
     head.write_bytes(head.read_bytes() + b"\n-- changed candidate\n")
     tx_checks: list[object] = []
     with _scoped_connections(postgres_dsn) as connections:

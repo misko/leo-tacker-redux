@@ -24,7 +24,7 @@ configuration is:
 ```json
 {
   "schema_id": "org.leo-flow.offhost-qualification",
-  "schema_version": "0.3",
+  "schema_version": "0.4",
   "station_id": "station_example",
   "cas": {
     "root": "/var/lib/leo-flow/objects",
@@ -45,7 +45,7 @@ configuration is:
     "database_owner": "leo_catalog_owner",
     "server_major": 16,
     "system_identifier": "7612345678901234567",
-    "migration_head": "0032_campaign_online_analysis.sql",
+    "migration_head": "0033_registered_analysis_during_capture.sql",
     "login_names": {
       "leo_capture": "leo_capture_station_login",
       "leo_analysis": "leo_analysis_station_login",
@@ -71,7 +71,7 @@ service users must each be members of that group.
 The configuration contains credential *names*, never DSNs. The commands resolve
 only systemd credentials. `migration_directory` must contain the exact ordered
 SQL files used to migrate the catalog; every corresponding `schema_migration`
-name and SHA-256 receipt through `0032_campaign_online_analysis.sql`
+name and SHA-256 receipt through `0033_registered_analysis_during_capture.sql`
 must match. Missing, changed, extra, or forward migration receipts all fail
 this release's gate.
 
@@ -92,7 +92,7 @@ The site-specific inputs intentionally absent from the repository are:
 | Exact CAS backing source, filesystem type, and mount root | Approved storage provisioning record, confirmed against `/proc/self/mountinfo` | Yes |
 | PostgreSQL database name and database owner | Approved database provisioning record | Yes |
 | PostgreSQL major version (`16`) and cluster system identifier | Approved cluster provisioning/backup record, confirmed with `server_version_num` and `pg_control_system()` | Yes |
-| Required migration head (`0032_campaign_online_analysis.sql`) | Release manifest | Yes |
+| Required migration head (`0033_registered_analysis_during_capture.sql`) | Release manifest | Yes |
 | Four exact, distinct authenticated login names | Database role provisioning record | Yes |
 | PostgreSQL endpoint and login secret for each role | Secret-management owner | No; store each DSN in its named systemd credential |
 | Exact published recording/job IDs | Catalog output from the conducted run | Yes, only after the pipeline exists |

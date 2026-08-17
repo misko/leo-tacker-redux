@@ -71,3 +71,40 @@ class PostgresCampaignConcurrentAnalysisGateV1:
         if row is None or not isinstance(row[0], bool):
             raise RuntimeError("campaign analysis safety gate returned no decision")
         return row[0]
+
+
+class PostgresRegisteredAnalysisSafetyGateV2:
+    """Permit only exact registered terminal analysis during capture.
+
+    Unlike v1, the registered work may belong to another campaign.  This is
+    the narrow port used for historical backfill concurrent with RF capture.
+    """
+
+    def __init__(self, dsn: str, capture_definition_digest: Digest) -> None:
+        if not dsn:
+            raise ValueError("catalog DSN cannot be empty")
+        self._dsn = dsn
+        self._capture_definition_digest = capture_definition_digest
+
+    def ready(self) -> bool:
+        with psycopg.connect(
+            self._dsn,
+            connect_timeout=5,
+            options="-c statement_timeout=5000 -c lock_timeout=5000",
+        ) as connection:
+            connection.execute("SET TRANSACTION READ ONLY")
+            membership = connection.execute(
+                "SELECT pg_has_role(current_user,%s,'MEMBER')", ("leo_capture",)
+            ).fetchone()
+            if membership is None or membership[0] is not True:
+                raise RuntimeError(
+                    "catalog credential is not a leo_capture role member"
+                )
+            connection.execute("SET ROLE leo_capture")
+            row = connection.execute(
+                "SELECT public.capture_registered_analysis_safe_v2(%s) AS ready",
+                (str(self._capture_definition_digest),),
+            ).fetchone()
+        if row is None or not isinstance(row[0], bool):
+            raise RuntimeError("registered analysis safety gate returned no decision")
+        return row[0]

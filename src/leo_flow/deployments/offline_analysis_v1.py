@@ -117,6 +117,7 @@ EXPECTED_MIGRATIONS = tuple(
         (30, "campaign_scoped_analysis_claims"),
         (31, "radio_lifecycle_detection"),
         (32, "campaign_online_analysis"),
+        (33, "registered_analysis_during_capture"),
     )
 )
 

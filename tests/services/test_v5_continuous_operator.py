@@ -700,6 +700,70 @@ def test_online_analysis_uses_independent_lock_and_never_enters_capture_path(
     assert json.loads(stdout.getvalue())["status"] == "caught_up"
 
 
+def test_gauss_capture_composes_registered_terminal_analysis_gate_v2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from leo_flow.adapters.campaign_online_analysis_postgres import (
+        PostgresRegisteredAnalysisSafetyGateV2,
+    )
+    from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
+    from leo_flow.capture.v5_station import load_v5_capture_station
+    from leo_flow.deployments import gauss_campaign_runtime, v5_continuous_operator
+    from leo_flow.deployments.gauss_v5_continuous_operator import main as gauss_main
+
+    runtime_path = Path(
+        "deploy/gauss-campaign-r20-r21-postreboot-v1/runtime.json"
+    ).resolve()
+    first = load_v5_capture_station(
+        Path("deploy/v5-scan/gauss-r20-science-postreboot-passive-v1.station.json")
+    )
+    second = load_v5_capture_station(
+        Path("deploy/v5-scan/gauss-r21-science-postreboot-passive-v1.station.json")
+    )
+    definition, _ = _main_definition()
+    definition = replace(
+        definition,
+        radio_a_id=first.radio.radio_id,
+        radio_b_id=second.radio.radio_id,
+        station_a_digest=first.specification_digest,
+        station_b_digest=second.specification_digest,
+        analysis_after_each_capture=False,
+    )
+    observed = False
+
+    class CapturePort:
+        def __init__(self, *_args: object, **kwargs: object) -> None:
+            nonlocal observed
+            builder = kwargs["admission_builder"]
+            assert callable(builder)
+            gate = builder("postgresql://capture.invalid/catalog")
+            assert isinstance(gate, PostgresRegisteredAnalysisSafetyGateV2)
+            assert gate._capture_definition_digest == definition.digest
+            observed = True
+
+    def component_main(_arguments: list[str], **kwargs: object) -> int:
+        builder = kwargs["capture_builder"]
+        assert callable(builder)
+        builder(definition, first, second, tmp_path / "state")
+        return 91
+
+    monkeypatch.setattr(SystemdCredentialProvider, "resolve", lambda *_args: "dsn")
+    monkeypatch.setattr(
+        gauss_campaign_runtime, "ProcessIsolatedCampaignCapture", CapturePort
+    )
+    monkeypatch.setattr(v5_continuous_operator, "main", component_main)
+
+    assert (
+        gauss_main(
+            ["--runtime-config", str(runtime_path), "capture-run"],
+            stdout=StringIO(),
+            stderr=StringIO(),
+        )
+        == 91
+    )
+    assert observed
+
+
 @pytest.mark.parametrize(
     "runtime_ips",
     [

@@ -282,3 +282,16 @@ def test_online_analysis_scope_is_terminal_exact_and_role_separated() -> None:
     assert "s.definition_digest=p_definition_digest" in migration
     assert "TO leo_analysis;" in migration
     assert "TO leo_capture;" in migration
+
+
+def test_registered_analysis_gate_accepts_only_scoped_terminal_work() -> None:
+    migration = Path(
+        "migrations/0033_registered_analysis_during_capture.sql"
+    ).read_text()
+    assert "CREATE FUNCTION public.capture_registered_analysis_safe_v2" in migration
+    assert "s.source_job_id=j.job_id" in migration
+    assert "s.source_job_id=w.source_job_id" in migration
+    assert "s.definition_digest=p_capture_definition_digest" not in migration
+    assert "starlink_projection_work AS w" in migration
+    assert "TO leo_capture;" in migration
+    assert "TO leo_analysis;" not in migration

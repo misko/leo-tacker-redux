@@ -50,7 +50,7 @@ def main(
         return 2
     try:
         from leo_flow.adapters.campaign_online_analysis_postgres import (
-            PostgresCampaignConcurrentAnalysisGateV1,
+            PostgresRegisteredAnalysisSafetyGateV2,
         )
         from leo_flow.adapters.capture_analysis_drain_postgres import (
             PostgresCaptureAnalysisDrainGate,
@@ -105,7 +105,7 @@ def main(
             state_root / "capture-batches.sqlite3",
             runtime.capture_credential_directory,
             ownership,
-            admission_builder=lambda dsn: PostgresCampaignConcurrentAnalysisGateV1(
+            admission_builder=lambda dsn: PostgresRegisteredAnalysisSafetyGateV2(
                 dsn, definition.digest
             ),
             secondary_dispatch_delay_s=runtime.secondary_dispatch_delay_ms / 1_000,

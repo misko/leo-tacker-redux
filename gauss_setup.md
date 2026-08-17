@@ -2786,3 +2786,27 @@ namespace/capability sandbox directives and returned `218/CAPABILITIES` before
 program execution; the user-unit templates now rely on the unprivileged user,
 closed-tree release verifier, immutable absolute inputs, restrictive umask,
 and resource limits instead of unsupported directives.
+
+Registered historical backfill design (2026-08-17): source migration
+`0033_registered_analysis_during_capture.sql` adds the narrow capture-only
+`capture_registered_analysis_safe_v2` port. Unlike Release F's same-definition
+v1 gate, v2 accepts a live compute/projection lease only when its source job is
+already a member of an exact terminal 36-batch scope registered through 0032;
+the scope may belong to an older campaign. Unregistered jobs, model work,
+legacy Starlink v0.1 work, and unscoped projection leases still close capture
+admission. The Gauss capture composition selects v2 only in the next sealed
+release, allowing main-v3 production backfill to overlap a future campaign
+without adding radio capability to analysis or pausing synchronized capture.
+Release F and the active V5 services are unchanged.
+
+The additive source passed 884 repository tests (975 environment skips),
+strict mypy over 309 source files, Ruff/format over 690 files, two package
+tests, and a fresh PostgreSQL 16 proof of 39 focused migration/scope/security/
+production-path tests. The disposable database contained exactly 33 migration
+receipts; 0033 SHA-256 was
+`511ddb95f85a1f20dc6405ab8b033732e104686f54ea38782b806087cb66c522`,
+the function owner was `leo_routine_owner`, its search path was fixed to
+`pg_catalog, pg_temp`, and only `leo_capture` had runtime execution privilege.
+The disposable database was dropped and verified absent. No live migration,
+release, service, database, dashboard, radio, campaign journal, or CAS state
+was changed by this source audit.

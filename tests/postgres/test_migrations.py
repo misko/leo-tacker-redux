@@ -48,6 +48,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0030_campaign_scoped_analysis_claims.sql",),
         ("0031_radio_lifecycle_detection.sql",),
         ("0032_campaign_online_analysis.sql",),
+        ("0033_registered_analysis_during_capture.sql",),
     ]
 
 
@@ -109,7 +110,7 @@ def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
     assert not analysis_insert
     assert not capture_select
     assert not dashboard_select
-    assert receipts[-1] == ("0032_campaign_online_analysis.sql",)
+    assert receipts[-1] == ("0033_registered_analysis_during_capture.sql",)
 
 
 @pytest.mark.integration

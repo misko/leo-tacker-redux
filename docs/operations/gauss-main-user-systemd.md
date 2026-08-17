@@ -50,7 +50,7 @@ and any symlink escape before the capture or analysis entrypoint can execute.
 |---:|---|---|
 | 1 | Release sealed | manifest and validation receipt re-hash exactly; entire release tree is non-writable; import inventory resolves only inside the selected release |
 | 2 | Qualification accepted | selected receipt decodes canonically, names the exact station/runtime identities and nine successful cells, and its digest equals the main definition's `qualification_receipt_digest` |
-| 3 | Database promoted | migration receipts exactly match approved files through `0032_campaign_online_analysis.sql`; initial drain and campaign-scoped concurrent-analysis gates are true |
+| 3 | Database promoted | migration receipts exactly match approved files through `0033_registered_analysis_during_capture.sql`; initial drain and registered-terminal concurrent-analysis gates are true |
 | 4 | Exclusive host | no campaign, capture, analysis, or process-mode lock owner; no process has an established session to `.20` or `.21` |
 | 5 | Capacity | available bytes at both state and CAS roots are at least `75,966,218,240` immediately before arming |
 | 6 | Credentials | capture, analysis, and dashboard `catalog-dsn` files exist, are owned by `mouse9911`, and are mode `0600` below the existing `0700` credential root |

@@ -38,7 +38,7 @@ credential, and complete non-empty exact registries for both lanes. The DSN
 login must be a member of `leo_analysis` and able to read migration receipts;
 all operational queries execute after `SET ROLE leo_analysis`. Readiness proves
 the required migration receipts through
-`0032_campaign_online_analysis.sql` (including the waterfall and
+`0033_registered_analysis_during_capture.sql` (including the waterfall and
 Starlink candidate catalogs and dashboard projection migrations), role privileges
 (including function-only access to both durable projection outboxes), and a
 write/fsync/unlink probe inside the configured CAS
@@ -102,8 +102,8 @@ the dashboard receives a bounded semantic projection and no CAS locator.
 Candidate scores are not detections and never receive a detection count without
 an exact matching approved whole-search calibration artifact.
 
-Release D rollout requires the exact 30-file migration chain through
-`0032_campaign_online_analysis.sql` as one reviewed maintenance action.
+The next rollout requires the exact 33-file migration chain through
+`0033_registered_analysis_during_capture.sql` as one reviewed maintenance action.
 Verify migration 0030's frozen SHA-256
 (`005d5408a24d2d507fe6ebaa3d4b8b86fe46b92a0a498f1f1151cbe2bc8e4cab`),
 apply it once, run readiness, and only then start the staged analysis service.

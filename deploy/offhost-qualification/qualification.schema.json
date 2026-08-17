@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://leo-flow.invalid/schema/offhost-qualification-v0.3.json",
+  "$id": "https://leo-flow.invalid/schema/offhost-qualification-v0.4.json",
   "title": "LEO Flow off-host CAS and PostgreSQL qualification configuration",
   "type": "object",
   "additionalProperties": false,
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema_id": {"const": "org.leo-flow.offhost-qualification"},
-    "schema_version": {"const": "0.3"},
+    "schema_version": {"const": "0.4"},
     "station_id": {"type": "string", "minLength": 1},
     "cas": {
       "type": "object",
@@ -51,7 +51,7 @@
         "database_owner": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
         "server_major": {"const": 16},
         "system_identifier": {"type": "string", "pattern": "^[0-9]{10,20}$"},
-        "migration_head": {"const": "0032_campaign_online_analysis.sql"},
+        "migration_head": {"const": "0033_registered_analysis_during_capture.sql"},
         "login_names": {
           "type": "object",
           "additionalProperties": false,

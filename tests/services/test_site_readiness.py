@@ -237,7 +237,7 @@ def _complete_bundle(tmp_path: Path) -> tuple[Path, dict[str, object]]:
 
     offhost = {
         "schema_id": "org.leo-flow.offhost-qualification",
-        "schema_version": "0.3",
+        "schema_version": "0.4",
         "station_id": "station-a",
         "cas": {
             "root": "/var/lib/leo-flow/objects",
@@ -258,7 +258,7 @@ def _complete_bundle(tmp_path: Path) -> tuple[Path, dict[str, object]]:
             "database_owner": "leo_catalog_owner",
             "server_major": 16,
             "system_identifier": "7612345678901234567",
-            "migration_head": "0032_campaign_online_analysis.sql",
+            "migration_head": "0033_registered_analysis_during_capture.sql",
             "login_names": {
                 "leo_capture": "leo_capture_station_login",
                 "leo_analysis": "leo_analysis_station_login",

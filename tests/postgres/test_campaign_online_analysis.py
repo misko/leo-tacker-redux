@@ -7,6 +7,7 @@ from psycopg.rows import dict_row
 from leo_flow.adapters.campaign_online_analysis_postgres import (
     PostgresCampaignAnalysisScopeRegistrarV1,
     PostgresCampaignConcurrentAnalysisGateV1,
+    PostgresRegisteredAnalysisSafetyGateV2,
 )
 from leo_flow.adapters.campaign_scoped_claims_postgres import (
     PostgresCampaignScopedJobClaimsV1,
@@ -125,6 +126,9 @@ def test_capture_allows_only_registered_same_campaign_leases(
     assert not PostgresCampaignConcurrentAnalysisGateV1(
         postgres_dsn, Digest.sha256(b"foreign campaign")
     ).ready()
+    assert PostgresRegisteredAnalysisSafetyGateV2(
+        postgres_dsn, Digest.sha256(b"active capture campaign")
+    ).ready()
 
 
 @pytest.mark.integration
@@ -149,6 +153,9 @@ def test_unregistered_foreign_lease_keeps_capture_fail_closed(
     ).claim((outsider,), JobType.RECORDING_ANALYSIS, "foreign", 30.0)
 
     assert not PostgresCampaignConcurrentAnalysisGateV1(
+        postgres_dsn, window.definition_digest
+    ).ready()
+    assert not PostgresRegisteredAnalysisSafetyGateV2(
         postgres_dsn, window.definition_digest
     ).ready()
 

@@ -120,7 +120,7 @@ from leo_flow.storage.recording_codec import (
 
 REPORT_SCHEMA = "org.leo-flow.v5-production-path-qualification/v2"
 EXPECTED_CLOCK_CONFIRMATION = "host-ntp-synchronized"
-EXPECTED_MIGRATION_HEAD = "0032_campaign_online_analysis.sql"
+EXPECTED_MIGRATION_HEAD = "0033_registered_analysis_during_capture.sql"
 EXPECTED_POSTGRES_MAJOR = 16
 MAX_DSN_BYTES = 4096
 _DATABASE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}")
@@ -1251,9 +1251,9 @@ def _expected_migration_receipts(directory: Path) -> dict[str, str]:
                 "migration file cannot be read"
             ) from error
         receipts[path.name] = hashlib.sha256(payload).hexdigest()
-    if len(receipts) != 32 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
+    if len(receipts) != 33 or tuple(receipts)[-1] != EXPECTED_MIGRATION_HEAD:
         raise ProductionPathQualificationError(
-            "migration directory is not exactly the approved 0032 release"
+            "migration directory is not exactly the approved 0033 release"
         )
     return receipts
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Protocol
 
 from leo_flow.contracts.capture_batch import ExpectedCaptureAttempt
@@ -43,7 +44,7 @@ class LifecycleObservedAttemptWorkV0_1:
         observer: RadioLifecycleObserverV0_1,
         recorder: RadioLifecycleFactRecorderV0_1,
         history: RadioLifecycleHistoryV0_1,
-        utc_now_ns,
+        utc_now_ns: Callable[[], int],
         observation_timeout_ns: int = 2_000_000_000,
     ) -> None:
         if observation_timeout_ns <= 0:
@@ -116,7 +117,9 @@ class LifecycleObservedAttemptWorkV0_1:
         if failure is not None:
             raise failure
 
-    def _observe(self, attempt: ExpectedCaptureAttempt):
+    def _observe(
+        self, attempt: ExpectedCaptureAttempt
+    ) -> RadioLifecycleObservationV0_1:
         now = max(0, int(self._utc_now_ns()))
         return self._observer.observe(
             attempt.radio_id, deadline_utc_ns=UtcNs(now + self._timeout_ns)
