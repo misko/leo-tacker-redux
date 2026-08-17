@@ -109,11 +109,14 @@ page.
 The same composition preserves every V1 route and adds the compatible batch
 read API at `GET /api/v2/capture-batches` and
 `GET /api/v2/capture-batches/{batch_id}`. The operator interface labels each
-two-attempt batch as independent or coordinated, shows requested and observed
-start skew, both terminal capture outcomes, per-recording analysis/result
-availability, and explicit paired-analysis eligibility. Independent mode makes
-no synchronization claim. Coordinated mode is measured software coordination,
-not hardware synchronization.
+attempt with a compact UTC start, radio suffix and serial suffix, capture result,
+analysis state, observed capture duration, and explicit unavailable markers for
+facts that are not yet published. Selecting a successful row opens the complete
+recording detail. The compact table intentionally omits recording IDs, plan IDs,
+batch IDs, and skew detail; those facts remain available through the immutable
+V2 batch API and recording detail routes. Independent mode makes no
+synchronization claim. Coordinated mode is measured software coordination, not
+hardware synchronization.
 
 Radio identity is data, not a fixed dashboard slot. A `.15` single-radio
 recording can therefore appear in activity, recording detail, and FeatureSet

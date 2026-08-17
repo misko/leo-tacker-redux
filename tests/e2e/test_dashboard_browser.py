@@ -157,27 +157,15 @@ def test_operator_dashboard_end_to_end_in_a_real_browser() -> None:
         expect(ready).to_have_count(2)
         ready_a = page.locator('[data-attempt-id="cattempt_ready_a"]')
         ready_b = page.locator('[data-attempt-id="cattempt_ready_b"]')
-        expect(ready_a).to_contain_text(
-            "Coordinated — measured software coordination; not hardware synchronization"
-        )
-        expect(ready_a).to_contain_text("Paired analysis eligible")
         expect(ready_a.locator("td").first).to_have_text("radio_a")
         expect(ready_b.locator("td").first).to_have_text("radio_b")
-        expect(ready_a).to_contain_text("Results ready")
-        expect(ready_a).to_contain_text("5 ns")
-        expect(ready_a).to_contain_text("10 ns")
-        ready_a.get_by_label(f"Show context for batch {BATCH_READY}").click()
-        lifecycle = ready_a.get_by_text("Radio lifecycle", exact=True)
-        lifecycle.click()
-        expect(ready_a).to_contain_text("radio rebooted · high confidence")
-        expect(ready_a).to_contain_text("boot_id_changed")
-        expect(ready_a).to_contain_text("Terminal observerAvailable")
-
-        details = page.locator(
-            '[data-attempt-id="cattempt_ready_a"] .capture-detail-link'
+        expect(ready_a.locator(".capture-status-icon")).to_have_text("✓")
+        expect(ready_a.locator(".analysis-status-icon")).to_have_attribute(
+            "data-state", "complete"
         )
-        expect(details).to_have_attribute("href", "/recordings/rec_ready_a")
-        expect(details).to_have_attribute(
+        expect(ready_a.locator(".pilot-detection-counts")).to_have_text("— / —")
+        expect(ready_a).to_have_attribute("tabindex", "0")
+        expect(ready_a).to_have_attribute(
             "aria-label",
             "View capture details, waterfall, and analysis for rec_ready_a",
         )
@@ -185,25 +173,18 @@ def test_operator_dashboard_end_to_end_in_a_real_browser() -> None:
         pending = page.locator(f'[data-batch-id="{BATCH_PENDING}"]')
         expect(pending).to_have_count(2)
         pending_b = page.locator('[data-attempt-id="cattempt_pending_b"]')
-        expect(pending_b).to_contain_text("Independent — no synchronization claim")
-        expect(pending_b).to_contain_text("Paired analysis pending")
         expect(pending_b).to_contain_text("pending")
-        expect(pending_b).to_contain_text("Not published")
-        expect(pending_b).to_contain_text("Not available")
+        expect(pending_b).to_contain_text("unavailable")
 
         peer_failed = page.locator(f'[data-batch-id="{BATCH_PEER_FAILED}"]')
         expect(peer_failed).to_have_count(2)
         failed = page.locator('[data-attempt-id="cattempt_peer_failed_b"]')
         preserved = page.locator('[data-attempt-id="cattempt_peer_failed_a"]')
-        expect(failed).to_contain_text("Paired analysis ineligible")
-        expect(preserved).to_contain_text("rec_solo_preserved")
-        expect(failed).to_contain_text("radio_unreachable")
-        expect(failed).to_contain_text("22 ns")
-        expect(failed).to_contain_text("Observed first sample")
-        expect(failed).to_contain_text("cattempt_peer_failed_b")
-        expect(failed).to_contain_text("plan_peer_failed_b")
-        expect(failed).to_contain_text("None — capture failed")
-        expect(failed).to_contain_text("No capture details")
+        expect(preserved).to_have_attribute("tabindex", "0")
+        expect(failed.locator(".capture-status-icon")).to_have_text("✕")
+        expect(failed.locator(".capture-status-icon")).to_have_attribute(
+            "data-state", "failed"
+        )
         expect(failed.locator("a")).to_have_count(0)
         expect(failed).not_to_have_attribute("tabindex", "0")
         failed.locator("td").first.click()
@@ -242,8 +223,7 @@ def test_operator_dashboard_end_to_end_in_a_real_browser() -> None:
 
         excessive_skew = page.locator(f'[data-batch-id="{BATCH_EXCESSIVE_SKEW}"]')
         expect(excessive_skew).to_have_count(2)
-        expect(excessive_skew.first).to_contain_text("Paired analysis ineligible")
-        expect(excessive_skew.first).to_contain_text("50 ns")
+        expect(excessive_skew.first.locator(".capture-status-icon")).to_have_text("✓")
 
         ready_a.locator("td").first.click()
         expect(page).to_have_url(f"{base_url}/recordings/rec_ready_a")
@@ -257,7 +237,7 @@ def test_operator_dashboard_end_to_end_in_a_real_browser() -> None:
         page.go_back()
         expect(page.locator("#app-status")).to_have_attribute("data-state", "ready")
 
-        details.focus()
+        ready_a.focus()
         page.keyboard.press("Enter")
         expect(page).to_have_url(f"{base_url}/recordings/rec_ready_a")
         page.go_back()
@@ -361,17 +341,11 @@ def test_gauss_single_and_dual_radio_results_share_the_real_dashboard() -> None:
             )
             expect(radio_20_row).to_have_count(1)
             expect(radio_21_row).to_have_count(1)
-            expect(radio_20_row).to_contain_text(
-                "Coordinated — measured software coordination; "
-                "not hardware synchronization"
-            )
-            expect(radio_20_row).to_contain_text("Paired analysis eligible")
-            expect(radio_20_row).to_contain_text("Results ready")
-            expect(radio_20_row.locator("td").first).to_have_text(
-                f".20 · {GAUSS_RADIO_20}"
-            )
-            expect(radio_21_row.locator("td").first).to_have_text(
-                f".21 · {GAUSS_RADIO_21}"
+            expect(radio_20_row.locator("td").first).to_have_text(".20 / 5d4d")
+            expect(radio_21_row.locator("td").first).to_have_text(".21 / 19f2")
+            expect(radio_20_row.locator(".capture-status-icon")).to_have_text("✓")
+            expect(radio_20_row.locator(".analysis-status-icon")).to_have_attribute(
+                "data-state", "complete"
             )
             expect(
                 page.locator('#capture-radio-options option[value=".20"]')

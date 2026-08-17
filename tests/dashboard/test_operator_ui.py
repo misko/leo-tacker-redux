@@ -160,6 +160,10 @@ def test_html_has_keyboard_landmarks_labels_and_explicit_state_hooks() -> None:
         '<label for="capture-window-hours"',
         '<label for="capture-radio-filter"',
         'id="capture-batches-table"',
+        '<th scope="col">UTC</th>',
+        '<th scope="col">Pilot beacons<br>',
+        '<th scope="col">Capture time</th>',
+        '<th scope="col">Satellites tracked</th>',
         'id="capture-attempts-body"',
         'id="capture-batches-more"',
         'aria-labelledby="recordings-heading"',
@@ -196,7 +200,7 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
     for route in (
         "/api/activity",
         "/api/v2/capture-batches",
-        "/api/v5/capture-attempts/",
+        "/api/v3/recordings/",
         "/api/recordings",
         "/api/evaluations/",
         "/api/models/",
@@ -211,9 +215,11 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
     assert "Searching all stable pages for this radio" in javascript
     assert "View capture details, waterfall, and analysis" in javascript
     assert "makeCaptureRowNavigable" in javascript
-    assert "Radio lifecycle" in javascript
-    assert "Open to load bounded lifecycle evidence." in javascript
-    assert "Lifecycle evidence was not recorded for this capture." in javascript
+    assert "formatCompactUtcNs" in javascript
+    assert "MAX_CAPTURE_DURATION_LOADS = 4" in javascript
+    assert (
+        "Calibrated Anchor-8 and GLRT beacon detections are unavailable" in javascript
+    )
     assert (
         'event.target.closest("a, button, input, select, textarea, summary")'
         in javascript

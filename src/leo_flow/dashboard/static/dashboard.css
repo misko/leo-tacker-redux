@@ -131,8 +131,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .table-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 0.65rem; margin-bottom: 0.8rem; }
 .table-filters label { display: grid; gap: 0.35rem; color: var(--muted); font-size: 0.75rem; }
 .table-filters input { min-width: min(21rem, 72vw); }
-#capture-batches-table { min-width: 72rem; }
-#capture-batches-table th:first-child, .recording-identity, .batch-context summary {
+#capture-batches-table { min-width: 58rem; }
+#capture-batches-table th:first-child {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   overflow-wrap: anywhere;
 }
@@ -143,6 +143,15 @@ tbody tr:last-child td { border-bottom: 0; }
 .cell-note, .failure-reason { display: block; margin-top: 0.35rem; color: var(--muted); font-size: 0.72rem; line-height: 1.4; }
 .failure-reason { color: var(--danger); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .capture-detail-link { white-space: nowrap; }
+.heading-note { color: var(--muted); font-size: 0.66rem; font-weight: 500; }
+.table-status-icon { display: inline-grid; place-items: center; min-width: 1.35rem; font-size: 1.1rem; font-weight: 800; }
+.capture-status-icon[data-state="succeeded"] { color: var(--accent); }
+.capture-status-icon[data-state="failed"] { color: var(--danger); }
+.capture-status-icon[data-state="pending"] { color: var(--warning); }
+.analysis-status-icon[data-state="complete"] { color: var(--accent); }
+.analysis-status-icon[data-state="pending"], .analysis-status-icon[data-state="running"] { color: var(--warning); }
+.analysis-status-icon[data-state="failed"], .analysis-status-icon[data-state="unavailable"] { color: var(--danger); }
+.pilot-detection-counts, .capture-duration { white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .batch-context { max-width: 24rem; }
 .batch-context summary { color: var(--accent-strong); cursor: pointer; font-size: 0.76rem; }
 .batch-context p { margin: 0.55rem 0 0; color: var(--muted); font-size: 0.74rem; line-height: 1.45; }

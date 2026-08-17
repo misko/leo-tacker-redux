@@ -15,6 +15,11 @@ let loadedCaptureBatches = [];
 let currentCaptureBounds = null;
 let captureBatchGeneration = 0;
 let starlinkRecordingStates = new Map();
+const captureDurationCache = new Map();
+const captureDurationQueued = new Set();
+const captureDurationQueue = [];
+let activeCaptureDurationLoads = 0;
+const MAX_CAPTURE_DURATION_LOADS = 4;
 
 const byId = (id) => document.getElementById(id);
 
@@ -44,6 +49,13 @@ function formatUtcNs(value) {
   const milliseconds = Number(value) / 1_000_000;
   if (!Number.isFinite(milliseconds)) return "Unavailable";
   return new Date(milliseconds).toISOString().replace(".000Z", "Z");
+}
+
+function formatCompactUtcNs(value) {
+  const milliseconds = Number(value) / 1_000_000;
+  if (!Number.isFinite(milliseconds)) return "Unavailable";
+  const iso = new Date(milliseconds).toISOString();
+  return `${iso.slice(0, 4)}/${iso.slice(5, 7)}/${iso.slice(8, 10)}-${iso.slice(11, 19)}`;
 }
 
 function formatBytes(value) {
@@ -103,23 +115,6 @@ function badgeTone(state) {
   return "warning";
 }
 
-function formatNanoseconds(value) {
-  return value === null || value === undefined ? "Not available" : `${value} ns`;
-}
-
-function captureModeText(item) {
-  if (item.mode === "independent") {
-    return "Independent — no synchronization claim";
-  }
-  return "Coordinated — measured software coordination; not hardware synchronization";
-}
-
-function eligibilityText(value) {
-  if (value === "eligible") return "Paired analysis eligible";
-  if (value === "ineligible") return "Paired analysis ineligible";
-  return "Paired analysis pending";
-}
-
 function captureRadioFilter() {
   return byId("capture-radio-filter").value.trim().toLowerCase();
 }
@@ -132,6 +127,69 @@ function radioDisplayName(radioId) {
   const stableId = String(radioId);
   const alias = RADIO_DISPLAY_ALIASES_V1[stableId];
   return alias ? `${alias.short} · ${stableId}` : stableId;
+}
+
+function compactRadioDisplayName(radioId) {
+  const stableId = String(radioId);
+  const alias = RADIO_DISPLAY_ALIASES_V1[stableId];
+  const serialSuffix = stableId.slice(-4);
+  return alias ? `${alias.short} / ${serialSuffix}` : stableId;
+}
+
+function updateCaptureDurationCells(recordingId, text, title = "") {
+  for (const row of document.querySelectorAll("#capture-attempts-body tr")) {
+    if (row.dataset.recordingId !== recordingId) continue;
+    const cell = row.querySelector(".capture-duration");
+    if (!cell) continue;
+    cell.textContent = text;
+    cell.title = title;
+  }
+}
+
+function pumpCaptureDurationQueue() {
+  while (activeCaptureDurationLoads < MAX_CAPTURE_DURATION_LOADS && captureDurationQueue.length) {
+    const recordingId = captureDurationQueue.shift();
+    activeCaptureDurationLoads += 1;
+    fetchJson(`/api/v3/recordings/${encodeURIComponent(recordingId)}`)
+      .then((detail) => {
+        const durationNs = Number(detail.capture_finished_utc_ns) - Number(detail.capture_started_utc_ns);
+        if (!Number.isFinite(durationNs) || durationNs <= 0) throw new Error("Invalid capture duration");
+        const text = formatDurationNs(durationNs);
+        captureDurationCache.set(recordingId, text);
+        updateCaptureDurationCells(recordingId, text, "Observed capture start to capture finish");
+      })
+      .catch(() => updateCaptureDurationCells(recordingId, "—", "Capture duration unavailable"))
+      .finally(() => {
+        activeCaptureDurationLoads -= 1;
+        captureDurationQueued.delete(recordingId);
+        pumpCaptureDurationQueue();
+      });
+  }
+}
+
+function requestCaptureDuration(recordingId) {
+  const cached = captureDurationCache.get(recordingId);
+  if (cached !== undefined) {
+    updateCaptureDurationCells(recordingId, cached, "Observed capture start to capture finish");
+    return;
+  }
+  if (captureDurationQueued.has(recordingId)) return;
+  captureDurationQueued.add(recordingId);
+  captureDurationQueue.push(recordingId);
+  pumpCaptureDurationQueue();
+}
+
+function appendStatusIcon(cell, state, kind) {
+  const icon = document.createElement("span");
+  icon.className = `table-status-icon ${kind}-status-icon`;
+  icon.dataset.state = state;
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = kind === "capture"
+    ? (state === "succeeded" ? "✓" : state === "failed" ? "✕" : "●")
+    : "●";
+  cell.append(icon);
+  appendText(cell, "span", state.replaceAll("_", " "), "visually-hidden");
+  cell.title = `${kind === "capture" ? "Capture" : "Analysis"}: ${state.replaceAll("_", " ")}`;
 }
 
 function radioMatchesFilter(radioId, radioFilter) {
@@ -252,66 +310,15 @@ function refreshCaptureRadioOptions() {
   }
 }
 
-function appendBatchContext(cell, batch, attempt) {
-  const disclosure = document.createElement("details");
-  disclosure.className = "batch-context";
-  const summary = appendText(disclosure, "summary", batch.batch_id);
-  summary.setAttribute("aria-label", `Show context for batch ${batch.batch_id}`);
-  appendText(disclosure, "p", captureModeText(batch));
-  appendText(disclosure, "p", eligibilityText(batch.paired_analysis_eligibility));
-  appendText(
-    disclosure,
-    "p",
-    `Attempt ${attempt.attempt_id}; plan ${attempt.plan_id}; requested ${formatUtcNs(attempt.requested_start_utc_ns)}.`,
-  );
-  appendText(
-    disclosure,
-    "p",
-    `Requested skew ${formatNanoseconds(batch.requested_start_skew_ns)}; observed skew ${formatNanoseconds(batch.observed_start_skew_ns)}; limit ${formatNanoseconds(batch.maximum_observed_start_skew_ns)}.`,
-  );
-  const lifecycle = document.createElement("details");
-  lifecycle.className = "radio-lifecycle-context";
-  const lifecycleSummary = appendText(lifecycle, "summary", "Radio lifecycle");
-  lifecycleSummary.setAttribute(
-    "aria-label",
-    `Show radio lifecycle evidence for ${attempt.attempt_id}`,
-  );
-  const state = appendText(lifecycle, "p", "Open to load bounded lifecycle evidence.");
-  lifecycle.addEventListener("toggle", async () => {
-    if (!lifecycle.open || lifecycle.dataset.loaded === "true") return;
-    state.textContent = "Loading radio lifecycle evidence…";
-    try {
-      const payload = await fetchJson(
-        `/api/v5/capture-attempts/${encodeURIComponent(attempt.attempt_id)}/radio-lifecycle`,
-      );
-      lifecycle.dataset.loaded = "true";
-      state.textContent = payload.reason === null
-        ? "No lifecycle change observed."
-        : `${String(payload.reason).replaceAll("_", " ")} · ${payload.confidence} confidence.`;
-      const facts = document.createElement("dl");
-      facts.className = "facts compact-facts";
-      replaceFacts(facts, [
-        ["Preflight boot", payload.preflight_boot_id || "Unavailable"],
-        ["Terminal boot", payload.terminal_boot_id || "Unavailable"],
-        ["Evidence", (payload.evidence_codes || []).join(", ") || "No change"],
-        ["Terminal observer", payload.observer_available_at_terminal ? "Available" : "Unavailable"],
-      ]);
-      lifecycle.append(facts);
-    } catch (error) {
-      state.textContent = error?.status === 404
-        ? "Lifecycle evidence was not recorded for this capture."
-        : `Lifecycle evidence unavailable: ${safeError(error)}`;
-    }
-  });
-  disclosure.append(lifecycle);
-  cell.append(disclosure);
-}
-
-function makeCaptureRowNavigable(row, detailLink, attempt) {
+function makeCaptureRowNavigable(row, detailHref, attempt) {
   row.classList.add("capture-row-link");
   row.tabIndex = 0;
   row.title = `View capture details for ${attempt.recording_id}`;
-  const navigate = () => detailLink.click();
+  row.setAttribute(
+    "aria-label",
+    `View capture details, waterfall, and analysis for ${attempt.recording_id}`,
+  );
+  const navigate = () => window.location.assign(detailHref);
   row.addEventListener("click", (event) => {
     if (event.target.closest("a, button, input, select, textarea, summary")) return;
     navigate();
@@ -328,6 +335,7 @@ function appendBatchAttemptRow(body, batch, attempt) {
   row.dataset.batchId = batch.batch_id;
   row.dataset.attemptId = attempt.attempt_id;
   row.dataset.radioId = attempt.radio_id;
+  if (attempt.recording_id) row.dataset.recordingId = attempt.recording_id;
 
   const startedCell = document.createElement("th");
   startedCell.scope = "row";
@@ -335,70 +343,42 @@ function appendBatchAttemptRow(body, batch, attempt) {
   appendText(
     startedCell,
     "span",
-    formatUtcNs(observed ? attempt.observed_start_utc_ns : attempt.requested_start_utc_ns),
+    formatCompactUtcNs(observed ? attempt.observed_start_utc_ns : attempt.requested_start_utc_ns),
   );
-  appendText(startedCell, "span", observed ? "Observed first sample" : "Requested start", "cell-note");
   row.append(startedCell);
-  const radioCell = appendText(row, "td", radioDisplayName(attempt.radio_id));
+  const radioCell = appendText(row, "td", compactRadioDisplayName(attempt.radio_id));
   radioCell.title = RADIO_DISPLAY_ALIASES_V1[attempt.radio_id]?.address || "";
 
   const captureCell = document.createElement("td");
-  const captureBadge = appendText(captureCell, "span", attempt.capture_state, "status-badge");
-  captureBadge.dataset.tone = badgeTone(attempt.capture_state);
-  if (attempt.failure_reason) {
-    appendText(captureCell, "span", `Failure: ${attempt.failure_reason}`, "failure-reason");
-  }
+  appendStatusIcon(captureCell, attempt.capture_state, "capture");
+  if (attempt.failure_reason) captureCell.title += ` — ${attempt.failure_reason}`;
   row.append(captureCell);
 
-  const recordingCell = document.createElement("td");
-  if (attempt.recording_id) {
-    appendText(recordingCell, "span", attempt.recording_id, "recording-identity");
-  } else {
-    appendText(
-      recordingCell,
-      "span",
-      attempt.capture_state === "failed" ? "None — capture failed" : "Not published",
-    );
-  }
-  row.append(recordingCell);
-
   const analysisCell = document.createElement("td");
-  if (attempt.analysis_state === "unavailable") {
-    appendText(analysisCell, "span", "Not available");
-  } else {
-    const analysisBadge = appendText(
-      analysisCell,
-      "span",
-      attempt.analysis_state,
-      "status-badge",
-    );
-    analysisBadge.dataset.tone = badgeTone(attempt.analysis_state);
-    appendText(
-      analysisCell,
-      "span",
-      attempt.analysis_result_available ? "Results ready" : "No result yet",
-      "cell-note",
-    );
-  }
+  appendStatusIcon(analysisCell, attempt.analysis_state, "analysis");
   row.append(analysisCell);
 
-  const detailsCell = document.createElement("td");
-  if (attempt.recording_id) {
-    const detailLink = appendText(detailsCell, "a", "View capture", "capture-detail-link");
-    detailLink.href = `/recordings/${encodeURIComponent(attempt.recording_id)}`;
-    detailLink.setAttribute(
-      "aria-label",
-      `View capture details, waterfall, and analysis for ${attempt.recording_id}`,
-    );
-    makeCaptureRowNavigable(row, detailLink, attempt);
-  } else {
-    appendText(detailsCell, "span", "No capture details", "cell-note");
-  }
-  row.append(detailsCell);
+  const pilotCell = document.createElement("td");
+  pilotCell.className = "pilot-detection-counts";
+  pilotCell.textContent = "— / —";
+  pilotCell.title = "Calibrated Anchor-8 and GLRT beacon detections are unavailable";
+  row.append(pilotCell);
 
-  const contextCell = document.createElement("td");
-  appendBatchContext(contextCell, batch, attempt);
-  row.append(contextCell);
+  const durationCell = document.createElement("td");
+  durationCell.className = "capture-duration";
+  durationCell.textContent = attempt.recording_id ? "Loading…" : "—";
+  row.append(durationCell);
+
+  const satellitesCell = document.createElement("td");
+  satellitesCell.textContent = "—";
+  satellitesCell.title = "Recording-to-satellite association is not available in the dashboard contract";
+  row.append(satellitesCell);
+
+  if (attempt.recording_id) {
+    const detailHref = `/recordings/${encodeURIComponent(attempt.recording_id)}`;
+    makeCaptureRowNavigable(row, detailHref, attempt);
+    requestCaptureDuration(attempt.recording_id);
+  }
   body.append(row);
 }
 
