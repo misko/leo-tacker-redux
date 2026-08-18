@@ -72,6 +72,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0054_dashboard_capture_qam_summary_projection.sql",),
         ("0055_dashboard_capture_qam_summary_backfill.sql",),
         ("0056_dashboard_capture_qam_summary_receipt.sql",),
+        ("0057_dashboard_capture_doppler_summary_projection.sql",),
     ]
 
 
@@ -133,7 +134,9 @@ def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
     assert not analysis_insert
     assert not capture_select
     assert not dashboard_select
-    assert receipts[-1] == ("0056_dashboard_capture_qam_summary_receipt.sql",)
+    assert receipts[-1] == (
+        "0057_dashboard_capture_doppler_summary_projection.sql",
+    )
 
 
 @pytest.mark.integration

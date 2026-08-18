@@ -126,6 +126,7 @@ DEFINER_FUNCTIONS = {
     "publish_recording_starlink_pilot_constellation",
     "publish_recording_starlink_temporal_pilot",
     "publish_recording_doppler_analysis",
+    "publish_dashboard_capture_doppler_product_v0_1",
     "publish_recording_waterfall_v0_2",
     "publish_starlink_projection_work",
     "publish_starlink_detector_suite_projection_work",
@@ -148,6 +149,7 @@ DEFINER_FUNCTIONS = {
     "read_dashboard_temporal_pilot_interval_v1",
     "read_dashboard_doppler_aggregate_interval_count_v1",
     "read_dashboard_doppler_aggregate_interval_v1",
+    "read_dashboard_capture_doppler_summaries_v0_1",
     "read_dashboard_surrogate_null_interval_v1",
     "publish_tracking_input_snapshot",
     "publish_tracking_model_snapshot",
@@ -258,6 +260,7 @@ ANALYSIS_FUNCTIONS = {
     "publish_recording_starlink_pilot_constellation",
     "publish_recording_starlink_temporal_pilot",
     "publish_recording_doppler_analysis",
+    "publish_dashboard_capture_doppler_product_v0_1",
     "publish_recording_waterfall_v0_2",
     "publish_starlink_projection_work",
     "publish_starlink_detector_suite_projection_work",
@@ -341,6 +344,7 @@ DASHBOARD_FUNCTIONS = {
     "read_dashboard_temporal_pilot_interval_v1",
     "read_dashboard_doppler_aggregate_interval_count_v1",
     "read_dashboard_doppler_aggregate_interval_v1",
+    "read_dashboard_capture_doppler_summaries_v0_1",
 }
 MAINTENANCE_FUNCTIONS = {
     "claim_unregistered_object",
