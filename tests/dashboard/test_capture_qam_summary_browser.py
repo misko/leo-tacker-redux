@@ -62,7 +62,7 @@ def test_master_table_progressively_loads_qam_and_links_every_recording_detail()
                 assert query == {
                     "start_utc_ns": ["0"],
                     "stop_utc_ns": ["7200000000000"],
-                    "maximum_recordings": ["2"],
+                    "maximum_recordings": ["100"],
                 }
                 route.fulfill(
                     status=200,

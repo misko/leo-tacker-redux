@@ -161,7 +161,6 @@ from leo_flow.dashboard.symbolwise_replay import (
 from leo_flow.services.capture_doppler_summary import (
     CaptureDopplerSummaryQueryServiceV0_1,
 )
-from leo_flow.services.capture_qam_summary import CaptureQamSummaryQueryServiceV0_1
 from leo_flow.services.pilot_doppler_association import (
     RecordingPilotDopplerAssociationServiceV0_1,
 )
@@ -174,8 +173,8 @@ from . import dashboard_postgres_sql as sql
 from .dashboard_batch_postgres import PostgresCaptureBatchDashboardRepository
 from .dashboard_capture_doppler_postgres import (
     PostgresCaptureDopplerScopeRepositoryV0_1,
-    PostgresCaptureQamScopeRepositoryV0_1,
 )
+from .dashboard_capture_qam_postgres import PostgresCaptureQamSummaryRepositoryV0_1
 from .dashboard_observation_postgres import PostgresObservationAggregateRepositoryV0_1
 from .dashboard_recording_evidence_postgres import (
     PostgresRecordingEvidenceContextRepositoryV0_1,
@@ -286,9 +285,7 @@ class PostgresDashboardRepository:
         self._capture_doppler_summaries = CaptureDopplerSummaryQueryServiceV0_1(
             PostgresCaptureDopplerScopeRepositoryV0_1(connect), self
         )
-        self._capture_qam_summaries = CaptureQamSummaryQueryServiceV0_1(
-            PostgresCaptureQamScopeRepositoryV0_1(connect), self, adaptive_qam
-        )
+        self._capture_qam_summaries = PostgresCaptureQamSummaryRepositoryV0_1(connect)
         self._pilot_doppler = (
             None
             if adaptive_qam is None

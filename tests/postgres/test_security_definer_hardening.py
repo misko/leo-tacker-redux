@@ -7,6 +7,14 @@ import psycopg
 import pytest
 
 DEFINER_FUNCTIONS = {
+    "claim_starlink_symbolwise_replay_work_v0_1",
+    "complete_starlink_symbolwise_replay_work_v0_1",
+    "enqueue_starlink_symbolwise_replay_work_v0_1",
+    "park_starlink_symbolwise_replay_work_v0_1",
+    "publish_recording_starlink_symbolwise_replay_v0_1",
+    "read_exact_recording_starlink_symbolwise_replay_v0_1",
+    "read_latest_recording_starlink_symbolwise_replay_v0_1",
+    "retry_starlink_symbolwise_replay_work_v0_1",
     "admit_full_dwell_timeline_work_v0_1",
     "admit_starlink_full_dwell_work_v0_1",
     "claim_full_dwell_timeline_work_v0_1",
@@ -29,6 +37,8 @@ DEFINER_FUNCTIONS = {
     "publish_recording_starlink_pilot_refinement_v0_1",
     "publish_recording_starlink_pilot_prescreen_v0_1",
     "publish_recording_starlink_full_dwell_v0_1",
+    "publish_recording_receiver_agnostic_cfo_qam_v0_6",
+    "publish_dashboard_capture_qam_candidates_v0_1",
     "read_exact_recording_full_dwell_timeline_v0_1",
     "read_exact_recording_starlink_acquired_constellation_v0_3",
     "read_exact_recording_starlink_adaptive_qam_v0_4",
@@ -45,6 +55,9 @@ DEFINER_FUNCTIONS = {
     "read_latest_recording_starlink_pilot_prescreen_v0_1",
     "read_latest_recording_starlink_full_dwell_v0_1",
     "read_recording_starlink_full_dwell_v0_1",
+    "read_exact_recording_receiver_agnostic_cfo_qam_v0_6",
+    "read_latest_recording_receiver_agnostic_cfo_qam_v0_6",
+    "read_dashboard_capture_qam_summaries_v0_1",
     "requeue_starlink_adaptive_response_work_v0_1",
     "retry_full_dwell_timeline_work_v0_1",
     "retry_starlink_adaptive_response_work_v0_1",
@@ -147,6 +160,14 @@ DEFINER_FUNCTIONS = {
 }
 
 ANALYSIS_FUNCTIONS = {
+    "claim_starlink_symbolwise_replay_work_v0_1",
+    "complete_starlink_symbolwise_replay_work_v0_1",
+    "enqueue_starlink_symbolwise_replay_work_v0_1",
+    "park_starlink_symbolwise_replay_work_v0_1",
+    "publish_recording_starlink_symbolwise_replay_v0_1",
+    "read_exact_recording_starlink_symbolwise_replay_v0_1",
+    "read_latest_recording_starlink_symbolwise_replay_v0_1",
+    "retry_starlink_symbolwise_replay_work_v0_1",
     "admit_full_dwell_timeline_work_v0_1",
     "admit_starlink_full_dwell_work_v0_1",
     "claim_full_dwell_timeline_work_v0_1",
@@ -168,6 +189,10 @@ ANALYSIS_FUNCTIONS = {
     "publish_recording_starlink_pilot_refinement_v0_1",
     "publish_recording_starlink_pilot_prescreen_v0_1",
     "publish_recording_starlink_full_dwell_v0_1",
+    "publish_recording_receiver_agnostic_cfo_qam_v0_6",
+    "publish_dashboard_capture_qam_candidates_v0_1",
+    "read_exact_recording_receiver_agnostic_cfo_qam_v0_6",
+    "read_latest_recording_receiver_agnostic_cfo_qam_v0_6",
     "read_exact_recording_full_dwell_timeline_v0_1",
     "read_exact_recording_starlink_acquired_constellation_v0_3",
     "read_exact_recording_starlink_adaptive_qam_v0_4",
@@ -274,6 +299,11 @@ CAPTURE_FUNCTIONS = {
     "register_live_object_blob",
 }
 DASHBOARD_FUNCTIONS = {
+    "read_exact_recording_starlink_symbolwise_replay_v0_1",
+    "read_latest_recording_starlink_symbolwise_replay_v0_1",
+    "read_dashboard_capture_qam_summaries_v0_1",
+    "read_exact_recording_receiver_agnostic_cfo_qam_v0_6",
+    "read_latest_recording_receiver_agnostic_cfo_qam_v0_6",
     "read_exact_recording_full_dwell_timeline_v0_1",
     "read_exact_recording_starlink_acquired_constellation_v0_3",
     "read_exact_recording_starlink_adaptive_qam_v0_4",

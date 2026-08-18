@@ -22,6 +22,7 @@ from leo_flow.contracts.core import (
     SchemaVersion,
 )
 from leo_flow.contracts.starlink_adaptive_qam import (
+    StarlinkAdaptiveQamBundleV0_4,
     StarlinkAdaptiveQamCatalogProjectionV0_4,
     StarlinkAdaptiveQamProductRefV0_4,
 )
@@ -37,6 +38,8 @@ from leo_flow.contracts.starlink_suite_pipeline import (
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
+
+from .dashboard_qam_summary_projection import publish_adaptive_qam_summary_with_cursor
 
 
 class PostgresStarlinkAdaptiveQamCatalogV0_4(StarlinkAdaptiveQamCatalogV0_4):
@@ -55,21 +58,7 @@ class PostgresStarlinkAdaptiveQamCatalogV0_4(StarlinkAdaptiveQamCatalogV0_4):
             raise StarlinkAdaptiveQamConflictError(
                 "adaptive QAM recording closure differs"
             )
-        payload = {
-            "analysis_id": projection.analysis_id,
-            "recording_id": str(projection.recording_id),
-            "input_recording_digest_value": projection.recording_identity_digest.value,
-            "source_adaptive_response_analysis_id": projection.source_adaptive_response_ref.artifact_id,
-            "source_adaptive_response_bundle_digest_value": projection.source_adaptive_response_ref.digest.value,
-            "source_suite_analysis_id": projection.source_suite_ref.artifact_id,
-            "source_suite_bundle_digest_value": projection.source_suite_ref.digest.value,
-            "request_digest_value": projection.request_digest.value,
-            "bundle_digest_value": bundle_ref.digest.value,
-            "stream_count": projection.stream_count,
-            "window_count": projection.window_count,
-            "point_count": projection.point_count,
-            "idempotency_key": idempotency_key,
-        }
+        payload = _publication_payload(projection, bundle_ref, idempotency_key)
         with (
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
@@ -83,6 +72,38 @@ class PostgresStarlinkAdaptiveQamCatalogV0_4(StarlinkAdaptiveQamCatalogV0_4):
             raise StarlinkAdaptiveQamConflictError(
                 "adaptive QAM publication was not acknowledged"
             )
+        return StarlinkAdaptiveQamProductRefV0_4(
+            projection.analysis_id, projection.recording_id, bundle_ref
+        )
+
+    def publish_starlink_adaptive_qam_with_summary(
+        self,
+        projection: StarlinkAdaptiveQamCatalogProjectionV0_4,
+        bundle_ref: ObjectRef,
+        recording_ref: RecordingObjectRef,
+        bundle: StarlinkAdaptiveQamBundleV0_4,
+        *,
+        idempotency_key: str,
+    ) -> StarlinkAdaptiveQamProductRefV0_4:
+        if recording_ref.identity_digest() != projection.recording_identity_digest:
+            raise StarlinkAdaptiveQamConflictError(
+                "adaptive QAM recording closure differs"
+            )
+        payload = _publication_payload(projection, bundle_ref, idempotency_key)
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            _register_live_object(cursor, bundle_ref)
+            row = cursor.execute(
+                "SELECT public.publish_recording_starlink_adaptive_qam_v0_4(%s) AS published",
+                (Jsonb(payload),),
+            ).fetchone()
+            if row is None or row["published"] is not True:
+                raise StarlinkAdaptiveQamConflictError(
+                    "adaptive QAM publication was not acknowledged"
+                )
+            publish_adaptive_qam_summary_with_cursor(cursor, bundle)
         return StarlinkAdaptiveQamProductRefV0_4(
             projection.analysis_id, projection.recording_id, bundle_ref
         )
@@ -157,6 +178,28 @@ def _register_live_object(
         != values[2:]
     ):
         raise StarlinkAdaptiveQamConflictError("adaptive QAM object metadata conflicts")
+
+
+def _publication_payload(
+    projection: StarlinkAdaptiveQamCatalogProjectionV0_4,
+    bundle_ref: ObjectRef,
+    idempotency_key: str,
+) -> dict[str, object]:
+    return {
+        "analysis_id": projection.analysis_id,
+        "recording_id": str(projection.recording_id),
+        "input_recording_digest_value": projection.recording_identity_digest.value,
+        "source_adaptive_response_analysis_id": projection.source_adaptive_response_ref.artifact_id,
+        "source_adaptive_response_bundle_digest_value": projection.source_adaptive_response_ref.digest.value,
+        "source_suite_analysis_id": projection.source_suite_ref.artifact_id,
+        "source_suite_bundle_digest_value": projection.source_suite_ref.digest.value,
+        "request_digest_value": projection.request_digest.value,
+        "bundle_digest_value": bundle_ref.digest.value,
+        "stream_count": projection.stream_count,
+        "window_count": projection.window_count,
+        "point_count": projection.point_count,
+        "idempotency_key": idempotency_key,
+    }
 
 
 def _cataloged(row: dict[str, object]) -> CatalogedStarlinkAdaptiveQamV0_4:

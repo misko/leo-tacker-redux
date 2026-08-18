@@ -113,12 +113,24 @@ class DurableStarlinkAcquiredConstellationStoreV0_3:
         expected = StarlinkAcquiredConstellationProductRefV0_3(
             bundle.analysis_id, bundle.recording_id, blob
         )
-        actual = self._catalog.publish_starlink_acquired_constellation(
-            projection,
-            blob,
-            request.recording_object_ref,
-            idempotency_key=idempotency_key,
+        atomic = getattr(
+            self._catalog, "publish_starlink_acquired_constellation_with_summary", None
         )
+        if atomic is None:
+            actual = self._catalog.publish_starlink_acquired_constellation(
+                projection,
+                blob,
+                request.recording_object_ref,
+                idempotency_key=idempotency_key,
+            )
+        else:
+            actual = atomic(
+                projection,
+                blob,
+                request.recording_object_ref,
+                bundle,
+                idempotency_key=idempotency_key,
+            )
         if actual != expected:
             raise StarlinkAcquiredConstellationConflictError(
                 "catalog replay returned another acquired-QAM product"

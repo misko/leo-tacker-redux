@@ -20,7 +20,6 @@ let captureDopplerBulkState = "loading";
 let captureQamSummaries = new Map();
 let captureQamGeneration = 0;
 let captureQamBulkState = "loading";
-let captureQamBulkTruncated = false;
 const captureDurationCache = new Map();
 const captureDurationQueued = new Set();
 const captureDurationQueue = [];
@@ -253,7 +252,6 @@ function appendCaptureQamCell(row, attempt) {
     cell.dataset.state = "unavailable";
   } else {
     const summary = captureQamSummaries.get(attempt.recording_id);
-    const outsideBulkBound = !summary && captureQamBulkState === "ready" && captureQamBulkTruncated;
     const state = summary?.state || (
       captureQamBulkState === "loading"
         ? "loading"
@@ -276,8 +274,8 @@ function appendCaptureQamCell(row, attempt) {
       }
       cell.title = "Highest QAM goodness selected independently per authoritative LNB / receiver; calibration required; not a Starlink detection";
     } else {
-      cell.textContent = outsideBulkBound ? "See details" : state === "loading" ? "Loading…" : state === "pending" ? "Pending" : state === "error" ? "Error" : "Unavailable";
-      cell.title = outsideBulkBound ? "Outside the bounded recent QAM summary; open recording details to load every field" : (summary?.reason_codes || ["published-acquired-qam-unavailable"]).join(", ");
+      cell.textContent = state === "loading" ? "Loading…" : state === "pending" ? "Pending" : state === "error" ? "Error" : "Unavailable";
+      cell.title = (summary?.reason_codes || ["published-acquired-qam-unavailable"]).join(", ");
     }
     const detail = appendText(cell, "a", "QAM details", "full-capture-link qam-detail-link");
     detail.href = `/recordings/${encodeURIComponent(attempt.recording_id)}#evidence-qam`;
@@ -640,10 +638,9 @@ async function loadCaptureQamSummaries(bounds) {
   const generation = ++captureQamGeneration;
   captureQamSummaries = new Map();
   captureQamBulkState = "loading";
-  captureQamBulkTruncated = false;
   renderCaptureRows();
   try {
-    const payload = await fetchJson(`/api/v22/capture-qam-summaries?${timeQuery(bounds)}&maximum_recordings=2`);
+    const payload = await fetchJson(`/api/v22/capture-qam-summaries?${timeQuery(bounds)}&maximum_recordings=100`);
     if (generation !== captureQamGeneration) return;
     const warnings = new Set(payload.warnings || []);
     if (
@@ -658,12 +655,10 @@ async function loadCaptureQamSummaries(bounds) {
     captureQamSummaries = new Map(
       (payload.recordings || []).map((item) => [item.recording_id, item]),
     );
-    captureQamBulkTruncated = payload.truncated === true;
     captureQamBulkState = "ready";
   } catch (error) {
     if (generation !== captureQamGeneration) return;
     captureQamSummaries = new Map();
-    captureQamBulkTruncated = false;
     captureQamBulkState = error?.dashboardStatus === 404 ? "unavailable" : "error";
     if (captureQamBulkState === "error") throw error;
   } finally {

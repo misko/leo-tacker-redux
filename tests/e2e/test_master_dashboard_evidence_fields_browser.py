@@ -109,7 +109,7 @@ class _MasterEvidencePorts:
         }
 
     def capture_qam_summaries(self, query: Any) -> dict[str, object]:
-        assert query.maximum_recordings == 2
+        assert query.maximum_recordings == 100
         return {
             "schema_version": 1,
             "start_utc_ns": query.start_utc_ns,
@@ -142,9 +142,40 @@ class _MasterEvidencePorts:
                         }
                     ],
                     "reason_codes": [],
-                }
+                },
+                {
+                    "recording_id": "rec_ready_b",
+                    "radio_id": "radio_b",
+                    "analysis_state": "complete",
+                    "state": "unavailable",
+                    "candidates": [],
+                    "reason_codes": ["published-acquired-qam-summary-unavailable"],
+                },
+                {
+                    "recording_id": "rec_pending_a",
+                    "radio_id": "radio_a",
+                    "analysis_state": "pending",
+                    "state": "pending",
+                    "candidates": [],
+                    "reason_codes": ["acquired-qam-analysis-pending"],
+                },
+                *(
+                    {
+                        "recording_id": recording_id,
+                        "radio_id": radio_id,
+                        "analysis_state": "complete",
+                        "state": "unavailable",
+                        "candidates": [],
+                        "reason_codes": ["published-acquired-qam-summary-unavailable"],
+                    }
+                    for recording_id, radio_id in (
+                        ("rec_solo_preserved", "radio_a"),
+                        ("rec_skew_a", "radio_a"),
+                        ("rec_skew_b", "radio_b"),
+                    )
+                ),
             ],
-            "original_recording_count": 1,
+            "original_recording_count": 6,
             "truncated": False,
             "warnings": [
                 "candidate-only-qam-goodness-not-starlink-detection",
@@ -160,6 +191,7 @@ class _SummaryPriorityProbe:
         self.application: Any = None
         self.qam_finished = threading.Event()
         self.qam_request_count = 0
+        self.qam_detail_request_count = 0
         self.duration_started_before_qam = False
 
     def handle(self, request: JsonRequest) -> JsonResponse:
@@ -169,6 +201,11 @@ class _SummaryPriorityProbe:
             response = self.application.handle(request)
             self.qam_finished.set()
             return response
+        if (
+            "starlink-acquired-constellation" in request.path
+            or "adaptive-qam" in request.path
+        ):
+            self.qam_detail_request_count += 1
         if request.path.startswith("/api/v3/recordings/"):
             self.duration_started_before_qam |= not self.qam_finished.is_set()
         return self.application.handle(request)
@@ -277,6 +314,20 @@ def test_master_capture_table_populates_every_evidence_and_navigation_field() ->
             expect(qam.locator(".qam-detail-link")).to_have_attribute(
                 "href", "/recordings/rec_ready_a#evidence-qam"
             )
+            for attempt_id, recording_id, state in (
+                ("cattempt_ready_b", "rec_ready_b", "unavailable"),
+                ("cattempt_pending_a", "rec_pending_a", "pending"),
+                ("cattempt_peer_failed_a", "rec_solo_preserved", "unavailable"),
+                ("cattempt_skew_a", "rec_skew_a", "unavailable"),
+                ("cattempt_skew_b", "rec_skew_b", "unavailable"),
+            ):
+                other_qam = page.locator(
+                    f'[data-attempt-id="{attempt_id}"] .capture-qam-summary'
+                )
+                expect(other_qam).to_have_attribute("data-state", state)
+                expect(other_qam.locator(".qam-detail-link")).to_have_attribute(
+                    "href", f"/recordings/{recording_id}#evidence-qam"
+                )
             expect(row.locator(".pilot-detection-counts")).to_have_text("— / —")
             expect(row.locator(".pilot-detection-counts")).to_have_attribute(
                 "title",
@@ -306,9 +357,7 @@ def test_master_prioritizes_one_bounded_qam_summary_before_duration_enrichment()
         browser = playwright.chromium.launch(headless=True, env=_browser_environment())
         try:
             page = browser.new_page()
-            page.add_init_script(
-                """Date.now = () => 7200000;"""
-            )
+            page.add_init_script("""Date.now = () => 7200000;""")
             started = time.monotonic()
             response = page.goto(base_url)
             assert response is not None and response.ok
@@ -326,6 +375,7 @@ def test_master_prioritizes_one_bounded_qam_summary_before_duration_enrichment()
             )
             assert probe.qam_finished.is_set()
             assert probe.qam_request_count == 1
+            assert probe.qam_detail_request_count == 0
             assert not probe.duration_started_before_qam
             assert qam_elapsed < 0.75
         finally:

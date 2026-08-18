@@ -69,6 +69,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0051_starlink_adaptive_response_priority.sql",),
         ("0052_starlink_symbolwise_replay_product_v0_1.sql",),
         ("0053_recording_receiver_agnostic_cfo_qam_v0_6.sql",),
+        ("0054_dashboard_capture_qam_summary_projection.sql",),
     ]
 
 
@@ -131,7 +132,7 @@ def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
     assert not capture_select
     assert not dashboard_select
     assert receipts[-1] == (
-        "0053_recording_receiver_agnostic_cfo_qam_v0_6.sql",
+        "0054_dashboard_capture_qam_summary_projection.sql",
     )
 
 

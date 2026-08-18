@@ -24,9 +24,14 @@ from leo_flow.contracts.core import (
 from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     StarlinkAcquiredConstellationCatalogProjectionV0_3,
     StarlinkAcquiredConstellationProductRefV0_3,
+    StarlinkAcquiredConstellationRecordingBundleV0_3,
 )
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 from leo_flow.storage.postgres_catalog import PostgresRecordingCatalog
+
+from .dashboard_qam_summary_projection import (
+    publish_acquired_qam_summary_with_cursor,
+)
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 
@@ -54,6 +59,30 @@ class PostgresStarlinkAcquiredConstellationCatalogV0_3:
                 recording_ref,
                 idempotency_key=idempotency_key,
             )
+
+    def publish_starlink_acquired_constellation_with_summary(
+        self,
+        projection: StarlinkAcquiredConstellationCatalogProjectionV0_3,
+        bundle_ref: ObjectRef,
+        recording_ref: RecordingObjectRef,
+        bundle: StarlinkAcquiredConstellationRecordingBundleV0_3,
+        *,
+        idempotency_key: str,
+    ) -> StarlinkAcquiredConstellationProductRefV0_3:
+        """Publish product and normalized master-table rows in one transaction."""
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            result = publish_starlink_acquired_constellation_with_cursor(
+                cursor,
+                projection,
+                bundle_ref,
+                recording_ref,
+                idempotency_key=idempotency_key,
+            )
+            publish_acquired_qam_summary_with_cursor(cursor, bundle)
+            return result
 
     def get_starlink_acquired_constellation(
         self, ref: StarlinkAcquiredConstellationProductRefV0_3
