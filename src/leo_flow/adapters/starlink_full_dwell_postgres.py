@@ -245,6 +245,7 @@ def _register_live_object(
 def _cataloged(row: dict[str, object]) -> CatalogedStarlinkFullDwellV0_1:
     def digest(value: object) -> Digest:
         return Digest(DigestAlgorithm.SHA256, str(value))
+
     projection = StarlinkFullDwellCatalogProjectionV0_1(
         str(row["analysis_id"]),
         RecordingId(str(row["recording_id"])),
