@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Protocol
+from types import MappingProxyType
+from typing import Final, Protocol
 from urllib.parse import quote, unquote
 
 from leo_flow.contracts.core import (
@@ -50,6 +51,11 @@ from leo_flow.contracts.dashboard_full_dwell_timeline import (
     MAXIMUM_FULL_DWELL_TIMELINE_WINDOWS,
     FullDwellTimelineQueryV0_1,
     RecordingFullDwellTimelineQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_master_capture import (
+    MAX_MASTER_CAPTURE_RECORDINGS,
+    MasterCaptureSnapshotQueryPortV0_1,
+    MasterCaptureSnapshotQueryV0_1,
 )
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_pilot_doppler import (
@@ -181,6 +187,96 @@ class JsonResponse:
 
 class JsonDashboardHandler(Protocol):
     def handle(self, request: JsonRequest) -> JsonResponse: ...
+
+
+PUBLIC_API_ROUTE_ALIASES: Final = MappingProxyType(
+    {
+        "/api/capture-batches": "/api/v2/capture-batches",
+        "/api/capture-batches/{capture_batch_id}": "/api/v2/capture-batches/{capture_batch_id}",
+        "/api/capture-attempts/{capture_attempt_id}/radio-lifecycle": "/api/v5/capture-attempts/{capture_attempt_id}/radio-lifecycle",
+        "/api/observation-aggregate": "/api/v6/observation-aggregate",
+        "/api/score-distributions": "/api/v8/score-distributions",
+        "/api/surrogate-score-distributions": "/api/v12/surrogate-score-distributions",
+        "/api/temporal-pilot-aggregate": "/api/v13/temporal-pilot-aggregate",
+        "/api/doppler-aggregate": "/api/v14/doppler-aggregate",
+        "/api/capture-doppler-summaries": "/api/v18/capture-doppler-summaries",
+        "/api/canaries/retro-qam/latest": "/api/v21/canaries/retro-qam/latest",
+        "/api/capture-qam-summaries": "/api/v22/capture-qam-summaries",
+        "/api/recordings/{recording_id}": "/api/v3/recordings/{recording_id}",
+        "/api/recordings/{recording_id}/waterfall": "/api/v3/recordings/{recording_id}/waterfall",
+        "/api/recordings/{recording_id}/starlink": "/api/v3/recordings/{recording_id}/starlink",
+        "/api/recordings/{recording_id}/starlink-suite": "/api/v4/recordings/{recording_id}/starlink-suite",
+        "/api/recordings/{recording_id}/doppler-visualization": "/api/v9/recordings/{recording_id}/doppler-visualization",
+        "/api/recordings/{recording_id}/starlink-surrogate-null": "/api/v10/recordings/{recording_id}/starlink-surrogate-null",
+        "/api/recordings/{recording_id}/starlink-pilot-constellation": "/api/v11/recordings/{recording_id}/starlink-pilot-constellation",
+        "/api/recordings/{recording_id}/starlink-temporal-pilot": "/api/v13/recordings/{recording_id}/starlink-temporal-pilot",
+        "/api/recordings/{recording_id}/starlink-full-dwell": "/api/v15/recordings/{recording_id}/starlink-full-dwell",
+        "/api/recordings/{recording_id}/evidence-context": "/api/v16/recordings/{recording_id}/evidence-context",
+        "/api/recordings/{recording_id}/evidence-doppler": "/api/v16/recordings/{recording_id}/evidence-doppler",
+        "/api/recordings/{recording_id}/starlink-acquired-constellation": "/api/v17/recordings/{recording_id}/starlink-acquired-constellation",
+        "/api/recordings/{recording_id}/evidence-advanced-doppler": "/api/v19/recordings/{recording_id}/evidence-advanced-doppler",
+        "/api/recordings/{recording_id}/full-dwell-timeline": "/api/v20/recordings/{recording_id}/full-dwell-timeline",
+        "/api/recordings/{recording_id}/analysis-approaches": "/api/v23/recordings/{recording_id}/analysis-approaches",
+        "/api/recordings/{recording_id}/starlink-adaptive-response": "/api/v24/recordings/{recording_id}/starlink-adaptive-response",
+        "/api/recordings/{recording_id}/starlink-adaptive-qam": "/api/v25/recordings/{recording_id}/starlink-adaptive-qam",
+        "/api/recordings/{recording_id}/pilot-doppler-association": "/api/v26/recordings/{recording_id}/pilot-doppler-association",
+        "/api/recordings/{recording_id}/starlink-pilot-prescreen": "/api/v27/recordings/{recording_id}/starlink-pilot-prescreen",
+        "/api/recordings/{recording_id}/starlink-pilot-refinement": "/api/v28/recordings/{recording_id}/starlink-pilot-refinement",
+        "/api/recordings/{recording_id}/symbolwise-replay": "/api/v29/recordings/{recording_id}/symbolwise-replay",
+        "/api/recordings/{recording_id}/receiver-agnostic-cfo-qam": "/api/v30/recordings/{recording_id}/receiver-agnostic-cfo-qam",
+    }
+)
+
+
+class DashboardPublicJsonApplication:
+    """Expose semantic routes while keeping versioned handlers internal."""
+
+    def __init__(self, versioned: JsonDashboardHandler) -> None:
+        self._versioned = versioned
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if _is_versioned_api_path(path):
+            return _error(
+                410,
+                "gone",
+                "versioned dashboard API routes are no longer public",
+            )
+        internal_path = _resolve_public_api_alias(path)
+        if internal_path is None:
+            return self._versioned.handle(request)
+        return self._versioned.handle(
+            JsonRequest(request.method, internal_path, request.query)
+        )
+
+
+def _is_versioned_api_path(path: str) -> bool:
+    parts = path.split("/")
+    return (
+        len(parts) >= 3
+        and parts[1] == "api"
+        and parts[2].startswith("v")
+        and parts[2][1:].isdigit()
+    )
+
+
+def _resolve_public_api_alias(path: str) -> str | None:
+    parts = path.split("/")
+    for public_template, internal_template in PUBLIC_API_ROUTE_ALIASES.items():
+        template_parts = public_template.split("/")
+        if len(parts) != len(template_parts):
+            continue
+        values: dict[str, str] = {}
+        for candidate, template in zip(parts, template_parts, strict=True):
+            if template.startswith("{") and template.endswith("}"):
+                if not candidate:
+                    break
+                values[template[1:-1]] = candidate
+            elif candidate != template:
+                break
+        else:
+            return internal_template.format(**values)
+    return None
 
 
 class DashboardJsonApplication:
@@ -1515,7 +1611,9 @@ class DashboardJsonApplicationV30:
             )
             encoded = canonical_json_bytes(payload)
             if len(encoded) > self._MAX_RESPONSE_BYTES:
-                raise RuntimeError("receiver-agnostic CFO/QAM response exceeds its bound")
+                raise RuntimeError(
+                    "receiver-agnostic CFO/QAM response exceeds its bound"
+                )
         except ValueError as error:
             return _error(400, "invalid_request", str(error))
         except (DashboardNotFound, LookupError) as error:
@@ -1561,7 +1659,6 @@ class RecordingAnalysisFacadeApplication:
             "surrogate_maximum_rows",
         }
     )
-
     def __init__(
         self,
         previous: JsonDashboardHandler,
@@ -2039,6 +2136,43 @@ class RecordingAnalysisFacadeApplication:
         return {destination: values[source]} if source in values else {}
 
 
+class DashboardJsonApplicationCaptures:
+    """Expose one stored page-load snapshot at the stable capture resource."""
+
+    _ROUTE = "/api/captures"
+    _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        captures: MasterCaptureSnapshotQueryPortV0_1,
+    ) -> None:
+        self._previous, self._captures = previous, captures
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._ROUTE:
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            query, cursor = _master_capture_snapshot_query(request.query)
+            encoded = canonical_json_bytes(
+                self._captures.master_capture_snapshot(query, cursor)
+            )
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("master capture snapshot exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
 def _receiver_agnostic_cfo_qam_query(
     recording_id: RecordingId,
     query: dict[str, str],
@@ -2061,6 +2195,29 @@ def _receiver_agnostic_cfo_qam_query(
     )
 
 
+def _master_capture_snapshot_query(
+    query: dict[str, str],
+) -> tuple[MasterCaptureSnapshotQueryV0_1, str | None]:
+    allowed = {"start_utc_ns", "stop_utc_ns", "maximum_recordings", "cursor"}
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    try:
+        parsed = MasterCaptureSnapshotQueryV0_1(
+            UtcNs(int(query["start_utc_ns"])),
+            UtcNs(int(query["stop_utc_ns"])),
+            int(query.get("maximum_recordings", str(MAX_MASTER_CAPTURE_RECORDINGS))),
+        )
+    except KeyError as error:
+        raise ValueError(f"missing query parameter {error.args[0]}") from error
+    except ValueError as error:
+        raise ValueError("master capture snapshot query is invalid") from error
+    cursor = query.get("cursor")
+    if cursor == "":
+        raise ValueError("master capture cursor cannot be empty")
+    return parsed, cursor
+
+
 def _symbolwise_replay_dashboard_query(
     recording_id: RecordingId,
     query: dict[str, str],
@@ -2075,8 +2232,7 @@ def _symbolwise_replay_dashboard_query(
     return RecordingSymbolwiseReplayDashboardQueryV0_1(
         recording_id=recording_id,
         radio_ids=tuple(
-            RadioId(value)
-            for value in (_comma_values(query, "radio_ids", 16) or ())
+            RadioId(value) for value in (_comma_values(query, "radio_ids", 16) or ())
         ),
         lnb_ids=_comma_values(query, "lnb_ids", 16) or (),
         receiver_chain_ids=tuple(

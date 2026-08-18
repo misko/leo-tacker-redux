@@ -5,6 +5,7 @@ from .api import (
     DashboardJsonApplicationV9,
     DashboardJsonApplicationV10,
     DashboardJsonApplicationV11,
+    DashboardPublicJsonApplication,
     JsonRequest,
     JsonResponse,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "DashboardJsonApplicationV10",
     "DashboardJsonApplicationV11",
     "DashboardNotFound",
+    "DashboardPublicJsonApplication",
     "FeatureProjection",
     "InMemoryDashboardRepository",
     "InvalidCursor",

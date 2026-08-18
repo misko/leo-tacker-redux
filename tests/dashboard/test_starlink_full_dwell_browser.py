@@ -93,7 +93,7 @@ def test_browser_labels_sparse_exact_coverage_and_independent_filters() -> None:
                 )
 
             page.route(
-                "**/api/v15/recordings/rec_fd_browser/starlink-full-dwell?*", fulfill
+                "**/api/recordings/rec_fd_browser/starlink-full-dwell?*", fulfill
             )
             response = page.goto(f"{base_url}/full-dwell")
             assert response is not None and response.ok
@@ -134,7 +134,7 @@ def test_browser_exposes_pending_and_error_states() -> None:
         try:
             page = browser.new_page()
             page.route(
-                "**/api/v15/recordings/rec_pending/starlink-full-dwell?*",
+                "**/api/recordings/rec_pending/starlink-full-dwell?*",
                 lambda r: r.fulfill(status=404, body="{}"),
             )
             page.goto(f"{base_url}/full-dwell")

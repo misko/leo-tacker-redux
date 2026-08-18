@@ -218,10 +218,55 @@ def test_complete_plugin_assembles_without_database_or_network_io(
             self.kwargs = kwargs
 
     postgres_adapter.PostgresDashboardRepository = FakeRepository
+    master_capture_adapter = ModuleType(
+        "leo_flow.adapters.dashboard_master_capture_postgres"
+    )
+
+    class FakeMasterCaptureRepository:
+        def __init__(self, connect, canary, **kwargs) -> None:
+            self.connect = connect
+            self.canary = canary
+            self.kwargs = kwargs
+
+    master_capture_adapter.PostgresMasterCaptureSnapshotRepositoryV0_1 = (
+        FakeMasterCaptureRepository
+    )
+    doppler_snapshot_adapter = ModuleType(
+        "leo_flow.adapters.dashboard_capture_doppler_postgres"
+    )
+    qam_snapshot_adapter = ModuleType(
+        "leo_flow.adapters.dashboard_capture_qam_snapshot_postgres"
+    )
+
+    class FakeSnapshotRepository:
+        def __init__(self, connect) -> None:
+            self.connect = connect
+
+    doppler_snapshot_adapter.PostgresCaptureDopplerSnapshotRepositoryV0_1 = (
+        FakeSnapshotRepository
+    )
+    qam_snapshot_adapter.PostgresCaptureQamSnapshotRepositoryV0_1 = (
+        FakeSnapshotRepository
+    )
     monkeypatch.setitem(sys.modules, "psycopg", psycopg)
     monkeypatch.setitem(sys.modules, "psycopg.rows", rows)
     monkeypatch.setitem(
         sys.modules, "leo_flow.adapters.dashboard_postgres", postgres_adapter
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "leo_flow.adapters.dashboard_master_capture_postgres",
+        master_capture_adapter,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "leo_flow.adapters.dashboard_capture_doppler_postgres",
+        doppler_snapshot_adapter,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "leo_flow.adapters.dashboard_capture_qam_snapshot_postgres",
+        qam_snapshot_adapter,
     )
 
     service = assemble_service(
@@ -366,29 +411,29 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
     v2 = server.handler.handle(
         JsonRequest(
             "GET",
-            "/api/v2/capture-batches",
+            "/api/capture-batches",
             {"start_utc_ns": "0", "stop_utc_ns": "1"},
         )
     )
     assert v2.status == 200 and v2.body == b'{"items":[],"next_cursor":null}'
     v3 = server.handler.handle(
-        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}", {})
+        JsonRequest("GET", f"/api/recordings/{RECORDING_ID}", {})
     )
     assert v3.status == 200
     assert json.loads(v3.body)["recording_id"] == str(RECORDING_ID)
     waterfall_response = server.handler.handle(
-        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}/waterfall", {})
+        JsonRequest("GET", f"/api/recordings/{RECORDING_ID}/waterfall", {})
     )
     assert waterfall_response.status == 200
     assert json.loads(waterfall_response.body)["state"] == "complete"
     suite_response = server.handler.handle(
-        JsonRequest("GET", f"/api/v4/recordings/{RECORDING_ID}/starlink-suite", {})
+        JsonRequest("GET", f"/api/recordings/{RECORDING_ID}/starlink-suite", {})
     )
     assert suite_response.status == 404
     surrogate_response = server.handler.handle(
         JsonRequest(
             "GET",
-            f"/api/v10/recordings/{RECORDING_ID}/starlink-surrogate-null",
+            f"/api/recordings/{RECORDING_ID}/starlink-surrogate-null",
             {"methods": "glrt-32", "maximum_rows": "8"},
         )
     )
@@ -399,7 +444,7 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
     constellation_response = server.handler.handle(
         JsonRequest(
             "GET",
-            f"/api/v11/recordings/{RECORDING_ID}/starlink-pilot-constellation",
+            f"/api/recordings/{RECORDING_ID}/starlink-pilot-constellation",
             {"edges": "lower", "maximum_points_per_stream": "600"},
         )
     )
@@ -410,6 +455,11 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
     v1 = server.handler.handle(JsonRequest("GET", "/api/storage-health", {}))
     assert v1.status == 200
     assert v1.body == b'{"available":false,"free_bytes":null,"total_bytes":null}'
+    retired = server.handler.handle(
+        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}", {})
+    )
+    assert retired.status == 410
+    assert json.loads(retired.body)["error"]["code"] == "gone"
     service.shutdown()
 
 

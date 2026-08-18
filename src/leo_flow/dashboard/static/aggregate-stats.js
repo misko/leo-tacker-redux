@@ -285,7 +285,7 @@ async function refresh() {
   byId("density-window-label").textContent = `UTC [${formatUtcNs(bounds.start)}, ${formatUtcNs(bounds.stop)})`;
   setAppState("loading", "Loading exact scan-section distributions…");
   try {
-    const payload = await fetchJson(`/api/v12/surrogate-score-distributions?start_utc_ns=${bounds.start}&stop_utc_ns=${bounds.stop}`);
+    const payload = await fetchJson(`/api/surrogate-score-distributions?start_utc_ns=${bounds.start}&stop_utc_ns=${bounds.stop}`);
     if (payload.point_identity !== "recording+segment+radio+receiver-chain+edge+method+pattern") {
       throw new Error("Dashboard returned an unsupported score-point identity");
     }
@@ -299,7 +299,7 @@ async function refresh() {
     renderSelector();
     renderAll();
     try {
-      const temporal = await fetchJson(`/api/v13/temporal-pilot-aggregate?start_utc_ns=${bounds.start}&stop_utc_ns=${bounds.stop}`);
+      const temporal = await fetchJson(`/api/temporal-pilot-aggregate?start_utc_ns=${bounds.start}&stop_utc_ns=${bounds.stop}`);
       temporalStrata = temporal.strata || [];
       renderTemporalAggregate();
     } catch (temporalError) {

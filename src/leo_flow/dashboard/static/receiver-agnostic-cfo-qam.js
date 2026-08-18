@@ -32,7 +32,7 @@
     if (receiverIds.length) parameters.set("receiver_chain_ids", receiverIds.join(","));
     setState("Loading bounded v0.6 diagnostic evidence…", "warning", "loading");
     try {
-      const response = await fetch(`/api/v30/recordings/${encodeURIComponent(id)}/receiver-agnostic-cfo-qam?${parameters}`, {headers:{Accept:"application/json"}});
+      const response = await fetch(`/api/recordings/${encodeURIComponent(id)}/receiver-agnostic-cfo-qam?${parameters}`, {headers:{Accept:"application/json"}});
       if (current !== generation) return;
       if (response.status === 404) { setState("The bounded offline product has not been published for this recording.", "warning", "pending"); return; }
       if (!response.ok) throw new Error(`request failed (${response.status})`);

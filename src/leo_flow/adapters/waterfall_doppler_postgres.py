@@ -36,6 +36,10 @@ from leo_flow.analysis.tracking.doppler_persistence import (
     doppler_projection_v0_1,
     encode_advanced_doppler_bundle,
 )
+from leo_flow.contracts.blind_doppler import (
+    BlindDopplerBundleV0_1,
+    DopplerPolynomialOrder,
+)
 from leo_flow.contracts.core import (
     AnalysisRunId,
     ArtifactRef,
@@ -120,7 +124,7 @@ class AtomicPostgresWaterfallDopplerCommitterV0_1:
             projection = doppler_projection_v0_1(
                 enhanced.waterfall, waterfall_ref.digest, tile
             )
-            doppler_blobs.append((projection, basic, advanced))
+            doppler_blobs.append((projection, tile.basic, basic, advanced))
 
         result = ArtifactRef(
             str(prepared.bundle.product_id), legacy_ref.digest, prepared.bundle.schema
@@ -148,10 +152,11 @@ class AtomicPostgresWaterfallDopplerCommitterV0_1:
                 waterfall_ref,
                 str(legacy_product.product_id),
             )
-            for projection, basic_ref, advanced_ref in doppler_blobs:
+            for projection, basic_bundle, basic_ref, advanced_ref in doppler_blobs:
                 _register_live_object(cursor, basic_ref)
                 _register_live_object(cursor, advanced_ref)
                 _publish_doppler(cursor, lease, projection, basic_ref, advanced_ref)
+                _publish_dashboard_doppler_summary(cursor, projection, basic_bundle)
             cursor.execute(
                 COMPLETE_SQL,
                 {**_lease(lease), "result_ref": Jsonb(_artifact(result))},
@@ -400,6 +405,43 @@ def _publish_doppler(
         )
     ):
         raise WaterfallDopplerConflictError("Doppler analysis identity conflicts")
+
+
+def _publish_dashboard_doppler_summary(
+    cursor: psycopg.Cursor[dict[str, object]],
+    projection: DopplerCatalogProjectionV0_1,
+    basic: BlindDopplerBundleV0_1,
+) -> None:
+    candidates = []
+    for candidate in basic.candidates:
+        selected = next(
+            fit for fit in candidate.fits if fit.order is candidate.selected_order
+        )
+        candidates.append(
+            {
+                "candidate_rank": candidate.rank,
+                "candidate_id": f"{projection.doppler_id}:basic:{candidate.rank}",
+                "model": {
+                    DopplerPolynomialOrder.CONSTANT: "constant",
+                    DopplerPolynomialOrder.LINEAR: "linear",
+                    DopplerPolynomialOrder.QUADRATIC: "quadratic",
+                }[candidate.selected_order],
+                "drift_rate_hz_s": selected.drift_rate_hz_s,
+                "ranking_score": candidate.ranking_score,
+            }
+        )
+    cursor.execute(
+        """SELECT public.publish_dashboard_capture_doppler_product_v0_1(
+        %(doppler_id)s,%(algorithm_version)s,%(candidates)s) AS published""",
+        {
+            "doppler_id": str(projection.doppler_id),
+            "algorithm_version": basic.algorithm_version,
+            "candidates": Jsonb(candidates),
+        },
+    )
+    row = cursor.fetchone()
+    if row is None or row["published"] is not True:
+        raise WaterfallDopplerConflictError("Doppler summary projection conflicts")
 
 
 def _register_live_object(

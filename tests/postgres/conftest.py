@@ -72,6 +72,9 @@ _EXPECTED_MIGRATIONS = (
     "0053_recording_receiver_agnostic_cfo_qam_v0_6.sql",
     "0054_dashboard_capture_qam_summary_projection.sql",
     "0055_dashboard_capture_qam_summary_backfill.sql",
+    "0056_dashboard_capture_qam_summary_receipt.sql",
+    "0057_dashboard_capture_doppler_summary_projection.sql",
+    "0058_dashboard_capture_qam_snapshot.sql",
 )
 
 
@@ -200,7 +203,10 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE dashboard_capture_qam_candidate_v0_1,
+            TRUNCATE dashboard_capture_doppler_candidate_v0_1,
+                     dashboard_capture_doppler_product_v0_1,
+                     dashboard_capture_qam_summary_receipt_v0_2,
+                     dashboard_capture_qam_candidate_v0_1,
                      recording_receiver_agnostic_cfo_qam_v0_6,
                      starlink_symbolwise_replay_work_v0_1,
                      recording_starlink_symbolwise_replay_v0_1,

@@ -15,18 +15,6 @@ let loadedCaptureBatches = [];
 let currentCaptureBounds = null;
 let captureBatchGeneration = 0;
 let starlinkRecordingStates = new Map();
-let captureDopplerSummaries = new Map();
-let captureDopplerBulkState = "loading";
-let captureQamSummaries = new Map();
-let captureQamGeneration = 0;
-let captureQamBulkState = "loading";
-const captureDurationCache = new Map();
-const captureDurationQueued = new Set();
-const captureDurationQueue = [];
-let activeCaptureDurationLoads = 0;
-const MAX_CAPTURE_DURATION_LOADS = 1;
-let captureDurationLoadsEnabled = false;
-let captureSummaryPriorityGeneration = 0;
 
 const byId = (id) => document.getElementById(id);
 
@@ -143,50 +131,6 @@ function compactRadioDisplayName(radioId) {
   return alias ? `${alias.short} / ${serialSuffix}` : stableId;
 }
 
-function updateCaptureDurationCells(recordingId, text, title = "") {
-  for (const row of document.querySelectorAll("#capture-attempts-body tr")) {
-    if (row.dataset.recordingId !== recordingId) continue;
-    const cell = row.querySelector(".capture-duration");
-    if (!cell) continue;
-    cell.textContent = text;
-    cell.title = title;
-  }
-}
-
-function pumpCaptureDurationQueue() {
-  if (!captureDurationLoadsEnabled) return;
-  while (activeCaptureDurationLoads < MAX_CAPTURE_DURATION_LOADS && captureDurationQueue.length) {
-    const recordingId = captureDurationQueue.shift();
-    activeCaptureDurationLoads += 1;
-    fetchJson(`/api/v3/recordings/${encodeURIComponent(recordingId)}`)
-      .then((detail) => {
-        const durationNs = Number(detail.capture_finished_utc_ns) - Number(detail.capture_started_utc_ns);
-        if (!Number.isFinite(durationNs) || durationNs <= 0) throw new Error("Invalid capture duration");
-        const text = formatDurationNs(durationNs);
-        captureDurationCache.set(recordingId, text);
-        updateCaptureDurationCells(recordingId, text, "Observed capture start to capture finish");
-      })
-      .catch(() => updateCaptureDurationCells(recordingId, "—", "Capture duration unavailable"))
-      .finally(() => {
-        activeCaptureDurationLoads -= 1;
-        captureDurationQueued.delete(recordingId);
-        pumpCaptureDurationQueue();
-      });
-  }
-}
-
-function requestCaptureDuration(recordingId) {
-  const cached = captureDurationCache.get(recordingId);
-  if (cached !== undefined) {
-    updateCaptureDurationCells(recordingId, cached, "Observed capture start to capture finish");
-    return;
-  }
-  if (captureDurationQueued.has(recordingId)) return;
-  captureDurationQueued.add(recordingId);
-  captureDurationQueue.push(recordingId);
-  pumpCaptureDurationQueue();
-}
-
 function appendStatusIcon(cell, state, kind) {
   const icon = document.createElement("span");
   icon.className = `table-status-icon ${kind}-status-icon`;
@@ -214,15 +158,8 @@ function appendCaptureDopplerCell(row, attempt) {
   if (!attempt.recording_id) {
     cell.textContent = "—";
     cell.dataset.state = "unavailable";
-  } else if (captureDopplerBulkState === "loading") {
-    cell.textContent = "Loading…";
-    cell.dataset.state = "pending";
-  } else if (captureDopplerBulkState === "error") {
-    cell.textContent = "Error";
-    cell.dataset.state = "error";
-    cell.title = "Bulk measured Doppler projection failed";
   } else {
-    const summary = captureDopplerSummaries.get(attempt.recording_id);
+    const summary = attempt.doppler;
     const state = summary?.state || "unavailable";
     cell.dataset.state = state;
     if (state === "complete") {
@@ -237,7 +174,7 @@ function appendCaptureDopplerCell(row, attempt) {
       }
       cell.title = "Highest public ranking-score candidate selected independently for each authoritative LNB / receiver; not a calibrated detection";
     } else {
-      cell.textContent = state === "pending" ? "Pending" : state === "error" ? "Error" : "Unavailable";
+      cell.textContent = terminalSummaryLabel(state);
       cell.title = (summary?.reason_codes || ["published-total-doppler-unavailable"]).join(", ");
     }
   }
@@ -251,16 +188,8 @@ function appendCaptureQamCell(row, attempt) {
     cell.textContent = "—";
     cell.dataset.state = "unavailable";
   } else {
-    const summary = captureQamSummaries.get(attempt.recording_id);
-    const state = summary?.state || (
-      captureQamBulkState === "loading"
-        ? "loading"
-        : captureQamBulkState === "error"
-          ? "error"
-          : ["pending", "running"].includes(attempt.analysis_state)
-            ? "pending"
-            : "unavailable"
-    );
+    const summary = attempt.qam;
+    const state = summary?.state || "unavailable";
     cell.dataset.state = state;
     if (state === "complete") {
       for (const candidate of summary.candidates || []) {
@@ -274,7 +203,7 @@ function appendCaptureQamCell(row, attempt) {
       }
       cell.title = "Highest QAM goodness selected independently per authoritative LNB / receiver; calibration required; not a Starlink detection";
     } else {
-      cell.textContent = state === "loading" ? "Loading…" : state === "pending" ? "Pending" : state === "error" ? "Error" : "Unavailable";
+      cell.textContent = terminalSummaryLabel(state);
       cell.title = (summary?.reason_codes || ["published-acquired-qam-unavailable"]).join(", ");
     }
     const detail = appendText(cell, "a", "QAM details", "full-capture-link qam-detail-link");
@@ -282,6 +211,18 @@ function appendCaptureQamCell(row, attempt) {
     detail.setAttribute("aria-label", `Open QAM analysis for ${attempt.recording_id}`);
   }
   row.append(cell);
+}
+
+function terminalSummaryLabel(state) {
+  const labels = {
+    pending: "Pending",
+    no_candidate: "No candidate",
+    not_analyzed: "Not analyzed",
+    failed: "Failed",
+    error: "Failed",
+    unavailable: "Unavailable",
+  };
+  return labels[state] || "Unavailable";
 }
 
 function radioMatchesFilter(radioId, radioFilter) {
@@ -334,14 +275,23 @@ function qamGoodness(accuracy, rmsEvm) {
   return Math.sqrt(chanceCorrected * compactness);
 }
 
-async function loadRetroQamCanary() {
-  setState("retro-qam-canary-state", "loading", "Loading latest historical QAM acceptance receipt…");
+function renderRetroQamCanary(envelope) {
   const metrics = byId("retro-qam-canary-metrics");
   const body = byId("retro-qam-canary-body");
   const provenance = byId("retro-qam-canary-provenance");
   metrics.hidden = true; metrics.replaceChildren(); body.replaceChildren(); provenance.replaceChildren();
+  if (envelope?.state !== "complete" || !envelope.value) {
+    const failed = envelope?.state === "failed";
+    const reasons = (envelope?.reason_codes || []).join(", ");
+    setState(
+      "retro-qam-canary-state",
+      failed ? "error" : "missing",
+      reasons || "No historical QAM canary receipt is available yet.",
+    );
+    return;
+  }
   try {
-    const payload = await fetchJson("/api/v21/canaries/retro-qam/latest");
+    const payload = envelope.value;
     if (payload.candidate_only !== true || payload.calibrated_detection !== null) throw new Error("unsafe historical canary semantics");
     const completed = Number(payload.completed_utc_ns) / 1_000_000;
     const ageMinutes = Math.max(0, (Date.now() - completed) / 60_000);
@@ -376,30 +326,24 @@ async function loadRetroQamCanary() {
     ]);
     setState("retro-qam-canary-state", payload.metrics_match_oracle ? "ready" : "error", payload.metrics_match_oracle ? "Latest native Redux replay matches the frozen leo-tracker oracle." : "Latest replay does not match the frozen oracle; QAM/acquisition regression suspected.");
   } catch (error) {
-    setState("retro-qam-canary-state", error?.dashboardStatus === 404 ? "missing" : "error", error?.dashboardStatus === 404 ? "No historical QAM canary receipt is available yet." : `Historical QAM canary unavailable: ${safeError(error)}`);
+    setState("retro-qam-canary-state", "error", `Historical QAM canary unavailable: ${safeError(error)}`);
   }
 }
 
-async function loadObservationAggregate(bounds) {
-  setState("observation-aggregate-state", "loading", "Loading RF duty and Starlink evidence…");
-  let payload;
-  try {
-    payload = await fetchJson(`/api/v6/observation-aggregate?${timeQuery(bounds)}`);
-  } catch (error) {
-    if (error?.dashboardStatus === 404) {
-      starlinkRecordingStates = new Map();
-      byId("observation-metrics").hidden = true;
-      byId("duty-cycle-body").replaceChildren();
-      byId("starlink-rate-body").replaceChildren();
-      setState(
-        "observation-aggregate-state",
-        "missing",
-        "Aggregate view is unavailable from this older dashboard API.",
-      );
-      return;
-    }
-    throw error;
+function renderObservationAggregate(envelope) {
+  if (envelope?.state !== "complete" || !envelope.value) {
+    starlinkRecordingStates = new Map();
+    byId("observation-metrics").hidden = true;
+    byId("duty-cycle-body").replaceChildren();
+    byId("starlink-rate-body").replaceChildren();
+    setState(
+      "observation-aggregate-state",
+      envelope?.state === "failed" ? "error" : "missing",
+      (envelope?.reason_codes || []).join(", ") || "Aggregate view is unavailable from this capture snapshot.",
+    );
+    return;
   }
+  const payload = envelope.value;
   starlinkRecordingStates = new Map(
     (payload.recording_states || []).map((item) => [item.recording_id, item.state]),
   );
@@ -443,7 +387,7 @@ async function loadObservationAggregate(bounds) {
     "warning",
     "Detection rates and the beacon-only filter require whole-search calibration. Candidate-positive means score > conditioned control; it is not a beacon detection.",
   );
-  renderCaptureBatches();
+  renderCaptureRows();
 }
 
 function refreshCaptureRadioOptions() {
@@ -516,25 +460,48 @@ function appendBatchAttemptRow(body, batch, attempt) {
 
   const pilotCell = document.createElement("td");
   pilotCell.className = "pilot-detection-counts";
-  pilotCell.textContent = "— / —";
-  pilotCell.title = "Calibrated Anchor-8 and GLRT beacon detections are unavailable";
+  const pilot = attempt.pilot;
+  pilotCell.dataset.state = pilot?.state || "unavailable";
+  if (
+    pilot?.state === "complete"
+    && pilot.anchor_8_detection_count !== null
+    && pilot.glrt_detection_count !== null
+  ) {
+    pilotCell.textContent = `${pilot.anchor_8_detection_count} / ${pilot.glrt_detection_count}`;
+    pilotCell.title = "Calibrated Anchor-8 and GLRT beacon detection counts";
+  } else {
+    pilotCell.textContent = terminalSummaryLabel(pilot?.state || "unavailable");
+    pilotCell.title = (pilot?.reason_codes || ["calibrated-pilot-count-unavailable"]).join(", ");
+  }
   row.append(pilotCell);
 
   const durationCell = document.createElement("td");
   durationCell.className = "capture-duration";
-  durationCell.textContent = attempt.recording_id ? "Loading…" : "—";
+  durationCell.textContent = attempt.capture_duration_ns === null
+    ? "—"
+    : formatDurationNs(attempt.capture_duration_ns);
+  durationCell.title = attempt.capture_duration_ns === null
+    ? "Capture duration unavailable"
+    : "Observed capture start to capture finish";
   row.append(durationCell);
 
   const satellitesCell = document.createElement("td");
-  satellitesCell.textContent = "—";
-  satellitesCell.title = "Recording-to-satellite association is not available in the dashboard contract";
+  satellitesCell.className = "satellites-tracked";
+  const satellites = attempt.satellites;
+  satellitesCell.dataset.state = satellites?.state || "unavailable";
+  if (satellites?.state === "complete" && satellites.count !== null) {
+    satellitesCell.textContent = String(satellites.count);
+    satellitesCell.title = "Satellites associated with this recording";
+  } else {
+    satellitesCell.textContent = terminalSummaryLabel(satellites?.state || "unavailable");
+    satellitesCell.title = (satellites?.reason_codes || ["recording-satellite-association-unavailable"]).join(", ");
+  }
   row.append(satellitesCell);
 
   body.append(row);
   if (attempt.recording_id) {
-    const detailHref = `/recordings/${encodeURIComponent(attempt.recording_id)}`;
+    const detailHref = attempt.detail_href || `/recordings/${encodeURIComponent(attempt.recording_id)}`;
     makeCaptureRowNavigable(row, detailHref, attempt);
-    requestCaptureDuration(attempt.recording_id);
   }
 }
 
@@ -564,13 +531,13 @@ function renderCaptureRows() {
   }
 }
 
-async function loadCaptureBatches(bounds, cursor = null, drainForRadio = false) {
+async function loadCaptureSnapshot(bounds, cursor = null) {
   const append = cursor !== null;
   const generation = append ? captureBatchGeneration : ++captureBatchGeneration;
   setState(
     "capture-batches-state",
     "loading",
-    drainForRadio ? "Searching all stable pages for this radio…" : append ? "Loading more captures…" : "Loading captures…",
+    append ? "Loading more captures…" : "Loading captures…",
   );
   const loadMore = byId("capture-batches-more");
   loadMore.disabled = true;
@@ -582,17 +549,17 @@ async function loadCaptureBatches(bounds, cursor = null, drainForRadio = false) 
     byId("capture-window-label").textContent = describeBounds(bounds);
   }
   try {
-    let nextCursor = cursor;
-    do {
-      const cursorQuery = nextCursor === null ? "" : `&cursor=${encodeURIComponent(nextCursor)}`;
-      const payload = await fetchJson(`/api/v2/capture-batches?${timeQuery(bounds)}${cursorQuery}`);
-      if (generation !== captureBatchGeneration) return;
-      loadedCaptureBatches.push(...(payload.items || []));
-      captureBatchCursor = payload.next_cursor || null;
-      refreshCaptureRadioOptions();
-      renderCaptureRows();
-      nextCursor = captureBatchCursor;
-    } while (drainForRadio && nextCursor !== null);
+    const cursorQuery = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+    const payload = await fetchJson(`/api/captures?${timeQuery(bounds)}&maximum_recordings=100${cursorQuery}`);
+    if (generation !== captureBatchGeneration) return;
+    validateCaptureSnapshot(payload);
+    loadedCaptureBatches.push(...(payload.items || []));
+    captureBatchCursor = payload.next_cursor || null;
+    if (!append) {
+      renderObservationAggregate(payload.observation_aggregate);
+      renderRetroQamCanary(payload.retro_qam_canary);
+    }
+    refreshCaptureRadioOptions();
     loadMore.disabled = false;
     renderCaptureRows();
   } catch (error) {
@@ -608,76 +575,14 @@ async function loadCaptureBatches(bounds, cursor = null, drainForRadio = false) 
   }
 }
 
-async function loadCaptureDopplerSummaries(bounds) {
-  captureDopplerBulkState = "loading";
-  captureDopplerSummaries = new Map();
-  renderCaptureRows();
-  try {
-    const payload = await fetchJson(`/api/v18/capture-doppler-summaries?${timeQuery(bounds)}&maximum_recordings=400`);
-    if (
-      payload.candidate_only !== true
-      || payload.calibrated_detection_count !== null
-      || !(payload.warnings || []).includes("radio-lnb-receiver-candidates-are-never-pooled")
-    ) {
-      throw new Error("Dashboard returned unsafe capture Doppler semantics");
-    }
-    captureDopplerSummaries = new Map(
-      (payload.recordings || []).map((item) => [item.recording_id, item]),
-    );
-    captureDopplerBulkState = "ready";
-  } catch (error) {
-    captureDopplerSummaries = new Map();
-    captureDopplerBulkState = error?.dashboardStatus === 404 ? "unavailable" : "error";
-    if (captureDopplerBulkState === "error") throw error;
-  } finally {
-    renderCaptureRows();
+function validateCaptureSnapshot(payload) {
+  const warnings = new Set(payload.warnings || []);
+  if (
+    !warnings.has("candidate-only-qam-goodness-not-starlink-detection")
+    || !warnings.has("radio-lnb-receiver-series-are-never-pooled")
+  ) {
+    throw new Error("Dashboard returned unsafe master-capture semantics");
   }
-}
-
-async function loadCaptureQamSummaries(bounds) {
-  const generation = ++captureQamGeneration;
-  captureQamSummaries = new Map();
-  captureQamBulkState = "loading";
-  renderCaptureRows();
-  try {
-    const payload = await fetchJson(`/api/v22/capture-qam-summaries?${timeQuery(bounds)}&maximum_recordings=100`);
-    if (generation !== captureQamGeneration) return;
-    const warnings = new Set(payload.warnings || []);
-    if (
-      payload.candidate_only !== true
-      || payload.calibration_required !== true
-      || payload.calibrated_detection_count !== null
-      || !warnings.has("radio-lnb-receiver-series-are-never-pooled")
-      || !warnings.has("highest-goodness-selected-independently-per-authoritative-lnb-receiver")
-    ) {
-      throw new Error("Dashboard returned unsafe capture QAM semantics");
-    }
-    captureQamSummaries = new Map(
-      (payload.recordings || []).map((item) => [item.recording_id, item]),
-    );
-    captureQamBulkState = "ready";
-  } catch (error) {
-    if (generation !== captureQamGeneration) return;
-    captureQamSummaries = new Map();
-    captureQamBulkState = error?.dashboardStatus === 404 ? "unavailable" : "error";
-    if (captureQamBulkState === "error") throw error;
-  } finally {
-    if (generation === captureQamGeneration) renderCaptureRows();
-  }
-}
-
-async function loadPriorityCaptureSummaries(bounds) {
-  const priorityGeneration = ++captureSummaryPriorityGeneration;
-  captureDurationLoadsEnabled = false;
-  const results = await Promise.allSettled([
-    loadCaptureDopplerSummaries(bounds),
-    loadCaptureQamSummaries(bounds),
-  ]);
-  if (priorityGeneration !== captureSummaryPriorityGeneration) return;
-  captureDurationLoadsEnabled = true;
-  pumpCaptureDurationQueue();
-  const failure = results.find((result) => result.status === "rejected");
-  if (failure) throw failure.reason;
 }
 
 function selectedCaptureBounds() {
@@ -944,14 +849,12 @@ async function refreshDashboard() {
   const appStatus = byId("app-status");
   appStatus.dataset.state = "loading";
   byId("app-status-text").textContent = "Refreshing catalog views…";
-  const captureBatches = loadCaptureBatches(currentBounds, null, captureRadioFilter() !== "");
-  const captureSummaries = loadPriorityCaptureSummaries(currentBounds);
+  setState("observation-aggregate-state", "loading", "Loading RF duty and Starlink evidence…");
+  setState("retro-qam-canary-state", "loading", "Loading latest historical QAM acceptance receipt…");
+  const captureSnapshot = loadCaptureSnapshot(currentBounds);
   const results = await Promise.allSettled([
     loadActivity(currentBounds),
-    loadObservationAggregate(currentBounds),
-    loadRetroQamCanary(),
-    captureBatches,
-    captureSummaries,
+    captureSnapshot,
     loadRecordings(currentBounds),
     loadTracks(currentBounds),
     loadStorage(),
@@ -980,19 +883,16 @@ byId("window-form").addEventListener("submit", (event) => {
 });
 byId("capture-batches-more").addEventListener("click", () => {
   if (currentCaptureBounds === null || captureBatchCursor === null) return;
-  loadCaptureBatches(currentCaptureBounds, captureBatchCursor).catch(() => {});
+  loadCaptureSnapshot(currentCaptureBounds, captureBatchCursor).catch(() => {});
 });
 byId("capture-filters").addEventListener("submit", (event) => {
   event.preventDefault();
   const bounds = selectedCaptureBounds();
-  Promise.allSettled([
-    loadCaptureBatches(bounds, null, captureRadioFilter() !== ""),
-    loadPriorityCaptureSummaries(bounds),
-  ]);
+  loadCaptureSnapshot(bounds).catch(() => {});
 });
 
 byId("capture-starlink-filter").addEventListener("change", () => {
-  renderCaptureBatches();
+  renderCaptureRows();
 });
 byId("capture-filters-clear").addEventListener("click", () => {
   byId("capture-radio-filter").value = "";

@@ -14,6 +14,7 @@ from leo_flow.contracts.core import canonical_json_bytes
 from leo_flow.dashboard.api import (
     DashboardJsonApplicationV29,
     DashboardJsonApplicationV30,
+    DashboardPublicJsonApplication,
     JsonRequest,
     JsonResponse,
 )
@@ -143,7 +144,7 @@ def _running(port: _Port) -> Iterator[str]:
     api = DashboardJsonApplicationV30(
         cast(DashboardJsonApplicationV29, _Previous()), port
     )
-    application = DashboardUiApplication(api)
+    application = DashboardUiApplication(DashboardPublicJsonApplication(api))
     stopped = threading.Event()
     worker = threading.Thread(
         target=lambda: _serve(server, application, stopped), name="cfo-qam-browser"

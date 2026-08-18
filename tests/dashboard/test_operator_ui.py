@@ -89,7 +89,8 @@ def test_overview_discloses_duty_candidate_and_calibration_semantics() -> None:
         "Calibrated beacon detections unavailable",
     ):
         assert required in html
-    assert "/api/v6/observation-aggregate" in javascript
+    assert "/api/captures" in javascript
+    assert "/api/v" not in javascript
     assert "Candidate-positive means score > conditioned control" in javascript
     assert 'starlinkFilter === "detected"' in javascript
 
@@ -132,8 +133,8 @@ def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() 
         "Precommitted surrogate scores",
     ):
         assert required in html
-    assert "/api/v12/surrogate-score-distributions" in javascript
-    assert "/api/v13/temporal-pilot-aggregate" in javascript
+    assert "/api/surrogate-score-distributions" in javascript
+    assert "/api/temporal-pilot-aggregate" in javascript
     assert "Mean probe maximum" in html
     assert "CONTINUOUS_SAMPLE_START_UTC_NS" in javascript
     assert "visibleMethods" in javascript
@@ -160,7 +161,7 @@ def test_aggregate_doppler_page_separates_candidate_sources_and_controls() -> No
     ):
         assert required in html
     for required in (
-        "/api/v14/doppler-aggregate",
+        "/api/doppler-aggregate",
         'category === "source"',
         'category === "radio"',
         'category === "receiver"',
@@ -214,16 +215,14 @@ def test_recording_page_script_uses_only_projected_json_and_safe_dom_apis() -> N
         .body.decode()
     )
     for route in (
-        "/api/v3/recordings/",
-        "/api/v4/recordings/",
-        "/api/v13/recordings/",
         "/waterfall",
         "/api/recordings/",
         "/features?selector=*",
     ):
         assert route in javascript
-    assert "/api/v3/recordings/${encodeURIComponent(recordingId)}/starlink" not in (
-        javascript
+    assert (
+        "fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/starlink`)"
+        not in javascript
     )
     assert "getContext" in javascript and "fillRect" in javascript
     assert "innerHTML" not in javascript
@@ -328,8 +327,7 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
         assert f'"{state}"' in javascript or f'[data-state="{state}"]' in css
     for route in (
         "/api/activity",
-        "/api/v2/capture-batches",
-        "/api/v3/recordings/",
+        "/api/captures",
         "/api/recordings",
         "/api/evaluations/",
         "/api/models/",
@@ -337,18 +335,15 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
         "/api/storage-health",
     ):
         assert route in javascript
+    assert "/api/v" not in javascript
     assert "Promise.allSettled" in javascript
     assert "captureBatchCursor" in javascript
-    assert "encodeURIComponent(nextCursor)" in javascript
+    assert "encodeURIComponent(cursor)" in javascript
     assert "captureRows" in javascript
-    assert "Searching all stable pages for this radio" in javascript
     assert "View capture details, waterfall, and analysis" in javascript
     assert "makeCaptureRowNavigable" in javascript
     assert "formatCompactUtcNs" in javascript
-    assert "MAX_CAPTURE_DURATION_LOADS = 1" in javascript
-    assert (
-        "Calibrated Anchor-8 and GLRT beacon detections are unavailable" in javascript
-    )
+    assert "Calibrated Anchor-8 and GLRT beacon detection counts" in javascript
     assert (
         'event.target.closest("a, button, input, select, textarea, summary")'
         in javascript

@@ -5,6 +5,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from leo_flow.adapters.starlink_acquired_constellation_postgres import (
     PostgresStarlinkAcquiredConstellationCatalogV0_3,
@@ -37,6 +38,10 @@ from leo_flow.analysis.recording.starlink_surrogate_null_recording import (
     ExactStarlinkSurrogateNullRecordingAnalyzerV0_1,
 )
 from leo_flow.contracts.core import JobId, ReceiverChainId, canonical_digest
+from leo_flow.contracts.dashboard_qam_summary_receipt import (
+    DASHBOARD_QAM_SUMMARY_CONFIG_REF_V0_2,
+    dashboard_qam_candidate_set_digest_v0_2,
+)
 from leo_flow.jobs import JobType
 from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
 from leo_flow.services.starlink_acquired_constellation_analysis import (
@@ -158,3 +163,98 @@ def test_v0_3_qam_is_published_in_same_fenced_suite_transaction(
             "point_count": 4_800,
             "calibration_required": True,
         }
+        source_row = connection.execute(
+            "SELECT to_jsonb(source)-'published_at_utc' AS payload "
+            "FROM recording_starlink_acquired_constellation_v0_3 source"
+        ).fetchone()
+        receipt = connection.execute(
+            "SELECT source_kind,analysis_id,recording_id,"
+            "source_request_digest_value,source_product_digest_value,"
+            "summary_config_digest_value,candidate_set_digest_value,"
+            "terminal_outcome,candidate_count,candidate_only,calibration_required "
+            "FROM dashboard_capture_qam_summary_receipt_v0_2"
+        ).fetchone()
+    assert source_row is not None
+    payload = source_row["payload"]
+    assert isinstance(payload, dict)
+    assert receipt == {
+        "source_kind": "acquired-v0.3",
+        "analysis_id": prepared.acquired_constellation_v0_3.bundle.analysis_id,
+        "recording_id": str(recording.recording_id),
+        "source_request_digest_value": payload["request_digest_value"],
+        "source_product_digest_value": payload["bundle_digest_value"],
+        "summary_config_digest_value": DASHBOARD_QAM_SUMMARY_CONFIG_REF_V0_2.digest.value,
+        "candidate_set_digest_value": dashboard_qam_candidate_set_digest_v0_2(
+            []
+        ).value,
+        "terminal_outcome": "no-candidate",
+        "candidate_count": 0,
+        "candidate_only": True,
+        "calibration_required": True,
+    }
+
+    empty_digest = dashboard_qam_candidate_set_digest_v0_2([]).value
+    with psycopg.connect(postgres_dsn, row_factory=dict_row) as connection:
+        connection.execute("SET ROLE leo_analysis")
+        assert connection.execute(
+            "SELECT public.publish_dashboard_capture_qam_summary_receipt_v0_2(%s,%s,%s,%s,%s,%s) AS published",
+            (
+                "acquired-v0.3",
+                payload["analysis_id"],
+                DASHBOARD_QAM_SUMMARY_CONFIG_REF_V0_2.digest.value,
+                empty_digest,
+                "no-candidate",
+                Jsonb([]),
+            ),
+        ).fetchone() == {"published": True}
+
+    with (
+        pytest.raises(psycopg.errors.UniqueViolation),
+        psycopg.connect(postgres_dsn, row_factory=dict_row) as connection,
+    ):
+        connection.execute("SET ROLE leo_analysis")
+        connection.execute(
+            "SELECT public.publish_dashboard_capture_qam_summary_receipt_v0_2(%s,%s,%s,%s,%s,%s)",
+            (
+                "acquired-v0.3",
+                payload["analysis_id"],
+                DASHBOARD_QAM_SUMMARY_CONFIG_REF_V0_2.digest.value,
+                "b" * 64,
+                "no-candidate",
+                Jsonb([]),
+            ),
+        )
+
+    cloned_analysis_id = "slqam3rec_" + "e" * 32
+    cloned_payload = {
+        **payload,
+        "analysis_id": cloned_analysis_id,
+        "request_digest_value": "e" * 64,
+        "idempotency_key": "recording:qam-v0.3:receipt-rollback",
+    }
+    with (
+        pytest.raises(psycopg.errors.InvalidParameterValue),
+        psycopg.connect(postgres_dsn, row_factory=dict_row) as connection,
+    ):
+        connection.execute("SET ROLE leo_analysis")
+        assert connection.execute(
+            "SELECT public.publish_recording_starlink_acquired_constellation_v0_3(%s) AS published",
+            (Jsonb(cloned_payload),),
+        ).fetchone() == {"published": True}
+        connection.execute(
+            "SELECT public.publish_dashboard_capture_qam_summary_receipt_v0_2(%s,%s,%s,%s,%s,%s)",
+            (
+                "acquired-v0.3",
+                cloned_analysis_id,
+                DASHBOARD_QAM_SUMMARY_CONFIG_REF_V0_2.digest.value,
+                "not-a-digest",
+                "no-candidate",
+                Jsonb([]),
+            ),
+        )
+    with psycopg.connect(postgres_dsn) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM recording_starlink_acquired_constellation_v0_3 "
+            "WHERE analysis_id=%s",
+            (cloned_analysis_id,),
+        ).fetchone() == (0,)

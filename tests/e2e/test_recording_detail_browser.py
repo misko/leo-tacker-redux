@@ -9,7 +9,10 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
-from leo_flow.dashboard.api import DashboardJsonApplicationV3
+from leo_flow.dashboard.api import (
+    DashboardJsonApplicationV3,
+    DashboardPublicJsonApplication,
+)
 from leo_flow.dashboard.ui import DashboardUiApplication
 from tests.dashboard._fixtures import repository
 from tests.dashboard._recording_detail_fixtures import (
@@ -27,7 +30,9 @@ def running_detail_dashboard(*, with_starlink: bool = False) -> Iterator[str]:
         repository(), starlink_candidates() if with_starlink else None
     )
     application = DashboardUiApplication(
-        DashboardJsonApplicationV3(queries, queries, queries, queries, queries)
+        DashboardPublicJsonApplication(
+            DashboardJsonApplicationV3(queries, queries, queries, queries, queries)
+        )
     )
     stopped = threading.Event()
 
@@ -142,10 +147,10 @@ def test_capture_detail_page_renders_tunings_analysis_and_projected_waterfall() 
             expect(exact).to_have_attribute("data-exact-score", "2")
             expect(exact).to_contain_text("Exact feature identity: feature_a.")
 
-            assert f"/api/v3/recordings/{RECORDING_ID}" in responses
-            assert f"/api/v3/recordings/{RECORDING_ID}/waterfall" in responses
-            assert f"/api/v4/recordings/{RECORDING_ID}/starlink-suite" in responses
-            assert f"/api/v3/recordings/{RECORDING_ID}/starlink" not in responses
+            assert f"/api/recordings/{RECORDING_ID}" in responses
+            assert f"/api/recordings/{RECORDING_ID}/waterfall" in responses
+            assert f"/api/recordings/{RECORDING_ID}/starlink-suite" in responses
+            assert f"/api/recordings/{RECORDING_ID}/starlink" not in responses
             assert any(
                 path.startswith(f"/api/recordings/{RECORDING_ID}/features?")
                 for path in responses
@@ -223,7 +228,7 @@ def test_absent_waterfall_is_a_terminal_missing_state() -> None:
         try:
             page = browser.new_page()
             page.route(
-                f"**/api/v3/recordings/{RECORDING_ID}/waterfall",
+                f"**/api/recordings/{RECORDING_ID}/waterfall",
                 lambda route: route.fulfill(
                     status=404,
                     json={
@@ -266,7 +271,7 @@ def test_capture_detail_renders_candidates_without_a_detection_count() -> None:
                 "full-frame-full",
             ]
             page.route(
-                f"**/api/v4/recordings/{RECORDING_ID}/starlink-suite",
+                f"**/api/recordings/{RECORDING_ID}/starlink-suite",
                 lambda route: route.fulfill(
                     json={
                         "state": "candidates",

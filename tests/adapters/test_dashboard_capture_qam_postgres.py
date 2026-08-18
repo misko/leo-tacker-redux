@@ -9,7 +9,7 @@ from leo_flow.adapters.dashboard_capture_qam_postgres import (
 )
 from leo_flow.adapters.dashboard_qam_summary_backfill import (
     _PENDING_SQL,
-    PostgresQamSummaryBackfillV0_1,
+    PostgresQamSummaryBackfillV0_2,
 )
 from leo_flow.contracts.core import UtcNs
 from leo_flow.contracts.dashboard_capture_qam import CaptureQamSummaryQueryV0_1
@@ -77,7 +77,7 @@ def test_qam_master_projection_is_one_bounded_sql_read_with_all_states() -> None
 def test_legacy_qam_backfill_is_explicitly_bounded_and_skips_projected_products() -> (
     None
 ):
-    backfill = PostgresQamSummaryBackfillV0_1(
+    backfill = PostgresQamSummaryBackfillV0_2(
         lambda: (_ for _ in ()).throw(AssertionError("must fail before connecting")),
         object(),  # type: ignore[arg-type]
     )
@@ -85,7 +85,7 @@ def test_legacy_qam_backfill_is_explicitly_bounded_and_skips_projected_products(
         backfill.backfill(0)
     with pytest.raises(ValueError, match="bound"):
         backfill.backfill(101)
-    assert "read_pending_dashboard_capture_qam_products_v0_1" in _PENDING_SQL
+    assert "read_pending_dashboard_capture_qam_products_v0_2" in _PENDING_SQL
 
 
 def _row(

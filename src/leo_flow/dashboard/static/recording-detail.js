@@ -154,7 +154,7 @@ function renderSegments(segments) {
 
 async function loadCaptureDetail(recordingId) {
   try {
-    const detail = await fetchJson(`/api/v3/recordings/${encodeURIComponent(recordingId)}`);
+    const detail = await fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}`);
     byId("capture-identity").textContent = detail.recording_id;
     document.title = `${detail.recording_id} · Capture detail · LEO Flow`;
     replaceFacts(byId("capture-detail-facts"), [
@@ -243,7 +243,7 @@ async function loadStarlinkDecision(recordingId) {
   const body = byId("starlink-candidates-body");
   body.replaceChildren();
   try {
-    const payload = await fetchJson(`/api/v4/recordings/${encodeURIComponent(recordingId)}/starlink-suite`);
+    const payload = await fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/starlink-suite`);
     if (!(["candidates", "not_evaluated"].includes(payload.state)) || payload.calibrated_detection_count !== null) {
       throw new Error("Dashboard returned an invalid detector-suite state");
     }
@@ -347,7 +347,7 @@ async function loadWaterfall(recordingId) {
   picker.replaceChildren();
   byId("waterfall-figure").hidden = true;
   try {
-    const payload = await fetchJson(`/api/v3/recordings/${encodeURIComponent(recordingId)}/waterfall`);
+    const payload = await fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/waterfall`);
     if (payload.state !== "complete") {
       const messages = {
         unavailable: "Waterfall analysis has not been selected for this recording.",
@@ -732,7 +732,7 @@ async function loadDopplerVisualization(recordingId) {
   resetDopplerPresentation();
   try {
     setState("doppler-state", "loading", `Loading ${dopplerLayerLabels[requestedLayer]} waterfall and Doppler evidence…`);
-    const payload = await fetchJson(`/api/v9/recordings/${encodeURIComponent(recordingId)}/doppler-visualization?layer=${encodeURIComponent(requestedLayer)}`);
+    const payload = await fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/doppler-visualization?layer=${encodeURIComponent(requestedLayer)}`);
     if (requestSequence !== dopplerRequestSequence) return;
     if (payload.candidate_only !== true || payload.calibrated_detection_count !== null) {
       throw new Error("Dashboard returned unsafe Doppler detection semantics");
@@ -1021,7 +1021,7 @@ async function loadSurrogateNull(recordingId) {
     return;
   }
   try {
-    const payload = await fetchJson(`/api/v10/recordings/${encodeURIComponent(recordingId)}/starlink-surrogate-null?${query}`);
+    const payload = await fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/starlink-surrogate-null?${query}`);
     if (requestSequence !== surrogateRequestSequence) return;
     renderSurrogatePayload(payload);
   } catch (error) {
@@ -1293,7 +1293,7 @@ async function loadPilotConstellation(recordingId) {
   resetConstellationPresentation();
   try {
     const query = constellationQueryString();
-    const payload = await fetchJson(`/api/v11/recordings/${encodeURIComponent(recordingId)}/starlink-pilot-constellation?${query}`);
+    const payload = await fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/starlink-pilot-constellation?${query}`);
     if (requestSequence !== constellationRequestSequence) return;
     renderConstellationPayload(payload);
   } catch (error) {
@@ -1458,7 +1458,7 @@ async function loadTemporalPilot(recordingId) {
   setState("temporal-state", "pending", "Loading stratified temporal candidate evidence…");
   byId("temporal-summary").hidden = true;
   try {
-    const payload = await fetchJson(`/api/v13/recordings/${encodeURIComponent(recordingId)}/starlink-temporal-pilot?${temporalQueryString()}`);
+    const payload = await fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/starlink-temporal-pilot?${temporalQueryString()}`);
     if (sequence !== temporalRequestSequence) return;
     renderTemporalPayload(payload);
   } catch (error) {

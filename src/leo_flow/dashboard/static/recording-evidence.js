@@ -847,6 +847,7 @@
     button.disabled = true;
     button.textContent = "Extended analysis loading…";
     if (!context) {
+      document.dispatchEvent(new CustomEvent("leo:load-extended-recording-analysis"));
       button.textContent = "Extended recording analysis loaded";
       return;
     }
