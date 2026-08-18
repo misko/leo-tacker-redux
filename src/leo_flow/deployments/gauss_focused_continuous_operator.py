@@ -21,7 +21,7 @@ from leo_flow.adapters.focused_continuous_sqlite import (
     SQLiteFocusedContinuousJournalV0_1,
 )
 from leo_flow.adapters.optional_heavy_work_admission import (
-    AtomicFocusedCaptureGuardPublisherV0_1,
+    OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1,
 )
 from leo_flow.capture.v5_station import load_v5_capture_station
 from leo_flow.contracts.capture_batch import CaptureAttemptState
@@ -281,18 +281,18 @@ def main(argv: list[str] | None = None) -> int:
 
 def _guard_publisher(
     path: Path | None,
-) -> AtomicFocusedCaptureGuardPublisherV0_1 | None:
+) -> OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1 | None:
     if path is None:
         return None
     try:
-        return AtomicFocusedCaptureGuardPublisherV0_1(path)
-    except ValueError:
+        return OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1(path)
+    except (OSError, ValueError):
         print('{"event":"focused_heavy_work_guard_unavailable"}', flush=True)
         return None
 
 
 def _publish_guard(
-    publisher: AtomicFocusedCaptureGuardPublisherV0_1 | None,
+    publisher: OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1 | None,
     journal: SQLiteFocusedContinuousJournalV0_1,
     children: dict[int, _AnalysisChild],
     *,

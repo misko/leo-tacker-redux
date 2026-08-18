@@ -5,11 +5,13 @@ from pathlib import Path
 from leo_flow.adapters.optional_heavy_work_admission import (
     AtomicFocusedCaptureGuardPublisherV0_1,
     LocalCaptureAwareHeavyWorkAdmissionV0_1,
+    OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1,
 )
 from leo_flow.contracts.optional_heavy_work_admission import (
     FocusedCaptureGuardV0_1,
     HeavyWorkAdmissionDecisionV0_1,
     HeavyWorkResourceSnapshotV0_1,
+    decode_focused_capture_guard_v0_1,
 )
 
 NOW = 1_000_000_000_000
@@ -67,6 +69,36 @@ def test_guard_transitions_pause_only_during_sampling_interval(tmp_path: Path) -
     assert decision.admitted is True
     assert permit is not None
     permit.release()
+
+
+def test_successor_takeover_fences_stale_predecessor_finalization(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "guard.json"
+    predecessor = OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1(
+        path, token_factory=lambda: "predecessor"
+    )
+    predecessor_guard = FocusedCaptureGuardV0_1(
+        NOW - 1, NOW + 99, NOW + 9, NOW + 19, 3, 5, True
+    )
+    assert predecessor.publish(predecessor_guard) is True
+    successor = OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1(
+        path, token_factory=lambda: "successor"
+    )
+    successor_guard = FocusedCaptureGuardV0_1(
+        NOW, NOW + 100, NOW + 10, NOW + 20, 2, 4, True
+    )
+    stale_active_guard = FocusedCaptureGuardV0_1(
+        NOW + 1, NOW + 101, NOW + 11, NOW + 21, 1, 3, True
+    )
+    stale_final_guard = FocusedCaptureGuardV0_1(
+        NOW + 2, NOW + 102, NOW + 2, NOW + 2, 0, 0, False
+    )
+
+    assert successor.publish(successor_guard) is True
+    assert predecessor.publish(stale_active_guard) is False
+    assert predecessor.publish(stale_final_guard) is False
+    assert decode_focused_capture_guard_v0_1(path.read_bytes()) == successor_guard
 
 
 def test_missing_and_stale_guard_fail_closed_without_capture_dependency(

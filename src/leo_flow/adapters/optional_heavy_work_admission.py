@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
+import secrets
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from leo_flow.contracts.optional_heavy_work_admission import (
@@ -18,6 +21,8 @@ from leo_flow.contracts.optional_heavy_work_admission import (
 )
 
 _MAXIMUM_GUARD_BYTES = 4096
+_MAXIMUM_OWNERSHIP_BYTES = 1024
+_OWNERSHIP_SCHEMA = "org.leo-flow.focused-capture-guard-writer/v0.1"
 
 
 class AtomicFocusedCaptureGuardPublisherV0_1:
@@ -42,6 +47,125 @@ class AtomicFocusedCaptureGuardPublisherV0_1:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, self._path)
+        finally:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+
+
+class OwnershipFencedAtomicFocusedCaptureGuardPublisherV0_1:
+    """Publish v0.1 guard snapshots only while this generation owns the path."""
+
+    def __init__(
+        self, path: Path, *, token_factory: Callable[[], str] | None = None
+    ) -> None:
+        self._publisher = AtomicFocusedCaptureGuardPublisherV0_1(path)
+        self._ownership_path = path.with_name(f".{path.name}.writer-v0.1.json")
+        self._lock_path = path.with_name(f".{path.name}.writer-v0.1.lock")
+        token = (token_factory or (lambda: secrets.token_hex(16)))()
+        if (
+            not isinstance(token, str)
+            or not token
+            or not token.isascii()
+            or len(token) > 128
+        ):
+            raise ValueError("capture guard writer token is invalid")
+        self._token = token
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with self._ownership_lock():
+            previous = self._read_ownership(missing_ok=True)
+            self._generation = 1 if previous is None else previous[0] + 1
+            self._write_ownership(self._generation, self._token)
+
+    def publish(self, snapshot: FocusedCaptureGuardV0_1) -> bool:
+        """Return false without writing when a successor owns the status path."""
+
+        with self._ownership_lock():
+            ownership = self._read_ownership(missing_ok=False)
+            if ownership != (self._generation, self._token):
+                return False
+            self._publisher.publish(snapshot)
+            return True
+
+    @contextmanager
+    def _ownership_lock(self) -> Iterator[None]:
+        descriptor = os.open(
+            self._lock_path,
+            os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(descriptor)
+
+    def _read_ownership(self, *, missing_ok: bool) -> tuple[int, str] | None:
+        try:
+            descriptor = os.open(
+                self._ownership_path,
+                os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+            )
+        except FileNotFoundError:
+            if missing_ok:
+                return None
+            raise ValueError("capture guard writer ownership is missing") from None
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_size > _MAXIMUM_OWNERSHIP_BYTES
+            ):
+                raise ValueError("capture guard writer ownership is invalid")
+            payload = os.read(descriptor, _MAXIMUM_OWNERSHIP_BYTES + 1)
+        finally:
+            os.close(descriptor)
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("capture guard writer ownership is invalid") from error
+        if (
+            not isinstance(document, dict)
+            or set(document) != {"generation", "owner_token", "schema"}
+            or document["schema"] != _OWNERSHIP_SCHEMA
+            or type(document["generation"]) is not int
+            or document["generation"] < 1
+            or not isinstance(document["owner_token"], str)
+            or not document["owner_token"]
+            or not document["owner_token"].isascii()
+            or len(document["owner_token"]) > 128
+        ):
+            raise ValueError("capture guard writer ownership is invalid")
+        return document["generation"], document["owner_token"]
+
+    def _write_ownership(self, generation: int, token: str) -> None:
+        payload = (
+            json.dumps(
+                {
+                    "generation": generation,
+                    "owner_token": token,
+                    "schema": _OWNERSHIP_SCHEMA,
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        temporary = self._ownership_path.with_name(
+            f".{self._ownership_path.name}.{os.getpid()}.tmp"
+        )
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self._ownership_path)
         finally:
             try:
                 temporary.unlink()
