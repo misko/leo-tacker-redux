@@ -25,7 +25,9 @@ The independent `leo-starlink-retro-qam-canary` oneshot repeats this check from
 the raw object on a systemd timer. It hashes the complete 500,200,000-byte IQ
 object before every run and atomically publishes a candidate-only receipt. A
 passing canary is a numerical regression result for a known pilot, never a
-calibrated detection verdict.
+calibrated detection verdict. Its systemd unit checks the capture-owned mode
+lock non-blockingly and skips any trigger that overlaps a live IQ capture; the
+next periodic timer activation retries normally.
 
 When the QNAP corpus is unavailable, external tests skip cleanly. The manifest
 scope and candidate-only boundary remain covered without the mount.

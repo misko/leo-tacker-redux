@@ -17,6 +17,10 @@ def test_timer_is_independent_bounded_and_periodic() -> None:
     timer = (DEPLOY / "leo-starlink-retro-qam-canary.timer.in").read_text()
     assert "Type=oneshot" in service
     assert "leo-starlink-retro-qam-canary" in service
+    assert (
+        "ExecCondition=/usr/bin/flock --nonblock @CAPTURE_MODE_LOCK@ /usr/bin/true"
+        in service
+    )
     assert "RestrictAddressFamilies=AF_UNIX" in service
     assert "MemoryMax=4G" in service
     assert "OnUnitActiveSec=30min" in timer
