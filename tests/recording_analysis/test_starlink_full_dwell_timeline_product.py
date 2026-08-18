@@ -111,6 +111,21 @@ def test_20_and_60_second_products_account_for_every_sample(
             for left, right in zip(stream.windows, stream.windows[1:])
         )
     assert max(stop - start for _segment, start, stop in view.calls) == 8
+    assert len(view.calls) == expected_windows  # each interleaved tile is read once
+
+
+def test_interleaved_receiver_powers_are_exact_and_share_each_tile_read() -> None:
+    view, _request, bundle = _case(19)
+
+    expected_rx0 = sum(2 * (10 + index % 7) ** 2 for index in range(8)) / 8
+    expected_rx1 = sum(2 * (30 + index % 7) ** 2 for index in range(8)) / 8
+    assert bundle.streams[0].windows[0].mean_complex_power == expected_rx0
+    assert bundle.streams[1].windows[0].mean_complex_power == expected_rx1
+    assert view.calls == [
+        (bundle.streams[0].segment_id, 0, 8),
+        (bundle.streams[0].segment_id, 8, 16),
+        (bundle.streams[0].segment_id, 16, 19),
+    ]
 
 
 def test_short_tail_is_persisted_once_without_gap_or_overlap() -> None:

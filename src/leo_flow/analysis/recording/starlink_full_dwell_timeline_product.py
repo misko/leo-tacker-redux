@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import math
+from typing import cast
+
+import numpy as np
+from numpy.typing import NDArray
 
 from leo_flow.contracts.capture import SegmentManifest
 from leo_flow.contracts.core import (
@@ -27,7 +31,6 @@ from leo_flow.contracts.starlink_full_dwell_timeline_product import (
 from leo_flow.storage.ports import RecordingView
 
 from .api import AnalysisExecutionContext
-from .quality import decode_ci16
 
 
 def contiguous_tile_intervals_v0_1(
@@ -42,27 +45,30 @@ def contiguous_tile_intervals_v0_1(
     )
 
 
-def _mean_receiver_power(
+def _mean_receiver_powers(
     recording: RecordingView,
-    selection: FullDwellTimelineStreamSelectionV0_1,
+    segment_id: SegmentId,
     start: int,
     stop: int,
     receiver_count: int,
-    receiver_index: int,
-) -> float:
-    raw = recording.read_iq_bytes(selection.segment_id, start, stop)
-    values, count = decode_ci16(raw, receiver_count)
+) -> tuple[float, ...]:
+    raw = recording.read_iq_bytes(segment_id, start, stop)
+    bytes_per_sample = receiver_count * 4
+    if len(raw) % bytes_per_sample:
+        raise ValueError("timeline reader returned incomplete CI16 samples")
+    count = len(raw) // bytes_per_sample
     if count != stop - start:
         raise ValueError("timeline reader returned another sample interval")
-    stride = receiver_count * 2
-    offset = receiver_index * 2
-    total = 0
-    for position in range(offset, count * stride, stride):
-        i_value = int(values[position])
-        q_value = int(values[position + 1])
-        total += i_value * i_value + q_value * q_value
-    result = total / count
-    if not math.isfinite(result):
+    components = np.frombuffer(raw, dtype="<i2").reshape(count, receiver_count, 2)
+    widened = components.astype(np.int64)
+    totals = cast(
+        NDArray[np.int64],
+        np.sum(widened * widened, axis=(0, 2), dtype=np.int64),
+    )
+    result = tuple(float(value) / count for value in totals)
+    if len(result) != receiver_count or any(
+        not math.isfinite(value) for value in result
+    ):
         raise ValueError("timeline power is not finite")
     return result
 
@@ -81,8 +87,9 @@ class CompleteIqTimelineAnalyzerV0_1:
         if recording.manifest.radio_id != request.stream_selections[0].radio_id:
             raise ValueError("recording and timeline radio identities differ")
         segments = {item.segment_id: item for item in recording.manifest.segments}
+        power_cache: dict[tuple[SegmentId, int, int], tuple[float, ...]] = {}
         streams = tuple(
-            self._stream(recording, request, selection, segments)
+            self._stream(recording, request, selection, segments, power_cache)
             for selection in request.stream_selections
         )
         token = canonical_digest(
@@ -131,6 +138,7 @@ class CompleteIqTimelineAnalyzerV0_1:
         request: FullDwellTimelineRequestV0_1,
         selection: FullDwellTimelineStreamSelectionV0_1,
         segments: dict[SegmentId, SegmentManifest],
+        power_cache: dict[tuple[SegmentId, int, int], tuple[float, ...]],
     ) -> FullDwellTimelineStreamV0_1:
         segment = segments.get(selection.segment_id)
         if segment is None:
@@ -159,21 +167,21 @@ class CompleteIqTimelineAnalyzerV0_1:
         )
         if len(intervals) > request.plan.maximum_window_count_per_stream:
             raise ValueError("timeline windows exceed declared bound")
-        measured = tuple(
-            (
-                start,
-                stop,
-                _mean_receiver_power(
+        measured_values = []
+        for start, stop in intervals:
+            key = (selection.segment_id, start, stop)
+            powers = power_cache.get(key)
+            if powers is None:
+                powers = _mean_receiver_powers(
                     recording,
-                    selection,
+                    selection.segment_id,
                     start,
                     stop,
                     receiver_count,
-                    receiver_index,
-                ),
-            )
-            for start, stop in intervals
-        )
+                )
+                power_cache[key] = powers
+            measured_values.append((start, stop, powers[receiver_index]))
+        measured = tuple(measured_values)
         selected_count = min(request.plan.maximum_refinements_per_stream, len(measured))
         selected_by_rank = tuple(
             item[0]
