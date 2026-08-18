@@ -18,6 +18,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV16,
     DashboardJsonApplicationV17,
     DashboardJsonApplicationV19,
+    DashboardJsonApplicationV20,
     JsonRequest,
     JsonResponse,
 )
@@ -59,6 +60,7 @@ class EvidencePorts:
         self.detector_queries: list[Any] = []
         self.basic_doppler_queries: list[Any] = []
         self.advanced_doppler_queries: list[Any] = []
+        self.timeline_queries: list[Any] = []
 
     def recording_evidence_context(self, recording_id: RecordingId) -> dict[str, Any]:
         assert str(recording_id) == REQUESTED
@@ -223,6 +225,58 @@ class EvidencePorts:
             "streams": streams,
         }
 
+    def recording_full_dwell_timeline(self, query: Any) -> dict[str, Any]:
+        self.timeline_queries.append(query)
+        identity = _identity(str(query.recording_id))
+        if identity is None:
+            raise DashboardNotFound("full-dwell timeline was not found")
+        radio, receiver, _lnb, segment = identity
+        if not _matches(query.radio_ids, radio) or not _matches(
+            query.receiver_chain_ids, receiver
+        ):
+            streams: list[dict[str, Any]] = []
+        elif query.edges and "lower" not in {str(value.value) for value in query.edges}:
+            streams = []
+        else:
+            streams = [
+                {
+                    "radio_id": radio,
+                    "segment_id": segment,
+                    "receiver_chain_id": receiver,
+                    "channel_number": 4,
+                    "edge": "lower",
+                    "sample_rate_hz": 2_500_000.0,
+                    "segment_sample_count": 60_000,
+                    "original_window_count": 3,
+                    "prescreen_coverage_fraction": 1.0,
+                    "exact_coverage_fraction": 1 / 3,
+                    "windows": [
+                        {
+                            "window_index": index,
+                            "start_sample": index * 20_000,
+                            "stop_sample": (index + 1) * 20_000,
+                            "interval_start_utc_ns": 1_000_000_000 + index * 8_000_000,
+                            "interval_stop_utc_ns": 1_008_000_000 + index * 8_000_000,
+                            "mean_complex_power": 1.0 + index,
+                            "selected_for_exact_refinement": index == 1,
+                        }
+                        for index in range(3)
+                    ],
+                }
+            ]
+        count = sum(len(stream["windows"]) for stream in streams)
+        return {
+            "recording_id": str(query.recording_id),
+            "prescreen_window_samples": 20_000,
+            "prescreen_stride_samples": 20_000,
+            "original_window_count": count,
+            "returned_window_count": count,
+            "truncated": False,
+            "candidate_only": True,
+            "calibrated_detection_count": None,
+            "streams": streams,
+        }
+
     def recording_evidence_doppler(self, query: Any) -> dict[str, Any]:
         self.basic_doppler_queries.append(query)
         return self._doppler(query, self.basic_doppler_state, advanced=False)
@@ -330,7 +384,8 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
     v15 = DashboardJsonApplicationV15(base, fixture_port)
     v16 = DashboardJsonApplicationV16(v15, fixture_port, fixture_port)
     v17 = DashboardJsonApplicationV17(v16, fixture_port)
-    return DashboardUiApplication(DashboardJsonApplicationV19(v17, fixture_port))
+    v19 = DashboardJsonApplicationV19(v17, fixture_port)
+    return DashboardUiApplication(DashboardJsonApplicationV20(v19, fixture_port))
 
 
 @contextmanager
@@ -392,6 +447,19 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
                     "Candidate evidence"
                 )
                 expect(page.locator(f"#evidence-{product}-canvas")).to_be_visible()
+            expect(page.locator("#evidence-timeline-state")).to_have_attribute(
+                "data-state", "ready"
+            )
+            expect(page.locator("#evidence-timeline-badge")).to_have_text(
+                "Full coverage"
+            )
+            expect(page.locator("#evidence-timeline-canvas")).to_be_visible()
+            expect(page.locator("#evidence-timeline-canvas")).to_have_attribute(
+                "data-point-count", "8"
+            )
+            expect(page.locator("#evidence-timeline-state")).to_contain_text(
+                "source union coverage is 100%"
+            )
 
             expect(page.locator("#evidence-qam-heading")).to_have_text("Pilot QAM")
             expect(page.locator("#evidence-detector-heading")).to_have_text(
@@ -583,12 +651,8 @@ def test_detail_page_renders_available_recording_when_companion_is_pending() -> 
                 )
                 expect(page.locator(f"#evidence-{product}-canvas")).to_be_visible()
             expect(page.locator("#evidence-qam-legend")).to_contain_text(REQUESTED)
-            expect(page.locator("#evidence-qam-legend")).not_to_contain_text(
-                COMPANION
-            )
-            expect(page.locator("#evidence-detector-legend")).to_contain_text(
-                REQUESTED
-            )
+            expect(page.locator("#evidence-qam-legend")).not_to_contain_text(COMPANION)
+            expect(page.locator("#evidence-detector-legend")).to_contain_text(REQUESTED)
             expect(page.locator("#evidence-detector-legend")).not_to_contain_text(
                 COMPANION
             )

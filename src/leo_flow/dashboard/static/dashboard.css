@@ -41,6 +41,7 @@
 }
 
 .evidence-product { min-width: 0; }
+.evidence-product-wide { grid-column: 1 / -1; }
 
 .evidence-chart {
   background: #050907;

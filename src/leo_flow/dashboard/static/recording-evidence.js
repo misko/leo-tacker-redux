@@ -21,7 +21,7 @@
     target.textContent = message;
     const badge = node(`evidence-${product}-badge`);
     if (badge) {
-      badge.textContent = value === "ready" ? "Candidate evidence" : value;
+      badge.textContent = value === "ready" ? (product === "timeline" ? "Full coverage" : "Candidate evidence") : value;
       badge.dataset.tone = value === "error" ? "error" : "warning";
     }
   }
@@ -224,6 +224,48 @@
     if (edges.length) parameters.set("edges", edges.join(","));
   }
 
+  async function loadTimeline(current) {
+    state("timeline", "pending", "Loading complete contiguous IQ tile timelines…");
+    try {
+      const recordings = selectedRecordings();
+      const receivers = new Set(checked("receiver")); const lnbs = new Set(checked("lnb")); const edges = checked("edge"); const channels = new Set(checked("channel").map(Number));
+      if (!recordings.length || !receivers.size || !lnbs.size || !edges.length || !channels.size) {
+        node("evidence-timeline-canvas").hidden = true; node("evidence-timeline-legend").replaceChildren(); state("timeline", "missing", "Select at least one radio, LNB, receiver, channel, and edge."); return;
+      }
+      const fetched = await availablePayloads(recordings.map((recording) => {
+        const parameters = new URLSearchParams({radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_windows: "16384"});
+        return `/api/v20/recordings/${encodeURIComponent(recording.recording_id)}/full-dwell-timeline?${parameters}`;
+      }));
+      if (current !== generation) return;
+      if (!fetched.payloads.length) {
+        node("evidence-timeline-canvas").hidden = true; node("evidence-timeline-legend").replaceChildren(); state("timeline", "pending", "The complete IQ tile timeline is pending for every selected recording."); return;
+      }
+      const series = []; const widths = new Set(); let original = 0; let returned = 0; let truncated = false;
+      for (const payload of fetched.payloads) {
+        if (payload.candidate_only !== true || payload.calibrated_detection_count !== null) throw new Error("unsafe full-dwell timeline semantics");
+        original += Number(payload.original_window_count || 0); returned += Number(payload.returned_window_count || 0); truncated ||= payload.truncated === true;
+        for (const stream of payload.streams || []) {
+          const lnb = assignment(payload.recording_id, stream.receiver_chain_id)?.lnb_id;
+          if (!receivers.has(stream.receiver_chain_id) || !lnbs.has(lnb) || !channels.has(Number(stream.channel_number)) || !edges.includes(stream.edge)) continue;
+          widths.add((1000 * Number(payload.prescreen_window_samples) / Number(stream.sample_rate_hz)).toFixed(3));
+          const base = identity([payload.recording_id, stream.radio_id, lnb, stream.receiver_chain_id, `CH${stream.channel_number}`, stream.edge]);
+          const points = (stream.windows || []).map((window) => ({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: 10 * Math.log10(Math.max(Number(window.mean_complex_power), 1e-30))}));
+          series.push({label: `${base} · every IQ tile`, points});
+          const selected = (stream.windows || []).filter((window) => window.selected_for_exact_refinement).map((window) => ({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: 10 * Math.log10(Math.max(Number(window.mean_complex_power), 1e-30))}));
+          if (selected.length) series.push({label: `${base} · exact-refinement selection`, points: selected});
+        }
+      }
+      drawChart("evidence-timeline-canvas", series, "mean complex power [dB arb.]", "windows", "UTC tile midpoint");
+      seriesLegend("evidence-timeline-legend", series);
+      const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
+      state("timeline", series.length ? "ready" : "missing", series.length ? `${returned.toLocaleString()} of ${original.toLocaleString()} persisted contiguous tile records returned (${[...widths].join("/")} ms windows); source union coverage is 100%.${truncated ? " Display response was extrema-preserving decimated." : " No display decimation."}${partial}` : "No complete IQ tile timelines match the selected hardware scope.");
+    } catch (error) {
+      if (current !== generation) return;
+      node("evidence-timeline-canvas").hidden = true; node("evidence-timeline-legend").replaceChildren();
+      state("timeline", error.status === 404 ? "pending" : "error", error.status === 404 ? "The complete IQ tile timeline is pending or unavailable." : `IQ tile timeline failed: ${error.message}`);
+    }
+  }
+
   async function loadQam(current) {
     state("qam", "pending", "Loading bounded acquired-QAM evidence…");
     try {
@@ -355,7 +397,7 @@
     if (!context) return;
     generation += 1;
     const current = generation;
-    void Promise.all([loadQam(current), loadDetectors(current), loadDoppler(current)]);
+    void Promise.all([loadTimeline(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
   }
 
   async function initialize() {
@@ -376,7 +418,7 @@
       reload();
     } catch (error) {
       const target = node("evidence-context-state"); target.dataset.state = "error"; target.textContent = `Evidence context unavailable: ${error.message}`;
-      ["qam", "detector", "doppler"].forEach((product) => state(product, "missing", "Authoritative hardware context is required before evidence can be displayed."));
+      ["timeline", "qam", "detector", "doppler"].forEach((product) => state(product, "missing", "Authoritative hardware context is required before evidence can be displayed."));
     }
   }
 

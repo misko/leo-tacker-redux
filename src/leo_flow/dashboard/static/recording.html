@@ -99,6 +99,13 @@
         </fieldset>
       </form>
       <div class="evidence-product-grid">
+        <article class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-timeline-heading">
+          <div class="decision-heading"><h3 id="evidence-timeline-heading">Complete IQ tile timeline</h3><span id="evidence-timeline-badge" class="status-badge" data-tone="warning">Pending</span></div>
+          <div id="evidence-timeline-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
+          <canvas id="evidence-timeline-canvas" class="evidence-chart" width="1200" height="420" role="img" aria-label="Mean complex power for every contiguous IQ tile" hidden></canvas>
+          <div id="evidence-timeline-legend" class="evidence-series-legend"></div>
+          <p class="availability-note">Every contiguous tile contributes to this lightweight curve. Highlighted refinement points are the smaller subset that received the expensive Qin/surrogate detector search; power alone is not a Starlink detection.</p>
+        </article>
         <article class="detail-card evidence-product" aria-labelledby="evidence-qam-heading">
           <div class="decision-heading"><h3 id="evidence-qam-heading">Pilot QAM</h3><span id="evidence-qam-badge" class="status-badge" data-tone="warning">Pending</span></div>
           <div id="evidence-qam-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>

@@ -26,6 +26,9 @@ from leo_flow.contracts.dashboard_doppler import (
 from leo_flow.contracts.dashboard_doppler_aggregate import (
     DopplerAggregateQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_full_dwell_timeline import (
+    RecordingFullDwellTimelineQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
@@ -84,6 +87,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV17,
     DashboardJsonApplicationV18,
     DashboardJsonApplicationV19,
+    DashboardJsonApplicationV20,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -228,6 +232,14 @@ class DashboardV19QueryPort(
     """Additive exact advanced-path-only Doppler read surface."""
 
 
+class DashboardV20QueryPort(
+    DashboardV19QueryPort,
+    RecordingFullDwellTimelineQueryPortV0_1,
+    Protocol,
+):
+    """Additive complete full-dwell prescreen timeline read surface."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -257,7 +269,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV17QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV20QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -293,6 +305,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV17Quer
     temporal_aggregate = None
     doppler_aggregate = None
     full_dwell = None
+    full_dwell_timeline = None
     acquired_qam = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
@@ -392,13 +405,19 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV17Quer
             DurableStarlinkFullDwellStoreV0_1,
             StarlinkFullDwellBlobStore,
         )
+        from leo_flow.analysis.recording.starlink_full_dwell_timeline import (
+            DurableRecordingFullDwellTimelineQueryV0_1,
+        )
 
         full_dwell_catalog = PostgresStarlinkFullDwellCatalogV0_1(connect)
+        full_dwell_store = DurableStarlinkFullDwellStoreV0_1(
+            cast(StarlinkFullDwellBlobStore, blobs), full_dwell_catalog
+        )
         full_dwell = DurableRecordingStarlinkFullDwellQueryV0_1(
-            DurableStarlinkFullDwellStoreV0_1(
-                cast(StarlinkFullDwellBlobStore, blobs), full_dwell_catalog
-            ),
-            full_dwell_catalog,
+            full_dwell_store, full_dwell_catalog
+        )
+        full_dwell_timeline = DurableRecordingFullDwellTimelineQueryV0_1(
+            full_dwell_store, full_dwell_catalog
         )
         from leo_flow.adapters.starlink_acquired_constellation_postgres import (
             PostgresRecordingReceiverLnbResolverV0_3,
@@ -428,6 +447,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV17Quer
         temporal_aggregate=temporal_aggregate,
         doppler_aggregate=doppler_aggregate,
         full_dwell=full_dwell,
+        full_dwell_timeline=full_dwell_timeline,
         acquired_qam=acquired_qam,
     )
 
@@ -453,7 +473,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV19QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV20QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -477,10 +497,11 @@ def _build_dashboard(
     v17 = DashboardJsonApplicationV17(v16, queries)
     v18 = DashboardJsonApplicationV18(v17, queries)
     v19 = DashboardJsonApplicationV19(v18, queries)
+    v20 = DashboardJsonApplicationV20(v19, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v19),
+        DashboardUiApplication(v20),
         diagnostics=diagnostics,
     )
 

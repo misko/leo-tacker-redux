@@ -56,6 +56,11 @@ from leo_flow.contracts.dashboard_doppler_aggregate import (
     DopplerAggregateQueryV0_1,
     DopplerAggregateViewV0_1,
 )
+from leo_flow.contracts.dashboard_full_dwell_timeline import (
+    FullDwellTimelineQueryV0_1,
+    RecordingFullDwellTimelineQueryPortV0_1,
+    RecordingFullDwellTimelineViewV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
 from leo_flow.contracts.dashboard_recording_evidence import (
@@ -160,6 +165,7 @@ class PostgresDashboardRepository:
         temporal_aggregate: TemporalPilotAggregateQueryPortV0_1 | None = None,
         doppler_aggregate: DopplerAggregateQueryPortV0_1 | None = None,
         full_dwell: RecordingStarlinkFullDwellQueryPortV0_1 | None = None,
+        full_dwell_timeline: RecordingFullDwellTimelineQueryPortV0_1 | None = None,
         acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3 | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
@@ -187,6 +193,7 @@ class PostgresDashboardRepository:
         self._temporal_aggregate = temporal_aggregate
         self._doppler_aggregate = doppler_aggregate
         self._full_dwell = full_dwell
+        self._full_dwell_timeline = full_dwell_timeline
         self._acquired_qam = acquired_qam
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
@@ -248,6 +255,20 @@ class PostgresDashboardRepository:
         except LookupError as error:
             raise DashboardNotFound(
                 f"full-dwell evidence for recording {query.recording_id} was not found"
+            ) from error
+
+    def recording_full_dwell_timeline(
+        self, query: FullDwellTimelineQueryV0_1
+    ) -> RecordingFullDwellTimelineViewV0_1:
+        if self._full_dwell_timeline is None:
+            raise DashboardNotFound(
+                f"full-dwell timeline for recording {query.recording_id} is unavailable"
+            )
+        try:
+            return self._full_dwell_timeline.recording_full_dwell_timeline(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"full-dwell timeline for recording {query.recording_id} was not found"
             ) from error
 
     def temporal_pilot_aggregate(
