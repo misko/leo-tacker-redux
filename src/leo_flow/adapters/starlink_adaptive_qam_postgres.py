@@ -18,10 +18,21 @@ from leo_flow.contracts.core import (
     Digest,
     DigestAlgorithm,
     RecordingId,
+    SchemaRef,
+    SchemaVersion,
 )
 from leo_flow.contracts.starlink_adaptive_qam import (
     StarlinkAdaptiveQamCatalogProjectionV0_4,
     StarlinkAdaptiveQamProductRefV0_4,
+)
+from leo_flow.contracts.starlink_adaptive_response import (
+    V0_1 as ADAPTIVE_RESPONSE_V0_1,
+)
+from leo_flow.contracts.starlink_adaptive_response import (
+    StarlinkAdaptiveResponseBundleV0_1,
+)
+from leo_flow.contracts.starlink_suite_pipeline import (
+    StarlinkDetectorSuiteRecordingBundleV0_2,
 )
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 
@@ -159,7 +170,10 @@ def _cataloged(row: dict[str, object]) -> CatalogedStarlinkAdaptiveQamV0_4:
                 DigestAlgorithm.SHA256,
                 str(row["source_adaptive_response_bundle_digest_value"]),
             ),
-            None,
+            SchemaRef(
+                StarlinkAdaptiveResponseBundleV0_1.SCHEMA_ID,
+                ADAPTIVE_RESPONSE_V0_1,
+            ),
         ),
         ArtifactRef(
             str(row["source_suite_analysis_id"]),
@@ -167,7 +181,10 @@ def _cataloged(row: dict[str, object]) -> CatalogedStarlinkAdaptiveQamV0_4:
                 DigestAlgorithm.SHA256,
                 str(row["source_suite_bundle_digest_value"]),
             ),
-            None,
+            SchemaRef(
+                StarlinkDetectorSuiteRecordingBundleV0_2.SCHEMA_ID,
+                SchemaVersion(0, 2),
+            ),
         ),
         Digest(DigestAlgorithm.SHA256, str(row["request_digest_value"])),
         _integer(row["stream_count"]),

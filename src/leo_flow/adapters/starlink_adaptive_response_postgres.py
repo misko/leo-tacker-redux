@@ -32,11 +32,16 @@ from leo_flow.contracts.starlink_adaptive_response import (
     StarlinkAdaptiveResponseProductRefV0_1,
 )
 from leo_flow.contracts.starlink_full_dwell_timeline_product import (
+    V0_1 as FULL_DWELL_TIMELINE_V0_1,
+)
+from leo_flow.contracts.starlink_full_dwell_timeline_product import (
     FullDwellRefinementRequestV0_1,
     FullDwellRefinementWindowV0_1,
+    FullDwellTimelineBundleV0_1,
 )
 from leo_flow.contracts.starlink_suite_pipeline import (
     StarlinkDetectorSuiteProductRefV0_2,
+    StarlinkDetectorSuiteRecordingBundleV0_2,
 )
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 from leo_flow.services.starlink_adaptive_response import (
@@ -336,7 +341,10 @@ def _cataloged(
                     DigestAlgorithm.SHA256,
                     str(row["timeline_bundle_digest_value"]),
                 ),
-                None,
+                SchemaRef(
+                    FullDwellTimelineBundleV0_1.SCHEMA_ID,
+                    FULL_DWELL_TIMELINE_V0_1,
+                ),
             ),
             ArtifactRef(
                 str(row["source_suite_analysis_id"]),
@@ -344,7 +352,10 @@ def _cataloged(
                     DigestAlgorithm.SHA256,
                     str(row["source_suite_bundle_digest_value"]),
                 ),
-                None,
+                SchemaRef(
+                    StarlinkDetectorSuiteRecordingBundleV0_2.SCHEMA_ID,
+                    SchemaVersion(0, 2),
+                ),
             ),
             Digest(DigestAlgorithm.SHA256, str(row["request_digest_value"])),
             _integer(row["stream_count"]),

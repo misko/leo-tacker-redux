@@ -6,7 +6,13 @@ from typing import Any
 import pytest
 
 from leo_flow.adapters.starlink_adaptive_qam_postgres import (
+    _cataloged as cataloged_qam,
+)
+from leo_flow.adapters.starlink_adaptive_qam_postgres import (
     _register_live_object as register_qam_object,
+)
+from leo_flow.adapters.starlink_adaptive_response_postgres import (
+    _cataloged as cataloged_response,
 )
 from leo_flow.adapters.starlink_adaptive_response_postgres import (
     _register_live_object as register_response_object,
@@ -98,3 +104,62 @@ def test_adaptive_catalog_rejects_conflicting_object_metadata(
 
     with pytest.raises(error):
         register(cursor, _object())
+
+
+def _catalog_row() -> dict[str, object]:
+    return {
+        "analysis_id": "slar_" + "1" * 32,
+        "recording_id": "rec_adaptive_catalog",
+        "input_recording_digest_value": Digest.sha256(b"recording").value,
+        "timeline_analysis_id": "fdtl_" + "2" * 32,
+        "timeline_bundle_digest_value": Digest.sha256(b"timeline").value,
+        "source_suite_analysis_id": "slsuite_" + "3" * 32,
+        "source_suite_bundle_digest_value": Digest.sha256(b"suite").value,
+        "source_adaptive_response_analysis_id": "slar_" + "4" * 32,
+        "source_adaptive_response_bundle_digest_value": Digest.sha256(
+            b"adaptive"
+        ).value,
+        "request_digest_value": Digest.sha256(b"request").value,
+        "stream_count": 1,
+        "window_count": 1,
+        "point_count": 8,
+        "bundle_digest_algorithm": "sha256",
+        "bundle_digest_value": Digest.sha256(b"bundle").value,
+        "bundle_byte_count": 123,
+        "bundle_media_type": "application/json",
+        "bundle_format_id": "adaptive-product-v0.1",
+        "bundle_locator": "cas:sha256:bundle",
+    }
+
+
+def test_response_catalog_restores_fixed_source_schema_identities() -> None:
+    value = cataloged_response(_catalog_row()).projection
+
+    assert value.timeline_ref.schema is not None
+    assert (
+        value.timeline_ref.schema.schema_id == "org.leo-flow.full-dwell-timeline-bundle"
+    )
+    assert value.source_suite_ref.schema is not None
+    assert (
+        value.source_suite_ref.schema.schema_id
+        == "org.leo-flow.starlink-detector-suite-recording-bundle"
+    )
+
+
+def test_qam_catalog_restores_fixed_source_schema_identities() -> None:
+    row = _catalog_row()
+    row["analysis_id"] = "slaqam4_" + "5" * 32
+    row["point_count"] = 2400
+
+    value = cataloged_qam(row).projection
+
+    assert value.source_adaptive_response_ref.schema is not None
+    assert (
+        value.source_adaptive_response_ref.schema.schema_id
+        == "org.leo-flow.starlink-adaptive-response-bundle"
+    )
+    assert value.source_suite_ref.schema is not None
+    assert (
+        value.source_suite_ref.schema.schema_id
+        == "org.leo-flow.starlink-detector-suite-recording-bundle"
+    )
