@@ -846,6 +846,7 @@
       addChecks(node("evidence-radios"), "radio", context.recordings || [], (item) => `${item.radio_id} / ${item.recording_id}${item.requested ? " (this page)" : " (batch companion)"}`);
       node("evidence-radios").querySelectorAll("input").forEach((input, index) => {
         input.value = context.recordings[index].recording_id;
+        input.dataset.radioId = context.recordings[index].radio_id;
         input.checked = context.recordings[index].requested === true;
       });
       const lnbValues = [...new Set((context.receivers || []).map((item) => item.lnb_id))].map((value) => ({value}));

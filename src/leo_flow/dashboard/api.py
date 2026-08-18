@@ -124,6 +124,10 @@ from leo_flow.contracts.starlink_pilot_refinement import (
     StarlinkPilotRefinementQueryV0_1,
 )
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
+from leo_flow.contracts.starlink_receiver_agnostic_cfo_product import (
+    ReceiverAgnosticCfoQamQueryV0_6,
+    RecordingReceiverAgnosticCfoQamQueryPortV0_6,
+)
 from leo_flow.contracts.starlink_suite_pipeline import (
     RecordingStarlinkSuiteQueryPortV0_2,
 )
@@ -1462,6 +1466,76 @@ class DashboardJsonApplicationV29:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class DashboardJsonApplicationV30:
+    """Expose bounded receiver-agnostic CFO/QAM without changing V1--V29."""
+
+    _PREFIX = "/api/v30/recordings/"
+    _MAX_QUERY_BYTES = 4_096
+    _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        cfo_qam: RecordingReceiverAgnosticCfoQamQueryPortV0_6,
+    ) -> None:
+        self._previous, self._cfo_qam = previous, cfo_qam
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "receiver-agnostic-cfo-qam":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._cfo_qam.recording_receiver_agnostic_cfo_qam(
+                _receiver_agnostic_cfo_qam_query(
+                    RecordingId(unquote(parts[0])),
+                    request.query,
+                    self._MAX_QUERY_BYTES,
+                )
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("receiver-agnostic CFO/QAM response exceeds its bound")
+        except ValueError as error:
+            return _error(400, "invalid_request", str(error))
+        except (DashboardNotFound, LookupError) as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _receiver_agnostic_cfo_qam_query(
+    recording_id: RecordingId,
+    query: dict[str, str],
+    maximum_query_bytes: int,
+) -> ReceiverAgnosticCfoQamQueryV0_6:
+    allowed = {"radio_ids", "receiver_chain_ids", "maximum_windows"}
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    if sum(len(key) + len(value) for key, value in query.items()) > maximum_query_bytes:
+        raise ValueError("receiver-agnostic CFO/QAM query is too large")
+    return ReceiverAgnosticCfoQamQueryV0_6(
+        recording_id,
+        tuple(RadioId(value) for value in (_comma_values(query, "radio_ids", 2) or ())),
+        tuple(
+            ReceiverChainId(value)
+            for value in (_comma_values(query, "receiver_chain_ids", 2) or ())
+        ),
+        int(query.get("maximum_windows", "6")),
+    )
 
 
 def _symbolwise_replay_dashboard_query(

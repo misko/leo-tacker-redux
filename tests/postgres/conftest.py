@@ -69,6 +69,7 @@ _EXPECTED_MIGRATIONS = (
     "0050_starlink_adaptive_response_reanalysis.sql",
     "0051_starlink_adaptive_response_priority.sql",
     "0052_starlink_symbolwise_replay_product_v0_1.sql",
+    "0053_recording_receiver_agnostic_cfo_qam_v0_6.sql",
 )
 
 

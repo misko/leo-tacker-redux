@@ -134,6 +134,11 @@ from leo_flow.contracts.starlink_pilot_refinement import (
     StarlinkPilotRefinementQueryV0_1,
 )
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkCandidateViewV0_1
+from leo_flow.contracts.starlink_receiver_agnostic_cfo_product import (
+    ReceiverAgnosticCfoQamQueryV0_6,
+    RecordingReceiverAgnosticCfoQamQueryPortV0_6,
+    RecordingReceiverAgnosticCfoQamViewV0_6,
+)
 from leo_flow.contracts.starlink_suite_pipeline import RecordingStarlinkSuiteViewV0_2
 from leo_flow.contracts.starlink_surrogate_null_pipeline import (
     RecordingStarlinkSurrogateNullQueryPortV0_1,
@@ -227,6 +232,8 @@ class PostgresDashboardRepository:
         pilot_prescreens: RecordingStarlinkPilotPrescreenQueryPortV0_1 | None = None,
         pilot_refinements: RecordingStarlinkPilotRefinementQueryPortV0_1 | None = None,
         symbolwise_replays: _RecordingSymbolwiseReplaySourcePort | None = None,
+        receiver_agnostic_cfo_qam: RecordingReceiverAgnosticCfoQamQueryPortV0_6
+        | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -267,6 +274,7 @@ class PostgresDashboardRepository:
                 symbolwise_replays, self._recording_evidence
             )
         )
+        self._receiver_agnostic_cfo_qam = receiver_agnostic_cfo_qam
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
@@ -397,6 +405,24 @@ class PostgresDashboardRepository:
         except LookupError as error:
             raise DashboardNotFound(
                 f"symbolwise replay for recording {query.recording_id} was not found"
+            ) from error
+
+    def recording_receiver_agnostic_cfo_qam(
+        self, query: ReceiverAgnosticCfoQamQueryV0_6
+    ) -> RecordingReceiverAgnosticCfoQamViewV0_6:
+        if self._receiver_agnostic_cfo_qam is None:
+            raise DashboardNotFound(
+                "receiver-agnostic CFO/QAM evidence for recording "
+                f"{query.recording_id} is unavailable"
+            )
+        try:
+            return self._receiver_agnostic_cfo_qam.recording_receiver_agnostic_cfo_qam(
+                query
+            )
+        except LookupError as error:
+            raise DashboardNotFound(
+                "receiver-agnostic CFO/QAM evidence for recording "
+                f"{query.recording_id} was not found"
             ) from error
 
     def recording_pilot_doppler_association(

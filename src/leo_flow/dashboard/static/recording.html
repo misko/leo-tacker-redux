@@ -9,6 +9,7 @@
   <script src="/assets/recording-detail.js" defer></script>
   <script src="/assets/recording-evidence.js" defer></script>
   <script src="/assets/symbolwise-replay.js" defer></script>
+  <script src="/assets/receiver-agnostic-cfo-qam.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#capture-detail-main">Skip to capture detail</a>
@@ -107,6 +108,13 @@
         </fieldset>
       </form>
       <div class="evidence-product-grid">
+        <article id="evidence-receiver-agnostic-cfo" class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-receiver-agnostic-cfo-heading">
+          <div class="decision-heading"><h3 id="evidence-receiver-agnostic-cfo-heading">v0.6 pattern-symmetric CFO/QAM diagnostic</h3><span id="evidence-receiver-agnostic-cfo-badge" class="status-badge" data-tone="warning">Deferred</span></div>
+          <div id="evidence-receiver-agnostic-cfo-state" class="panel-state" data-state="pending" role="status" aria-live="polite">This bounded diagnostic is deferred until extended analysis is requested.</div>
+          <dl id="evidence-receiver-agnostic-cfo-facts" class="fact-grid"></dl>
+          <div class="table-wrap"><table><caption>Independent CFO winners and identically mapped known-pattern QAM evidence</caption><thead><tr><th scope="col">Stream / window</th><th scope="col">Candidate-only pattern</th><th scope="col">Score</th><th scope="col">CFO / epoch</th><th scope="col">QAM accuracy / EVM</th></tr></thead><tbody id="evidence-receiver-agnostic-cfo-body"></tbody></table></div>
+          <p class="availability-note">This diagnostic exposes its declared CFO domain (the v0.6 default is −700 to +700 kHz); it is not the complete current wide production search. All pattern labels are candidate-only. No receiver-specific frequency center, hardware label inference, or calibrated detection is reported.</p>
+        </article>
         <article id="evidence-symbolwise" class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-symbolwise-heading">
           <div class="decision-heading"><h3 id="evidence-symbolwise-heading">Durable 60 s symbolwise replay</h3><span id="evidence-symbolwise-badge" class="status-badge" data-tone="warning">Deferred</span></div>
           <div id="evidence-symbolwise-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Full Qin and surrogate response curves are deferred until extended analysis is requested.</div>
