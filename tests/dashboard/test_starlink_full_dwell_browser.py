@@ -112,6 +112,18 @@ def test_browser_labels_sparse_exact_coverage_and_independent_filters() -> None:
             expect(page.locator("#fd-radio option[value='radio_2']")).to_have_count(1)
             expect(page.locator("#fd-receiver option[value='rx_1']")).to_have_count(1)
             assert urls and "maximum_points=4096" in urls[0]
+            assert page.locator("#fd-method option").evaluate_all(
+                "options => options.slice(1).map(option => option.value)"
+            ) == [
+                "anchor-8",
+                "differential-16",
+                "differential-32",
+                "glrt-32",
+                "glrt-64",
+                "full-frame-acquire",
+                "full-frame-verify",
+                "full-frame-full",
+            ]
         finally:
             browser.close()
 
