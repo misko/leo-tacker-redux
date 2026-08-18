@@ -322,6 +322,9 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
     def commit_starlink_suite(
         self, lease: JobLease, prepared: PreparedStarlinkSuiteAnalysisV0_2
     ) -> ArtifactRef:
+        from leo_flow.adapters.dashboard_qam_summary_projection import (
+            publish_acquired_qam_summary_with_cursor,
+        )
         from leo_flow.adapters.starlink_acquired_constellation_postgres import (
             publish_starlink_acquired_constellation_with_cursor,
         )
@@ -460,6 +463,9 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
                     acquired_ref,
                     prepared.request.recording_object_ref,
                     idempotency_key=f"starlink-suite:{lease.job_id}:acquired-qam-v0.3",
+                )
+                publish_acquired_qam_summary_with_cursor(
+                    cursor, acquired.bundle
                 )
             work_id = (
                 "slsuitework_"

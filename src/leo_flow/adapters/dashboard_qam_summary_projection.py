@@ -8,6 +8,11 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from leo_flow.analysis.qam_goodness import qam_goodness_v0_2
+from leo_flow.contracts.dashboard_qam_summary_receipt import (
+    DASHBOARD_QAM_SUMMARY_CONFIG_REF_V0_2,
+    QamSummaryTerminalOutcome,
+    dashboard_qam_candidate_set_digest_v0_2,
+)
 from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     StarlinkAcquiredConstellationRecordingBundleV0_3,
 )
@@ -148,11 +153,22 @@ def _publish(
     analysis_id: str,
     rows: list[dict[str, object]],
 ) -> None:
-    if not rows:
-        return
+    outcome = (
+        QamSummaryTerminalOutcome.COMPLETE
+        if rows
+        else QamSummaryTerminalOutcome.NO_CANDIDATE
+    )
+    candidate_set_digest = dashboard_qam_candidate_set_digest_v0_2(rows)
     result = cursor.execute(
-        "SELECT public.publish_dashboard_capture_qam_candidates_v0_1(%s,%s,%s) AS published",
-        (kind, analysis_id, Jsonb(rows)),
+        "SELECT public.publish_dashboard_capture_qam_summary_receipt_v0_2(%s,%s,%s,%s,%s,%s) AS published",
+        (
+            kind,
+            analysis_id,
+            DASHBOARD_QAM_SUMMARY_CONFIG_REF_V0_2.digest.value,
+            candidate_set_digest.value,
+            outcome.value,
+            Jsonb(rows),
+        ),
     ).fetchone()
     if result is None or result["published"] is not True:
         raise RuntimeError("QAM summary projection was not acknowledged")
