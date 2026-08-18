@@ -35,6 +35,12 @@ from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPo
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_recording_evidence import (
+    MAXIMUM_DOPPLER_WINDOW_ESTIMATES,
+    RecordingEvidenceContextQueryPortV0_1,
+    RecordingEvidenceDopplerQueryPortV0_1,
+    RecordingEvidenceDopplerQueryV0_1,
+)
 from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionQueryPortV0_2,
     ScoreDistributionQueryPortV0_1,
@@ -751,6 +757,86 @@ class DashboardJsonApplicationV15:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class DashboardJsonApplicationV16:
+    """Add authoritative selector context for the unified evidence workspace."""
+
+    _PREFIX = "/api/v16/recordings/"
+    _MAX_RESPONSE_BYTES = 256 * 1024
+
+    def __init__(
+        self,
+        v15: DashboardJsonApplicationV15,
+        evidence_contexts: RecordingEvidenceContextQueryPortV0_1,
+        evidence_doppler: RecordingEvidenceDopplerQueryPortV0_1,
+    ) -> None:
+        self._v15 = v15
+        self._evidence_contexts = evidence_contexts
+        self._evidence_doppler = evidence_doppler
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._v15.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2:
+                raise DashboardNotFound(f"route {path} was not found")
+            recording_id = RecordingId(unquote(parts[0]))
+            if parts[1] == "evidence-context":
+                if request.query:
+                    raise ValueError(
+                        "evidence-context does not accept query parameters"
+                    )
+                encoded = canonical_json_bytes(
+                    self._evidence_contexts.recording_evidence_context(recording_id)
+                )
+            elif parts[1] == "evidence-doppler":
+                encoded = canonical_json_bytes(
+                    self._evidence_doppler.recording_evidence_doppler(
+                        _recording_evidence_doppler_query(recording_id, request.query)
+                    )
+                )
+            else:
+                raise DashboardNotFound(f"route {path} was not found")
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("recording-evidence context exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _recording_evidence_doppler_query(
+    recording_id: RecordingId, query: dict[str, str]
+) -> RecordingEvidenceDopplerQueryV0_1:
+    allowed = {"radio_ids", "lnb_ids", "receiver_chain_ids", "maximum_windows"}
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    radios = _comma_values(query, "radio_ids", 2) or ()
+    lnbs = _comma_values(query, "lnb_ids", 16) or ()
+    receivers = _comma_values(query, "receiver_chain_ids", 16) or ()
+    return RecordingEvidenceDopplerQueryV0_1(
+        recording_id,
+        tuple(RadioId(value) for value in radios),
+        lnbs,
+        tuple(ReceiverChainId(value) for value in receivers),
+        _optional_positive_int(
+            query, "maximum_windows", MAXIMUM_DOPPLER_WINDOW_ESTIMATES
+        ),
+    )
 
 
 def _starlink_full_dwell_query(

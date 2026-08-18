@@ -7,6 +7,7 @@
   <title>Capture detail · LEO Flow</title>
   <link rel="stylesheet" href="/assets/dashboard.css">
   <script src="/assets/recording-detail.js" defer></script>
+  <script src="/assets/recording-evidence.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#capture-detail-main">Skip to capture detail</a>
@@ -28,6 +29,7 @@
     <a href="/aggregate-doppler">Aggregate Doppler</a>
     <a href="/full-dwell">Full-dwell responses</a>
     <a href="#capture-facts">Capture facts</a>
+    <a href="#evidence-workspace">Evidence workspace</a>
     <a href="#segments">Segments &amp; tunings</a>
     <a href="#waterfall">Waterfall</a>
     <a href="#doppler">Doppler explorer</a>
@@ -44,6 +46,79 @@
       </div>
       <div id="capture-detail-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading capture facts…</div>
       <dl id="capture-detail-facts" class="fact-grid capture-fact-grid"></dl>
+    </section>
+
+    <section id="evidence-workspace" aria-labelledby="evidence-workspace-heading">
+      <div class="section-heading">
+        <div><p class="section-index">02 / unified candidate evidence</p><h2 id="evidence-workspace-heading">QAM, detector &amp; Doppler evidence</h2></div>
+        <label for="evidence-mode">View
+          <select id="evidence-mode">
+            <option value="overall">Overall</option>
+            <option value="windows">By window</option>
+          </select>
+        </label>
+      </div>
+      <aside id="evidence-warning" class="candidate-warning" role="note">
+        <strong>Candidate-only evidence.</strong> Each visible series keeps its recording, radio, authoritative LNB assignment, receiver port, channel, and edge identity. Values are never pooled across hidden hardware dimensions and are not calibrated detections.
+      </aside>
+      <div id="evidence-context-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading authoritative recording and hardware context…</div>
+      <form id="evidence-controls" class="evidence-controls" aria-label="Unified evidence filters">
+        <fieldset id="evidence-radios"><legend>Radio / recording</legend></fieldset>
+        <fieldset id="evidence-lnbs"><legend>Authoritative LNB</legend></fieldset>
+        <fieldset id="evidence-receivers"><legend>Receiver port</legend></fieldset>
+        <fieldset id="evidence-channels">
+          <legend>Channel</legend>
+          <label><input type="checkbox" name="channel" value="1" checked> CH1</label>
+          <label><input type="checkbox" name="channel" value="2" checked> CH2</label>
+          <label><input type="checkbox" name="channel" value="3" checked> CH3</label>
+          <label><input type="checkbox" name="channel" value="4" checked> CH4</label>
+        </fieldset>
+        <fieldset id="evidence-edges">
+          <legend>Edge</legend>
+          <label><input type="checkbox" name="edge" value="lower" checked> Lower</label>
+          <label><input type="checkbox" name="edge" value="upper" checked> Upper</label>
+        </fieldset>
+        <fieldset id="evidence-methods">
+          <legend>Detector algorithm</legend>
+          <label><input type="checkbox" name="method" value="anchor-8" checked> Anchor-8</label>
+          <label><input type="checkbox" name="method" value="differential-16"> Differential-16</label>
+          <label><input type="checkbox" name="method" value="differential-32"> Differential-32</label>
+          <label><input type="checkbox" name="method" value="glrt-32" checked> GLRT-32</label>
+          <label><input type="checkbox" name="method" value="glrt-64"> GLRT-64</label>
+          <label><input type="checkbox" name="method" value="full-frame-acquire" checked> Full-frame acquire</label>
+          <label><input type="checkbox" name="method" value="full-frame-verify"> Full-frame verify</label>
+          <label><input type="checkbox" name="method" value="full-frame-full"> Full-frame full</label>
+        </fieldset>
+        <fieldset id="evidence-patterns">
+          <legend>Qin / surrogate pattern</legend>
+          <label><input type="checkbox" name="pattern" value="qin" checked> Qin known pattern</label>
+          <label><input type="checkbox" name="pattern" value="surrogate-0" checked> Surrogate 1</label>
+          <label><input type="checkbox" name="pattern" value="surrogate-1"> Surrogate 2</label>
+          <label><input type="checkbox" name="pattern" value="surrogate-2"> Surrogate 3</label>
+          <label><input type="checkbox" name="pattern" value="surrogate-3"> Surrogate 4</label>
+        </fieldset>
+      </form>
+      <div class="evidence-product-grid">
+        <article class="detail-card evidence-product" aria-labelledby="evidence-qam-heading">
+          <div class="decision-heading"><h3 id="evidence-qam-heading">Pilot QAM</h3><span id="evidence-qam-badge" class="status-badge" data-tone="warning">Pending</span></div>
+          <div id="evidence-qam-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
+          <canvas id="evidence-qam-canvas" class="evidence-chart" width="760" height="440" role="img" aria-label="Selected QAM constellation series" hidden></canvas>
+          <div id="evidence-qam-legend" class="evidence-series-legend"></div>
+        </article>
+        <article class="detail-card evidence-product" aria-labelledby="evidence-detector-heading">
+          <div class="decision-heading"><h3 id="evidence-detector-heading">Starlink algorithm scores</h3><span id="evidence-detector-badge" class="status-badge" data-tone="warning">Pending</span></div>
+          <div id="evidence-detector-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
+          <canvas id="evidence-detector-canvas" class="evidence-chart" width="900" height="440" role="img" aria-label="Selected detector scores by window" hidden></canvas>
+          <div id="evidence-detector-legend" class="evidence-series-legend"></div>
+        </article>
+        <article class="detail-card evidence-product" aria-labelledby="evidence-doppler-heading">
+          <div class="decision-heading"><h3 id="evidence-doppler-heading">Doppler estimates</h3><span id="evidence-doppler-badge" class="status-badge" data-tone="warning">Pending</span></div>
+          <div id="evidence-doppler-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
+          <canvas id="evidence-doppler-canvas" class="evidence-chart" width="900" height="440" role="img" aria-label="Selected Doppler estimates by window" hidden></canvas>
+          <div id="evidence-doppler-legend" class="evidence-series-legend"></div>
+        </article>
+      </div>
+      <p id="evidence-limitations" class="availability-note"></p>
     </section>
 
     <section id="segments" aria-labelledby="segments-heading">

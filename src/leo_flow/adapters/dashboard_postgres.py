@@ -49,6 +49,11 @@ from leo_flow.contracts.dashboard_doppler_aggregate import (
 )
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
+from leo_flow.contracts.dashboard_recording_evidence import (
+    RecordingEvidenceContextViewV0_1,
+    RecordingEvidenceDopplerQueryV0_1,
+    RecordingEvidenceDopplerViewV0_1,
+)
 from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionViewV0_2,
     ScoreDistributionViewV0_1,
@@ -87,10 +92,16 @@ from leo_flow.contracts.starlink_temporal_pilot import (
     StarlinkTemporalPilotQueryV0_1,
 )
 from leo_flow.dashboard import DashboardNotFound, InvalidCursor
+from leo_flow.services.recording_evidence import (
+    RecordingEvidenceDopplerQueryServiceV0_1,
+)
 
 from . import dashboard_postgres_sql as sql
 from .dashboard_batch_postgres import PostgresCaptureBatchDashboardRepository
 from .dashboard_observation_postgres import PostgresObservationAggregateRepositoryV0_1
+from .dashboard_recording_evidence_postgres import (
+    PostgresRecordingEvidenceContextRepositoryV0_1,
+)
 from .dashboard_recording_postgres import PostgresRecordingDashboardRepository
 from .dashboard_score_distribution_postgres import (
     PostgresScoreDistributionRepositoryV0_1,
@@ -130,6 +141,9 @@ class PostgresDashboardRepository:
             connect, page_size=page_size
         )
         self._recording_pages = PostgresRecordingDashboardRepository(connect)
+        self._recording_evidence = PostgresRecordingEvidenceContextRepositoryV0_1(
+            connect, self._recording_pages, self._capture_batches
+        )
         self._radio_lifecycle = PostgresRadioLifecycleRepositoryV0_1(connect)
         self._observation_aggregate = PostgresObservationAggregateRepositoryV0_1(
             connect
@@ -143,6 +157,19 @@ class PostgresDashboardRepository:
         self._temporal_aggregate = temporal_aggregate
         self._doppler_aggregate = doppler_aggregate
         self._full_dwell = full_dwell
+        self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
+            self._recording_evidence, self._recording_pages, self
+        )
+
+    def recording_evidence_context(
+        self, recording_id: RecordingId
+    ) -> RecordingEvidenceContextViewV0_1:
+        return self._recording_evidence.recording_evidence_context(recording_id)
+
+    def recording_evidence_doppler(
+        self, query: RecordingEvidenceDopplerQueryV0_1
+    ) -> RecordingEvidenceDopplerViewV0_1:
+        return self._recording_evidence_doppler.recording_evidence_doppler(query)
 
     def recording_starlink_full_dwell(
         self, query: StarlinkFullDwellQueryV0_1

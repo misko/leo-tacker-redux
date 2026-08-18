@@ -1,0 +1,301 @@
+"use strict";
+
+(() => {
+  const node = (id) => document.getElementById(id);
+  if (!node("evidence-workspace")) return;
+
+  const recordingId = (() => {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    if (parts.length !== 2 || parts[0] !== "recordings") return null;
+    try { return decodeURIComponent(parts[1]); } catch (_error) { return null; }
+  })();
+  if (!recordingId) return;
+
+  let context = null;
+  let generation = 0;
+  const colors = ["#80d8ff", "#fff176", "#ff8a80", "#69f0ae", "#ce93d8", "#ffb74d", "#90caf9", "#a5d6a7"];
+
+  function state(product, value, message) {
+    const target = node(`evidence-${product}-state`);
+    target.dataset.state = value;
+    target.textContent = message;
+    const badge = node(`evidence-${product}-badge`);
+    if (badge) {
+      badge.textContent = value === "ready" ? "Candidate evidence" : value;
+      badge.dataset.tone = value === "error" ? "error" : "warning";
+    }
+  }
+
+  async function json(path) {
+    const response = await fetch(path, {headers: {accept: "application/json"}, credentials: "same-origin"});
+    let body = {};
+    try { body = await response.json(); } catch (_error) { /* handled below */ }
+    if (!response.ok) {
+      const error = new Error(body?.error?.message || `request failed (${response.status})`);
+      error.status = response.status;
+      throw error;
+    }
+    return body;
+  }
+
+  function checked(name) {
+    return [...document.querySelectorAll(`#evidence-controls input[name="${name}"]:checked`)].map((item) => item.value);
+  }
+
+  function addChecks(fieldset, name, values, label) {
+    fieldset.querySelectorAll("label").forEach((item) => item.remove());
+    for (const value of values) {
+      const wrapper = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = name;
+      input.value = value.value;
+      input.checked = true;
+      wrapper.append(input, document.createTextNode(` ${label(value)}`));
+      fieldset.append(wrapper);
+    }
+  }
+
+  function assignment(recording, receiver) {
+    return (context?.receivers || []).find(
+      (item) => item.recording_id === recording && item.receiver_chain_id === receiver,
+    ) || null;
+  }
+
+  function selectedRecordings() {
+    const radios = new Set(checked("radio"));
+    return (context?.recordings || []).filter((item) => radios.has(item.recording_id));
+  }
+
+  function identity(parts) {
+    return parts.filter((item) => item !== undefined && item !== null && item !== "").join(" · ");
+  }
+
+  function seriesLegend(targetId, series) {
+    const target = node(targetId);
+    target.replaceChildren();
+    series.forEach((item, index) => {
+      const key = document.createElement("span");
+      key.className = "evidence-series-key";
+      const swatch = document.createElement("span");
+      swatch.className = "evidence-series-swatch";
+      swatch.style.backgroundColor = colors[index % colors.length];
+      key.append(swatch, document.createTextNode(item.label));
+      target.append(key);
+    });
+  }
+
+  function drawChart(canvasId, series, yLabel, mode, pointLabel) {
+    const canvas = node(canvasId);
+    const ctx = canvas.getContext("2d");
+    const points = series.flatMap((item) => item.points.map((point) => ({...point, series: item})));
+    if (!ctx || !points.length) {
+      canvas.hidden = true;
+      return;
+    }
+    canvas.hidden = false;
+    const pad = {left: 76, right: 22, top: 24, bottom: 52};
+    const width = canvas.width - pad.left - pad.right;
+    const height = canvas.height - pad.top - pad.bottom;
+    const xs = points.map((item) => Number(item.x));
+    const ys = points.map((item) => Number(item.y));
+    let xmin = Math.min(...xs); let xmax = Math.max(...xs);
+    let ymin = Math.min(...ys); let ymax = Math.max(...ys);
+    if (xmin === xmax) { xmin -= 0.5; xmax += 0.5; }
+    if (ymin === ymax) { ymin -= Math.max(1, Math.abs(ymin) * 0.1); ymax += Math.max(1, Math.abs(ymax) * 0.1); }
+    const margin = (ymax - ymin) * 0.08;
+    ymin -= margin; ymax += margin;
+    const px = (value) => pad.left + ((value - xmin) / (xmax - xmin)) * width;
+    const py = (value) => pad.top + ((ymax - value) / (ymax - ymin)) * height;
+    ctx.fillStyle = "#050907"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#294137"; ctx.lineWidth = 1;
+    for (let index = 0; index <= 4; index += 1) {
+      const y = pad.top + (index / 4) * height;
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(canvas.width - pad.right, y); ctx.stroke();
+      const value = ymax - (index / 4) * (ymax - ymin);
+      ctx.fillStyle = "#9eaaa5"; ctx.font = "13px ui-monospace, monospace"; ctx.fillText(value.toPrecision(4), 5, y + 4);
+    }
+    series.forEach((item, index) => {
+      const color = colors[index % colors.length];
+      const ordered = [...item.points].sort((a, b) => a.x - b.x);
+      ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1.6;
+      if (mode === "windows" && ordered.length > 1) {
+        ctx.beginPath(); ordered.forEach((point, offset) => offset ? ctx.lineTo(px(point.x), py(point.y)) : ctx.moveTo(px(point.x), py(point.y))); ctx.stroke();
+      }
+      ordered.forEach((point) => { ctx.beginPath(); ctx.arc(px(point.x), py(point.y), 3.2, 0, 2 * Math.PI); ctx.fill(); });
+    });
+    ctx.fillStyle = "#c4d0cb"; ctx.font = "14px ui-monospace, monospace";
+    ctx.fillText(yLabel, 8, 16);
+    ctx.fillText(mode === "windows" ? "UTC window midpoint" : pointLabel, pad.left, canvas.height - 14);
+    canvas.dataset.seriesCount = String(series.length);
+    canvas.dataset.pointCount = String(points.length);
+    canvas.setAttribute("aria-label", `${yLabel}; ${series.length} unpooled series and ${points.length} ${mode === "windows" ? "window" : "overall"} estimates`);
+  }
+
+  function drawQam(series) {
+    const canvas = node("evidence-qam-canvas");
+    const ctx = canvas.getContext("2d");
+    const all = series.flatMap((item) => item.points.map((point) => ({point, item})));
+    if (!ctx || !all.length) { canvas.hidden = true; return; }
+    canvas.hidden = false;
+    const pad = 48;
+    const extent = Math.max(1.25, ...all.flatMap(({point}) => [Math.abs(Number(point.i)), Math.abs(Number(point.q))])) * 1.08;
+    const x = (value) => pad + ((Number(value) + extent) / (2 * extent)) * (canvas.width - 2 * pad);
+    const y = (value) => pad + ((extent - Number(value)) / (2 * extent)) * (canvas.height - 2 * pad);
+    ctx.fillStyle = "#050907"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#294137"; ctx.beginPath(); ctx.moveTo(x(-extent), y(0)); ctx.lineTo(x(extent), y(0)); ctx.moveTo(x(0), y(-extent)); ctx.lineTo(x(0), y(extent)); ctx.stroke();
+    series.forEach((item, index) => {
+      ctx.fillStyle = colors[index % colors.length];
+      for (const point of item.points) { ctx.globalAlpha = 0.62; ctx.beginPath(); ctx.arc(x(point.i), y(point.q), 2.2, 0, 2 * Math.PI); ctx.fill(); }
+    });
+    ctx.globalAlpha = 1;
+    canvas.dataset.seriesCount = String(series.length);
+    canvas.dataset.pointCount = String(all.length);
+    canvas.setAttribute("aria-label", `Known pilot QAM candidate evidence; ${series.length} unpooled series and ${all.length} coefficients`);
+  }
+
+  function queryFilters(parameters) {
+    const radios = selectedRecordings().map((item) => item.radio_id);
+    const lnbs = checked("lnb");
+    const receivers = checked("receiver");
+    const edges = checked("edge");
+    if (radios.length) parameters.set("radio_ids", [...new Set(radios)].join(","));
+    if (lnbs.length) parameters.set("lnb_ids", lnbs.join(","));
+    if (receivers.length) parameters.set("receiver_chain_ids", receivers.join(","));
+    if (edges.length) parameters.set("edges", edges.join(","));
+  }
+
+  async function loadQam(current) {
+    state("qam", "pending", "Loading bounded acquired-QAM evidence…");
+    try {
+      if (!selectedRecordings().length || !checked("lnb").length || !checked("receiver").length || !checked("edge").length) {
+        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
+      }
+      const mode = node("evidence-mode").value;
+      const payloads = await Promise.all(selectedRecordings().map(async (recording) => {
+        const parameters = new URLSearchParams({mode, maximum_streams: "16", maximum_windows_per_stream: "128", maximum_points_per_constellation: "600"});
+        queryFilters(parameters);
+        return json(`/api/v17/recordings/${encodeURIComponent(recording.recording_id)}/starlink-acquired-constellation?${parameters}`);
+      }));
+      if (current !== generation) return;
+      const lnbSet = new Set(checked("lnb")); const receiverSet = new Set(checked("receiver")); const edgeSet = new Set(checked("edge"));
+      const series = [];
+      for (const payload of payloads) {
+        if (payload.candidate_only !== true || payload.calibration_required !== true) throw new Error("unsafe acquired-QAM semantics");
+        for (const stream of payload.streams || []) {
+          if (!lnbSet.has(stream.lnb_id) || !receiverSet.has(stream.receiver_chain_id) || !edgeSet.has(stream.edge)) continue;
+          const windows = stream.windows || [];
+          windows.forEach((window, index) => {
+            const points = window.display_points || window.points || [];
+            if (!points.length) return;
+            series.push({
+              label: identity([stream.recording_id || payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, mode === "windows" ? `window ${window.window_index ?? index}` : "overall"]),
+              points,
+            });
+          });
+        }
+      }
+      drawQam(series); seriesLegend("evidence-qam-legend", series);
+      state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series.` : "No acquired-QAM series match the selected hardware scope.");
+    } catch (error) {
+      if (current !== generation) return;
+      node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren();
+      state("qam", error.status === 404 ? "pending" : "error", error.status === 404 ? "Acquired-QAM evidence is pending or unavailable for this recording." : `QAM evidence failed: ${error.message}`);
+    }
+  }
+
+  async function loadDetectors(current) {
+    state("detector", "pending", "Loading bounded full-dwell detector evidence…");
+    try {
+      const methods = checked("method"); const edges = checked("edge"); const channels = new Set(checked("channel").map(Number));
+      const radios = new Set(selectedRecordings().map((item) => item.radio_id)); const receivers = new Set(checked("receiver")); const lnbs = new Set(checked("lnb")); const patterns = checked("pattern");
+      if (!radios.size || !receivers.size || !lnbs.size || !channels.size || !edges.length || !methods.length || !patterns.length) {
+        node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren(); state("detector", "missing", "Select at least one value in every detector scope."); return;
+      }
+      const payloads = await Promise.all(selectedRecordings().map((recording) => {
+        const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
+        return json(`/api/v15/recordings/${encodeURIComponent(recording.recording_id)}/starlink-full-dwell?${parameters}`);
+      }));
+      if (current !== generation) return;
+      const grouped = new Map(); const mode = node("evidence-mode").value;
+      for (const payload of payloads) for (const stream of payload.streams || []) {
+        const lnb = assignment(payload.recording_id, stream.receiver_chain_id)?.lnb_id;
+        if (!radios.has(stream.radio_id) || !receivers.has(stream.receiver_chain_id) || !lnbs.has(lnb) || !channels.has(Number(stream.channel_number)) || !edges.includes(stream.edge)) continue;
+        for (const point of stream.points || []) for (const pattern of patterns) {
+          if (!methods.includes(point.method)) continue;
+          let score = null;
+          if (pattern === "qin") score = point.qin?.score;
+          else score = point.surrogates?.[Number(pattern.split("-")[1])]?.winner?.score;
+          if (!Number.isFinite(Number(score))) continue;
+          const label = identity([payload.recording_id, stream.radio_id, lnb, stream.receiver_chain_id, `CH${stream.channel_number}`, stream.edge, point.method, pattern]);
+          if (!grouped.has(label)) grouped.set(label, []);
+          grouped.get(label).push({x: (Number(point.interval_start_utc_ns) + Number(point.interval_stop_utc_ns)) / 2, y: Number(score)});
+        }
+      }
+      const series = [...grouped].map(([label, points], index) => ({label, points: mode === "windows" ? points : [{x: index, y: Math.max(...points.map((item) => item.y))}]}));
+      drawChart("evidence-detector-canvas", series, "score [0,1]", mode, "series (maximum over returned exact windows)");
+      seriesLegend("evidence-detector-legend", series);
+      state("detector", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled series; ${mode === "overall" ? "overall is the maximum over returned sparse exact windows" : "each point is one exact analyzed window"}.` : "No full-dwell points match the selected scope.");
+    } catch (error) {
+      if (current !== generation) return;
+      node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
+      state("detector", error.status === 404 ? "pending" : "error", error.status === 404 ? "Full-dwell detector evidence is pending in the asynchronous queue." : `Detector evidence failed: ${error.message}`);
+    }
+  }
+
+  async function loadDoppler(current) {
+    state("doppler", "pending", "Loading published total fits and bounded server-derived window slopes…");
+    try {
+      if (!selectedRecordings().length || !checked("lnb").length || !checked("receiver").length) {
+        node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren(); state("doppler", "missing", "Select at least one radio, LNB, and receiver."); return;
+      }
+      const parameters = new URLSearchParams({maximum_windows: "4096"}); queryFilters(parameters); parameters.delete("edges");
+      const payload = await json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-doppler?${parameters}`);
+      if (current !== generation) return;
+      if (payload.candidate_only !== true || payload.calibrated_detection_count !== null) throw new Error("unsafe Doppler semantics");
+      const mode = node("evidence-mode").value;
+      const series = (payload.series || []).map((item, index) => ({
+        label: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, `candidate ${item.candidate_rank}`]),
+        points: mode === "windows" ? (item.windows || []).map((window) => ({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: Number(window.drift_rate_hz_s)})) : [{x: index, y: Number(item.total.drift_rate_hz_s)}],
+      }));
+      drawChart("evidence-doppler-canvas", series, "drift rate [Hz/s]", mode, "published total candidate fit");
+      seriesLegend("evidence-doppler-legend", series);
+      state("doppler", payload.state === "complete" && series.length ? "ready" : payload.state, payload.state === "complete" && series.length ? `${series.length} unpooled series; ${mode === "overall" ? "published total candidate fits" : "adjacent published track-point slopes with explicit UTC/sample bounds"}.` : `Doppler evidence is ${payload.state}.`);
+    } catch (error) {
+      if (current !== generation) return;
+      node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren();
+      state("doppler", error.status === 404 ? "missing" : "error", error.status === 404 ? "Doppler evidence is unavailable." : `Doppler evidence failed: ${error.message}`);
+    }
+  }
+
+  function reload() {
+    if (!context) return;
+    generation += 1;
+    const current = generation;
+    void Promise.all([loadQam(current), loadDetectors(current), loadDoppler(current)]);
+  }
+
+  async function initialize() {
+    try {
+      context = await json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-context`);
+      if (context.candidate_only !== true || context.calibrated_detection_count !== null) throw new Error("unsafe evidence context semantics");
+      addChecks(node("evidence-radios"), "radio", context.recordings || [], (item) => `${item.radio_id} / ${item.recording_id}${item.requested ? " (this page)" : " (batch companion)"}`);
+      node("evidence-radios").querySelectorAll("input").forEach((input, index) => { input.value = context.recordings[index].recording_id; });
+      const lnbValues = [...new Set((context.receivers || []).map((item) => item.lnb_id))].map((value) => ({value}));
+      const receiverValues = [...new Set((context.receivers || []).map((item) => item.receiver_chain_id))].map((value) => ({value}));
+      addChecks(node("evidence-lnbs"), "lnb", lnbValues, (item) => item.value);
+      addChecks(node("evidence-receivers"), "receiver", receiverValues, (item) => item.value);
+      const contextState = node("evidence-context-state"); contextState.dataset.state = "ready";
+      contextState.textContent = `${context.recordings.length} recording scope${context.capture_batch_id ? ` from ${context.capture_batch_id}` : " (no authoritative companion batch)"}; ${(context.receivers || []).length} effective-dated receiver/LNB assignments.`;
+      node("evidence-limitations").textContent = (context.limitations || []).length ? `Limitations: ${context.limitations.join(", ")}. Unresolved assignments are excluded, never inferred from RX names.` : "Hardware selectors use the immutable assignment effective at capture time.";
+      node("evidence-controls").addEventListener("change", reload);
+      node("evidence-mode").addEventListener("change", reload);
+      reload();
+    } catch (error) {
+      const target = node("evidence-context-state"); target.dataset.state = "error"; target.textContent = `Evidence context unavailable: ${error.message}`;
+      ["qam", "detector", "doppler"].forEach((product) => state(product, "missing", "Authoritative hardware context is required before evidence can be displayed."));
+    }
+  }
+
+  void initialize();
+})();

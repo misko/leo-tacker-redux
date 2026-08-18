@@ -24,6 +24,10 @@ from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPo
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_recording_evidence import (
+    RecordingEvidenceContextQueryPortV0_1,
+    RecordingEvidenceDopplerQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionQueryPortV0_2,
     ScoreDistributionQueryPortV0_1,
@@ -67,6 +71,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV13,
     DashboardJsonApplicationV14,
     DashboardJsonApplicationV15,
+    DashboardJsonApplicationV16,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -176,6 +181,15 @@ class DashboardV15QueryPort(
     Protocol,
 ):
     """Additive sparse-exact full-dwell read surface."""
+
+
+class DashboardV16QueryPort(
+    DashboardV15QueryPort,
+    RecordingEvidenceContextQueryPortV0_1,
+    RecordingEvidenceDopplerQueryPortV0_1,
+    Protocol,
+):
+    """Additive authoritative selector context for recording evidence."""
 
 
 class _ReadinessCheckedDashboardServer:
@@ -383,7 +397,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV15QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV16QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -403,10 +417,11 @@ def _build_dashboard(
     v13 = DashboardJsonApplicationV13(v12, queries, queries)
     v14 = DashboardJsonApplicationV14(v13, queries)
     v15 = DashboardJsonApplicationV15(v14, queries)
+    v16 = DashboardJsonApplicationV16(v15, queries, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v15),
+        DashboardUiApplication(v16),
         diagnostics=diagnostics,
     )
 
