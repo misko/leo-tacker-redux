@@ -59,6 +59,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0041_starlink_full_dwell_response_v0_1.sql",),
         ("0042_starlink_full_dwell_work.sql",),
         ("0043_starlink_acquired_qam_v0_3.sql",),
+        ("0044_prompt_full_dwell_timeline.sql",),
     ]
 
 
@@ -120,7 +121,30 @@ def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
     assert not analysis_insert
     assert not capture_select
     assert not dashboard_select
-    assert receipts[-1] == ("0043_starlink_acquired_qam_v0_3.sql",)
+    assert receipts[-1] == ("0044_prompt_full_dwell_timeline.sql",)
+
+
+@pytest.mark.integration
+def test_prompt_timeline_capabilities_are_narrow(postgres_dsn: str) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        table_acl = connection.execute(
+            """
+            SELECT has_table_privilege('leo_analysis','recording_full_dwell_timeline_v0_1','SELECT'),
+                   has_table_privilege('leo_dashboard','recording_full_dwell_timeline_v0_1','SELECT'),
+                   has_table_privilege('leo_capture','recording_full_dwell_timeline_v0_1','SELECT'),
+                   has_table_privilege('leo_analysis','full_dwell_timeline_work_v0_1','SELECT')
+            """
+        ).fetchone()
+        function_acl = connection.execute(
+            """
+            SELECT has_function_privilege('leo_analysis','admit_full_dwell_timeline_work_v0_1(jsonb,jsonb)','EXECUTE'),
+                   has_function_privilege('leo_dashboard','admit_full_dwell_timeline_work_v0_1(jsonb,jsonb)','EXECUTE'),
+                   has_function_privilege('leo_capture','admit_full_dwell_timeline_work_v0_1(jsonb,jsonb)','EXECUTE'),
+                   has_function_privilege('leo_dashboard','read_latest_recording_full_dwell_timeline_v0_1(text)','EXECUTE')
+            """
+        ).fetchone()
+    assert table_acl == (False, False, False, False)
+    assert function_acl == (True, False, False, True)
 
 
 @pytest.mark.integration
