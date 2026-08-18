@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
+from typing import Protocol
 
 from ._validation import require_finite, require_token, require_utc_ns
 from .core import (
@@ -31,12 +32,13 @@ from .starlink_surrogate_null import (
     StarlinkPatternSearchMode,
     StarlinkSearchGridV0_1,
 )
-from .storage import RecordingObjectRef
+from .storage import ObjectRef, RecordingObjectRef
 
 V0_1 = SchemaVersion(0, 1)
 MAXIMUM_FULL_DWELL_STREAMS = 16
 MAXIMUM_EXACT_WINDOWS_PER_STREAM = 512
 MAXIMUM_RESPONSE_SCORE_RECORDS = 262_144
+MAXIMUM_FULL_DWELL_QUERY_POINTS = 4096
 
 
 class StarlinkWindowTier(str, Enum):
@@ -473,3 +475,94 @@ def _union_sample_count(intervals: tuple[tuple[int, int], ...]) -> int:
             total += stop - start
             start, stop = next_start, next_stop
     return total + stop - start
+
+
+@dataclass(frozen=True)
+class StarlinkFullDwellProductRefV0_1:
+    analysis_id: str
+    recording_id: RecordingId
+    bundle_ref: ObjectRef
+
+
+@dataclass(frozen=True)
+class StarlinkFullDwellCatalogProjectionV0_1:
+    analysis_id: str
+    recording_id: RecordingId
+    input_recording_digest: Digest
+    source_suite_ref: ArtifactRef
+    source_suite_request_digest: Digest
+    request_digest: Digest
+    stream_count: int
+    prescreen_window_count: int
+    exact_window_count: int
+    point_count: int
+
+
+@dataclass(frozen=True)
+class StarlinkFullDwellQueryV0_1:
+    recording_id: RecordingId
+    methods: tuple[StarlinkDetectorMethod, ...] = REPORT_METHOD_ORDER
+    radio_ids: tuple[RadioId, ...] = ()
+    receiver_chain_ids: tuple[ReceiverChainId, ...] = ()
+    edges: tuple[StarlinkEdge, ...] = ()
+    maximum_points: int = 1024
+
+    def __post_init__(self) -> None:
+        for values, label in (
+            (self.methods, "methods"),
+            (self.radio_ids, "radios"),
+            (self.receiver_chain_ids, "receivers"),
+            (self.edges, "edges"),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"full-dwell query {label} must be unique")
+        if not self.methods:
+            raise ValueError("full-dwell query requires methods")
+        if not 1 <= self.maximum_points <= MAXIMUM_FULL_DWELL_QUERY_POINTS:
+            raise ValueError("full-dwell query point bound is invalid")
+
+
+@dataclass(frozen=True)
+class StarlinkFullDwellPresentationStreamV0_1:
+    radio_id: RadioId
+    segment_id: SegmentId
+    receiver_chain_id: ReceiverChainId
+    channel_number: int
+    edge: StarlinkEdge
+    sample_rate_hz: float
+    segment_sample_count: int
+    prescreen_window_count: int
+    exact_window_count: int
+    prescreen_coverage_fraction: float
+    exact_coverage_fraction: float
+    refinement_is_data_adaptive: bool
+    points: tuple[StarlinkFullDwellPointV0_1, ...]
+
+
+@dataclass(frozen=True)
+class RecordingStarlinkFullDwellViewV0_1:
+    schema: SchemaRef
+    recording_id: RecordingId
+    analysis_ref: ArtifactRef
+    plan: StarlinkFullDwellPlanV0_1
+    streams: tuple[StarlinkFullDwellPresentationStreamV0_1, ...]
+    original_point_count: int
+    truncated: bool
+    decimation: str
+    queue_state: str
+    backlog_depth: int
+    warnings: tuple[str, ...]
+
+    SCHEMA_ID = "org.leo-flow.dashboard.recording-starlink-full-dwell"
+
+    def __post_init__(self) -> None:
+        if self.queue_state not in {"complete", "pending", "error", "truncated"}:
+            raise ValueError("invalid full-dwell queue state")
+        if self.backlog_depth < 0:
+            raise ValueError("full-dwell backlog depth must be non-negative")
+
+
+class RecordingStarlinkFullDwellQueryPortV0_1(Protocol):
+    def recording_starlink_full_dwell(
+        self, query: StarlinkFullDwellQueryV0_1
+    ) -> RecordingStarlinkFullDwellViewV0_1: ...

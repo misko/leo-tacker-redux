@@ -107,7 +107,7 @@ def full_dwell_result():
     result = ExactStarlinkFullDwellResponseAnalyzerV0_1(
         config, execution_context()
     ).analyze_full_dwell(cast(RecordingView, view), request)
-    return view, result
+    return view, request, result
 
 
 def test_covering_windows_include_begin_middle_tail_and_overlap_without_aliases() -> (
@@ -122,7 +122,7 @@ def test_covering_windows_include_begin_middle_tail_and_overlap_without_aliases(
 def test_full_dwell_exactly_covers_every_method_and_preserves_search_maxima(
     full_dwell_result,
 ) -> None:
-    _, result = full_dwell_result
+    _, _, result = full_dwell_result
     for stream in result.streams:
         assert stream.prescreen_covered_sample_count == stream.segment_sample_count
         assert stream.prescreen_coverage_fraction == 1.0
@@ -154,7 +154,7 @@ def test_full_dwell_exactly_covers_every_method_and_preserves_search_maxima(
 def test_pattern_blind_refinement_is_per_receiver_and_wrong_patterns_are_controls(
     full_dwell_result,
 ) -> None:
-    _, result = full_dwell_result
+    _, _, result = full_dwell_result
     by_rx = {stream.receiver_chain_id: stream for stream in result.streams}
     assert (
         by_rx[ReceiverChainId("rx_0")].exact_window_starts
@@ -170,7 +170,7 @@ def test_pattern_blind_refinement_is_per_receiver_and_wrong_patterns_are_control
 def test_full_dwell_codec_is_canonical_and_replay_is_deterministic(
     full_dwell_result,
 ) -> None:
-    _, result = full_dwell_result
+    _, _, result = full_dwell_result
     payload = encode_starlink_full_dwell_response(result)
     decoded = decode_starlink_full_dwell_response(payload)
     assert decoded == result

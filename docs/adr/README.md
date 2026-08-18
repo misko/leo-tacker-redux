@@ -41,3 +41,4 @@ golden fixtures that change.
 - [0036: Dataset-scoped tracking input evidence](0036-dataset-scoped-tracking-input-evidence.md)
 - [0037: Durable tracking-input publication and jobs](0037-durable-tracking-input-publication-and-jobs.md)
 - [0038: Evidence labels and bounded dwell handoff](0038-evidence-labels-and-bounded-dwell-handoff.md)
+- [0039: Asynchronous full-dwell response publication](0039-asynchronous-full-dwell-response-publication.md)

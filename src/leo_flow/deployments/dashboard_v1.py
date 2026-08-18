@@ -37,6 +37,9 @@ from leo_flow.contracts.dashboard_temporal_pilot import (
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallQueryPortV0_1
 from leo_flow.contracts.ports import DashboardQueryPort
 from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPortV0_1
+from leo_flow.contracts.starlink_full_dwell_response import (
+    RecordingStarlinkFullDwellQueryPortV0_1,
+)
 from leo_flow.contracts.starlink_pilot_constellation_pipeline import (
     RecordingStarlinkPilotConstellationQueryPortV0_1,
 )
@@ -63,6 +66,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV12,
     DashboardJsonApplicationV13,
     DashboardJsonApplicationV14,
+    DashboardJsonApplicationV15,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -166,6 +170,14 @@ class DashboardV14QueryPort(
     """Additive candidate-only aggregate Doppler read surface."""
 
 
+class DashboardV15QueryPort(
+    DashboardV14QueryPort,
+    RecordingStarlinkFullDwellQueryPortV0_1,
+    Protocol,
+):
+    """Additive sparse-exact full-dwell read surface."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -230,6 +242,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV14Quer
     temporal_pilots = None
     temporal_aggregate = None
     doppler_aggregate = None
+    full_dwell = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
         from leo_flow.adapters.dashboard_doppler_projection import (
@@ -320,6 +333,22 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV14Quer
         )
 
         temporal_aggregate = DurableDashboardTemporalPilotAggregateV0_1(connect, blobs)
+        from leo_flow.adapters.starlink_full_dwell_postgres import (
+            PostgresStarlinkFullDwellCatalogV0_1,
+        )
+        from leo_flow.analysis.recording.starlink_full_dwell_response_persistence import (
+            DurableRecordingStarlinkFullDwellQueryV0_1,
+            DurableStarlinkFullDwellStoreV0_1,
+            StarlinkFullDwellBlobStore,
+        )
+
+        full_dwell_catalog = PostgresStarlinkFullDwellCatalogV0_1(connect)
+        full_dwell = DurableRecordingStarlinkFullDwellQueryV0_1(
+            DurableStarlinkFullDwellStoreV0_1(
+                cast(StarlinkFullDwellBlobStore, blobs), full_dwell_catalog
+            ),
+            full_dwell_catalog,
+        )
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
@@ -329,6 +358,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV14Quer
         temporal_pilots=temporal_pilots,
         temporal_aggregate=temporal_aggregate,
         doppler_aggregate=doppler_aggregate,
+        full_dwell=full_dwell,
     )
 
 
@@ -353,7 +383,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV14QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV15QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -372,10 +402,11 @@ def _build_dashboard(
     v12 = DashboardJsonApplicationV12(v11, queries)
     v13 = DashboardJsonApplicationV13(v12, queries, queries)
     v14 = DashboardJsonApplicationV14(v13, queries)
+    v15 = DashboardJsonApplicationV15(v14, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v14),
+        DashboardUiApplication(v15),
         diagnostics=diagnostics,
     )
 

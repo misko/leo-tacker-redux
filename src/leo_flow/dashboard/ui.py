@@ -76,6 +76,16 @@ class DashboardUiApplication:
                     "public, max-age=300",
                     (package / "aggregate-doppler.js").read_bytes(),
                 ),
+                "/full-dwell": (
+                    "text/html; charset=utf-8",
+                    "no-store",
+                    (package / "full-dwell.html").read_bytes(),
+                ),
+                "/assets/full-dwell.js": (
+                    "text/javascript; charset=utf-8",
+                    "public, max-age=300",
+                    (package / "full-dwell.js").read_bytes(),
+                ),
             }
         )
         self._recording_page = (

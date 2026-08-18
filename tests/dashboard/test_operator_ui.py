@@ -46,6 +46,11 @@ def test_static_routes_are_exact_allow_list_with_safe_content_and_cache_policy()
             "text/javascript; charset=utf-8",
             "public, max-age=300",
         ),
+        "/full-dwell": ("text/html; charset=utf-8", "no-store"),
+        "/assets/full-dwell.js": (
+            "text/javascript; charset=utf-8",
+            "public, max-age=300",
+        ),
     }
     for path, (content_type, cache_control) in expected.items():
         response = app.handle(JsonRequest("GET", path, {}))
@@ -91,10 +96,11 @@ def test_overview_discloses_duty_candidate_and_calibration_semantics() -> None:
 
 def test_every_user_facing_page_links_the_top_level_analysis_views() -> None:
     app = application()
-    for path in ("/", "/aggregate-stats", "/aggregate-doppler", "/recordings/rec_1"):
+    for path in ("/", "/aggregate-stats", "/aggregate-doppler", "/full-dwell", "/recordings/rec_1"):
         html = app.handle(JsonRequest("GET", path, {})).body.decode()
         assert 'href="/aggregate-stats"' in html
         assert 'href="/aggregate-doppler"' in html
+        assert 'href="/full-dwell"' in html
 
 
 def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() -> None:

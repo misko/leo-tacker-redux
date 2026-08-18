@@ -57,6 +57,7 @@ _EXPECTED_MIGRATIONS = (
     "0038_dashboard_surrogate_score_distributions.sql",
     "0039_starlink_temporal_pilot_catalog.sql",
     "0040_dashboard_doppler_aggregate.sql",
+    "0041_starlink_full_dwell_response_v0_1.sql",
 )
 
 
@@ -185,7 +186,9 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE focused_analysis_pair_job_scope,
+            TRUNCATE recording_starlink_full_dwell_point_v0_1,
+                     recording_starlink_full_dwell_v0_1,
+                     focused_analysis_pair_job_scope,
                      focused_analysis_pair_scope,
                      recording_starlink_pilot_constellation,
                      recording_starlink_surrogate_null,

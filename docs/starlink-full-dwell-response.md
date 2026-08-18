@@ -68,29 +68,34 @@ This selection is computationally bounded and identical for Qin/surrogates,
 but it can miss a low-power structured signal. That limitation is explicit in
 the contract and should be evaluated before changing the frozen selector.
 
-## Persistence and dashboard integration inventory
+## Persistence, dashboard, and resource policy
 
-The current change owns only contracts, native analysis, codec, tests, and the
-read-only benchmark. The integration steward should add the following without
-changing existing product contracts:
+The additive V15 integration stores the canonical bundle CAS-first under format
+ID `starlink-full-dwell-response-v0.1`, then atomically publishes its immutable
+catalog identity and normalized window points through migration 0041. Exact
+replay succeeds; any idempotency, scientific-identity, object-metadata, or byte
+conflict fails closed. The live-reference view and insert trigger prevent GC
+from retiring a published bundle. Dashboard access is through one bounded
+`SECURITY DEFINER` read routine and never exposes a locator.
 
-- an object-store writer/reader using format ID
-  `starlink-full-dwell-response-v0.1` and the 256 MiB codec bound;
-- a catalog projection keyed by analysis ID, recording ID, immutable recording
-  digest, request digest, source-suite reference, stream count, prescreen count,
-  exact-window count, and point count;
-- idempotent submission/work orchestration and a migration owned by the
-  integration component;
-- a narrow query DTO that filters method, segment, radio, RX, and edge and
-  decimates only for transport while retaining first/last and extrema;
-- an additive route such as
-  `/api/v15/recordings/{recording_id}/starlink-full-dwell-response`; the final
-  version number belongs to dashboard integration;
-- a recording-detail plot with the complete power prescreen as background and
-  exact Qin/surrogate points as overlays. Tooltips must expose exact coverage,
-  selection status, winner coordinates, rank/margin, and dependence warnings;
-- UI and API tests proving radio/RX streams are never pooled and that transport
-  decimation cannot be confused with scientific coverage.
+`/api/v15/recordings/{recording_id}/starlink-full-dwell` filters methods,
+radios, receiver chains, and edges independently, with a hard 4,096-point
+transport cap. The `/full-dwell` page plots Qin and the precommitted surrogates,
+reports queue/backlog/truncation states, and keeps radio and RX filters separate.
+V13 and every earlier product remain immutable.
 
-No schema migration, deployment wiring, live-state write, or dashboard route is
-included here.
+Full-dwell work is an optional asynchronous analysis lane. It must use a bounded
+queue and bounded worker concurrency; queue admission or saturation must never
+block, fail, or delay capture. A rejected admission is recorded explicitly as
+backlog/truncation rather than silently dropping selected windows. With the
+approved top-32 plan, measured implications are about 505 seconds per RX; a
+two-RX dwell therefore consumes about 1,010 worker-seconds before contention.
+Operators must size concurrency against this service time, publish backlog
+depth, and preserve pending/error terminal state. No synchronous call from the
+continuous capture loop is permitted.
+
+The dashboard language is deliberately asymmetric: “100% pattern-blind power
+prescreen coverage” and “sparse selected exact detector coverage (typically
+about 1.28%).” Sparse exact points must never be called full detector coverage.
+Transport truncation is separate again and does not change either scientific
+coverage measure.

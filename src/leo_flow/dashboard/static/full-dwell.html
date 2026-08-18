@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>Full-dwell responses · LEO Flow</title><link rel="stylesheet" href="/assets/dashboard.css"><script src="/assets/full-dwell.js" defer></script></head>
+<body>
+<a class="skip-link" href="#full-dwell-main">Skip to response plot</a>
+<header class="site-header compact-header"><div><p class="eyebrow"><a href="/">LEO Flow / candidate evidence</a></p><h1>Full-dwell detector responses</h1><p class="lede">Pattern-blind power covers the dwell; exact Qin and surrogate evaluation is sparse and selected.</p></div></header>
+<nav class="section-nav" aria-label="Dashboard sections"><a href="/">Dashboard</a><a href="/aggregate-stats">Aggregate stats</a><a href="/aggregate-doppler">Aggregate Doppler</a><a href="/full-dwell" aria-current="page">Full-dwell responses</a></nav>
+<main id="full-dwell-main" tabindex="-1">
+<section class="hero-panel"><div class="section-heading"><div><p class="section-index">V15 / sparse exact response</p><h2>Windowed method traces</h2></div></div>
+<form id="full-dwell-controls" class="table-filters">
+<label>Recording ID <input id="fd-recording" required maxlength="160"></label>
+<label>Method <select id="fd-method"><option value="">All eight methods</option><option>legacy-normalized-correlation</option><option>cfar-normalized-correlation</option><option>glrt-8</option><option>glrt-16</option><option>glrt-32</option><option>glrt-64</option><option>subspace-rank-2</option><option>subspace-rank-4</option></select></label>
+<label>Radio <select id="fd-radio"><option value="">All radios</option></select></label>
+<label>RX chain <select id="fd-receiver"><option value="">All RX chains</option></select></label>
+<label><input id="fd-qin" type="checkbox" checked> Qin</label><label><input id="fd-surrogates" type="checkbox" checked> Surrogates</label><button type="submit">Load</button>
+</form>
+<div id="fd-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Enter a recording ID to load the asynchronous product.</div>
+<aside id="fd-warning" class="candidate-warning" role="note">The 100% figure is pattern-blind power-prescreen coverage only. Exact detector coverage is selected and sparse (typically top 32 windows, about 1.28%); it is never full detector coverage. Selection is data-adaptive, ranks are finite-ensemble comparisons, and no point is a calibrated detection.</aside>
+<dl id="fd-facts" class="fact-grid"></dl>
+<figure><canvas id="fd-chart" width="1200" height="520" role="img" aria-label="Exact Qin and surrogate scores over selected full-dwell windows"></canvas><figcaption>Time is window start relative to the first selected window. Solid traces are Qin; dashed traces are precommitted surrogate scores. Winner epoch/CFO, finite rank, and margin remain in the bounded V15 API response.</figcaption></figure>
+</section></main></body></html>

@@ -54,6 +54,11 @@ from leo_flow.contracts.starlink_detector_suite import (
     REPORT_METHOD_ORDER,
     StarlinkDetectorMethod,
 )
+from leo_flow.contracts.starlink_full_dwell_response import (
+    MAXIMUM_FULL_DWELL_QUERY_POINTS,
+    RecordingStarlinkFullDwellQueryPortV0_1,
+    StarlinkFullDwellQueryV0_1,
+)
 from leo_flow.contracts.starlink_pilot_constellation import MAX_CONSTELLATION_POINTS
 from leo_flow.contracts.starlink_pilot_constellation_pipeline import (
     MAX_CONSTELLATION_QUERY_STREAMS,
@@ -701,6 +706,88 @@ class DashboardJsonApplicationV14:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class DashboardJsonApplicationV15:
+    """Add the v0.1 sparse-exact full-dwell product without changing V1--V14."""
+
+    _PREFIX = "/api/v15/recordings/"
+    _MAX_QUERY_BYTES = 16_384
+    _MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+    def __init__(
+        self,
+        v14: DashboardJsonApplicationV14,
+        full_dwell: RecordingStarlinkFullDwellQueryPortV0_1,
+    ) -> None:
+        self._v14, self._full_dwell = v14, full_dwell
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._v14.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-full-dwell":
+                raise DashboardNotFound(f"route {path} was not found")
+            query = _starlink_full_dwell_query(
+                RecordingId(unquote(parts[0])), request.query, self._MAX_QUERY_BYTES
+            )
+            payload = self._full_dwell.recording_starlink_full_dwell(query)
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("full-dwell response exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _starlink_full_dwell_query(
+    recording_id: RecordingId, query: dict[str, str], maximum_query_bytes: int
+) -> StarlinkFullDwellQueryV0_1:
+    allowed = {"methods", "radio_ids", "receiver_chain_ids", "edges", "maximum_points"}
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    if (
+        sum(len(k.encode()) + len(v.encode()) for k, v in query.items())
+        > maximum_query_bytes
+    ):
+        raise ValueError("full-dwell query text exceeds its bound")
+    methods_raw = _comma_values(query, "methods", len(REPORT_METHOD_ORDER))
+    methods = (
+        REPORT_METHOD_ORDER
+        if methods_raw is None
+        else tuple(StarlinkDetectorMethod(value) for value in methods_raw)
+    )
+    radios_raw = _comma_values(query, "radio_ids", 64) or ()
+    receivers_raw = _comma_values(query, "receiver_chain_ids", 32) or ()
+    edges_raw = _comma_values(query, "edges", 2) or ()
+    try:
+        maximum_points = int(query.get("maximum_points", "1024"))
+    except ValueError as error:
+        raise ValueError("maximum_points must be an integer") from error
+    if maximum_points > MAXIMUM_FULL_DWELL_QUERY_POINTS:
+        raise ValueError("maximum_points exceeds its bound")
+    return StarlinkFullDwellQueryV0_1(
+        recording_id,
+        methods,
+        tuple(RadioId(v) for v in radios_raw),
+        tuple(ReceiverChainId(v) for v in receivers_raw),
+        tuple(StarlinkEdge(v) for v in edges_raw),
+        maximum_points,
+    )
 
 
 def _doppler_aggregate_query(
