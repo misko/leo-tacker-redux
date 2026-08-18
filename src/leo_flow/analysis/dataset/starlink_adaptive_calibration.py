@@ -22,6 +22,100 @@ from leo_flow.contracts.starlink_adaptive_calibration import (
     FittedAdaptiveCalibrationV0_1,
     LockedAdaptiveCalibrationEvidenceV0_1,
 )
+from leo_flow.contracts.starlink_adaptive_calibration_input import (
+    AssembledAdaptiveCalibrationInputV0_1,
+)
+
+
+def evaluate_frozen_adaptive_calibration_inputs_v0_1(
+    plan: AdaptiveCalibrationPlanV0_1,
+    *,
+    training_inputs: Sequence[AssembledAdaptiveCalibrationInputV0_1],
+    validation_inputs: Sequence[AssembledAdaptiveCalibrationInputV0_1],
+    locked_test_inputs: Sequence[AssembledAdaptiveCalibrationInputV0_1],
+) -> tuple[
+    FittedAdaptiveCalibrationV0_1,
+    AdaptiveCalibrationSplitEvidenceV0_1,
+    LockedAdaptiveCalibrationEvidenceV0_1,
+]:
+    """Run one frozen calibration cell from durable assembled evidence."""
+
+    inputs_by_split = (
+        (
+            AdaptiveCalibrationSplit.TRAIN,
+            plan.train_manifest_digest,
+            tuple(training_inputs),
+        ),
+        (
+            AdaptiveCalibrationSplit.VALIDATION,
+            plan.validation_manifest_digest,
+            tuple(validation_inputs),
+        ),
+        (
+            AdaptiveCalibrationSplit.LOCKED_TEST,
+            plan.locked_test_manifest_digest,
+            tuple(locked_test_inputs),
+        ),
+    )
+    all_inputs = tuple(
+        item for _, _, split_inputs in inputs_by_split for item in split_inputs
+    )
+    _verify_assembled_calibration_inputs(plan, inputs_by_split, all_inputs)
+
+    fit = fit_adaptive_calibration_v0_1(
+        plan,
+        train_manifest_digest=plan.train_manifest_digest,
+        training_null_dwells=tuple(item.dwell for item in inputs_by_split[0][2]),
+    )
+    validation = validate_adaptive_calibration_v0_1(
+        plan,
+        fit,
+        validation_manifest_digest=plan.validation_manifest_digest,
+        validation_dwells=tuple(item.dwell for item in inputs_by_split[1][2]),
+    )
+    locked = evaluate_locked_adaptive_calibration_v0_1(
+        plan,
+        fit,
+        validation,
+        locked_test_manifest_digest=plan.locked_test_manifest_digest,
+        locked_test_dwells=tuple(item.dwell for item in inputs_by_split[2][2]),
+    )
+    return fit, validation, locked
+
+
+def _verify_assembled_calibration_inputs(
+    plan: AdaptiveCalibrationPlanV0_1,
+    inputs_by_split: Sequence[
+        tuple[
+            AdaptiveCalibrationSplit,
+            Digest,
+            Sequence[AssembledAdaptiveCalibrationInputV0_1],
+        ]
+    ],
+    all_inputs: Sequence[AssembledAdaptiveCalibrationInputV0_1],
+) -> None:
+    if not all_inputs:
+        raise ValueError("frozen calibration has no assembled inputs")
+    for split, manifest_digest, split_inputs in inputs_by_split:
+        for item in split_inputs:
+            if (
+                item.split_manifest_digest != manifest_digest
+                or item.dwell.split is not split
+                or item.dwell.cell_identity_digest != plan.cell_identity_digest
+                or len(item.dwell.patterns) != plan.pattern_count
+            ):
+                raise ValueError("assembled input differs from its frozen split")
+            if (
+                plan.minimum_coherent_qam_receiver_count > 0
+                and item.qam_bundle_digest is None
+            ):
+                raise ValueError("QAM-gated calibration requires assembled QAM input")
+    if len({item.search_identity_digest for item in all_inputs}) != 1:
+        raise ValueError("assembled inputs do not share one frozen search identity")
+    if len({item.pattern_template_digests for item in all_inputs}) != 1:
+        raise ValueError("assembled inputs do not share one frozen pattern bank")
+    if len({item.assembly_spec_digest for item in all_inputs}) != len(all_inputs):
+        raise ValueError("assembled calibration member spec is reused")
 
 
 def fit_adaptive_calibration_v0_1(

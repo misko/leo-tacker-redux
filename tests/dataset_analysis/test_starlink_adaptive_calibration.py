@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from leo_flow.analysis.dataset.starlink_adaptive_calibration import (
+    evaluate_frozen_adaptive_calibration_inputs_v0_1,
     evaluate_locked_adaptive_calibration_v0_1,
     fit_adaptive_calibration_v0_1,
     validate_adaptive_calibration_v0_1,
@@ -21,6 +22,9 @@ from leo_flow.contracts.starlink_adaptive_calibration import (
     AdaptivePatternDwellEvidenceV0_1,
     AdaptivePatternRole,
     AdaptiveReceiverPatternEvidenceV0_1,
+)
+from leo_flow.contracts.starlink_adaptive_calibration_input import (
+    AssembledAdaptiveCalibrationInputV0_1,
 )
 
 
@@ -157,6 +161,29 @@ def _held_out(
         for index in range(10)
     )
     return (*nulls, *positives)
+
+
+def _assembled(
+    dwell: AdaptiveCalibrationDwellV0_1,
+) -> AssembledAdaptiveCalibrationInputV0_1:
+    manifest = {
+        AdaptiveCalibrationSplit.TRAIN: _digest("train-manifest"),
+        AdaptiveCalibrationSplit.VALIDATION: _digest("validation-manifest"),
+        AdaptiveCalibrationSplit.LOCKED_TEST: _digest("locked-manifest"),
+    }[dwell.split]
+    return AssembledAdaptiveCalibrationInputV0_1(
+        SchemaRef(AssembledAdaptiveCalibrationInputV0_1.SCHEMA_ID, V0_1),
+        _digest(f"assembly-{dwell.dwell_id}"),
+        manifest,
+        _digest(f"response-{dwell.dwell_id}"),
+        _digest(f"qam-{dwell.dwell_id}"),
+        _digest("one-search-identity"),
+        (_digest("qin"), _digest("surrogate-a"), _digest("surrogate-b")),
+        dwell,
+        ("declared-time-windows", "coarse-cfo", "residual-cfo", "epoch"),
+        "none",
+        True,
+    )
 
 
 def _fit(plan: AdaptiveCalibrationPlanV0_1 | None = None):
@@ -390,3 +417,94 @@ def test_failed_locked_gate_remains_candidate_only_with_counts_and_wilson_bounds
     assert not locked.locked_test.accepted
     assert not locked.calibrated_decision_eligible
     assert locked.candidate_only
+
+
+def test_frozen_assembled_inputs_run_train_validation_and_locked_test() -> None:
+    plan = _plan()
+    training = list(_training())
+    training[0] = _dwell(
+        AdaptiveCalibrationSplit.TRAIN,
+        AdaptiveCalibrationLabel.NULL,
+        0,
+        qin=0.01,
+        surrogate_a=0.99,
+    )
+    fit, validation, locked = evaluate_frozen_adaptive_calibration_inputs_v0_1(
+        plan,
+        training_inputs=tuple(_assembled(item) for item in training),
+        validation_inputs=tuple(
+            _assembled(item) for item in _held_out(AdaptiveCalibrationSplit.VALIDATION)
+        ),
+        locked_test_inputs=tuple(
+            _assembled(item) for item in _held_out(AdaptiveCalibrationSplit.LOCKED_TEST)
+        ),
+    )
+
+    assert fit.threshold == 0.07
+    assert fit.candidate_only
+    assert validation.null_dwell_count == 10
+    assert validation.null_family_wise_exceedance_count == 0
+    assert locked.validation == validation
+    assert locked.locked_test.null_dwell_count == 10
+    assert locked.calibrated_decision_eligible
+    assert not locked.candidate_only
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    (
+        (
+            {"split_manifest_digest": _digest("wrong-manifest")},
+            "frozen split",
+        ),
+        (
+            {"search_identity_digest": _digest("different-search")},
+            "search identity",
+        ),
+        (
+            {
+                "pattern_template_digests": (
+                    _digest("qin"),
+                    _digest("surrogate-a"),
+                    _digest("different-surrogate"),
+                )
+            },
+            "pattern bank",
+        ),
+    ),
+)
+def test_frozen_assembled_inputs_reject_changed_closure(change, message) -> None:
+    plan = _plan()
+    validation = tuple(
+        _assembled(item) for item in _held_out(AdaptiveCalibrationSplit.VALIDATION)
+    )
+    validation = (replace(validation[0], **change), *validation[1:])
+    with pytest.raises(ValueError, match=message):
+        evaluate_frozen_adaptive_calibration_inputs_v0_1(
+            plan,
+            training_inputs=tuple(_assembled(item) for item in _training()),
+            validation_inputs=validation,
+            locked_test_inputs=tuple(
+                _assembled(item)
+                for item in _held_out(AdaptiveCalibrationSplit.LOCKED_TEST)
+            ),
+        )
+
+
+def test_frozen_qam_gated_run_rejects_member_without_qam_input() -> None:
+    plan = _plan()
+    training = tuple(_assembled(item) for item in _training())
+    training = (replace(training[0], qam_bundle_digest=None), *training[1:])
+    with pytest.raises(ValueError, match="requires assembled QAM"):
+        evaluate_frozen_adaptive_calibration_inputs_v0_1(
+            plan,
+            training_inputs=training,
+            validation_inputs=tuple(
+                _assembled(item)
+                for item in _held_out(AdaptiveCalibrationSplit.VALIDATION)
+            ),
+            locked_test_inputs=tuple(
+                _assembled(item)
+                for item in _held_out(AdaptiveCalibrationSplit.LOCKED_TEST)
+            ),
+        )
