@@ -11,7 +11,12 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from leo_flow.services.starlink_full_dwell_pipeline import (
+        FullDwellAnalysisProfileV0_1,
+    )
 
 from leo_flow.analysis.model import (
     ModelExecutionContext,
@@ -410,6 +415,18 @@ def _starlink_pilot_constellation_execution() -> AnalysisExecutionContext:
     )
 
 
+def _starlink_full_dwell_execution() -> AnalysisExecutionContext:
+    return AnalysisExecutionContext(
+        producer_name="leo-flow-gauss-starlink-full-dwell",
+        producer_version="0.1.0",
+        git_commit=SOURCE_COMMIT,
+        environment_digest=ENVIRONMENT_REF.digest,
+        started_utc_ns=SOURCE_COMMIT_UTC_NS,
+        completed_utc_ns=SOURCE_COMMIT_UTC_NS,
+        host_class="gauss-x86_64-python31116",
+    )
+
+
 @dataclass(frozen=True)
 class _ExactDependencyAnalyzer:
     delegate: QualityPsdAnalyzer
@@ -567,6 +584,21 @@ def starlink_temporal_pilot_preparers_v0_1() -> tuple[
             ),
         )
         for profile in STARLINK_SUITE_PROFILES
+    )
+
+
+def starlink_full_dwell_profiles_v0_1() -> tuple[
+    FullDwellAnalysisProfileV0_1, ...
+]:
+    """Return the exact approved configs and immutable execution identity."""
+    from leo_flow.services.starlink_full_dwell_pipeline import (
+        FullDwellAnalysisProfileV0_1,
+    )
+
+    return tuple(
+        FullDwellAnalysisProfileV0_1(profile.config, _starlink_full_dwell_execution())
+        for profile in STARLINK_SUITE_PROFILES
+        if profile.eligible
     )
 
 

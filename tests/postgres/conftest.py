@@ -58,6 +58,7 @@ _EXPECTED_MIGRATIONS = (
     "0039_starlink_temporal_pilot_catalog.sql",
     "0040_dashboard_doppler_aggregate.sql",
     "0041_starlink_full_dwell_response_v0_1.sql",
+    "0042_starlink_full_dwell_work.sql",
 )
 
 
