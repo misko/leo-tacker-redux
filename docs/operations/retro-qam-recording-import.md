@@ -3,8 +3,10 @@
 This is a one-time, integration-owned import of the retained `clip-002.ci16`
 known-positive corpus. It creates an ordinary immutable Redux recording/CAS
 pair, a truthful historical hardware snapshot/link, and the base dashboard
-detail projection. It never uses `leo-tracker` at runtime and never stores the
-QNAP path in a recording contract.
+recording/activity/detail projections. It therefore appears in the factual
+“Recent recordings” table without inventing the second radio required by the
+separate live capture-batch contract. It never uses `leo-tracker` at runtime
+and never stores the QNAP path in a recording contract.
 
 The recording is permanently scoped as a historical `TEST` activity. Its
 station identity is `station_historical_unattributed`, its radio is

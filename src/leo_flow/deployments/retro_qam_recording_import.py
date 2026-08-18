@@ -64,15 +64,17 @@ def execute_import(args: argparse.Namespace) -> dict[str, object]:
 
     # Server adapters stay lazy so importing the parser has no PostgreSQL runtime
     # requirement.  This composition is the only owner of concrete persistence.
-    from leo_flow.adapters.dashboard_recording_postgres import (
-        PostgresRecordingCaptureDetailProjectionWriter,
-        recording_capture_detail_view_v0_1,
+    from leo_flow.adapters.dashboard_projection_postgres import (
+        PostgresCaptureProjectionWriter,
     )
     from leo_flow.adapters.hardware_link_postgres import (
         PostgresRecordingHardwareLinkCatalog,
     )
     from leo_flow.adapters.hardware_postgres_catalog import (
         PostgresHardwareSnapshotCatalog,
+    )
+    from leo_flow.application.projection_writers import (
+        RecordingProjectionCommand,
     )
 
     args.staging_root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -107,13 +109,13 @@ def execute_import(args: argparse.Namespace) -> dict[str, object]:
             PostgresRecordingHardwareLinkCatalog(analysis_connect),
         )
         link = linker.link(prepared.manifest.recording_id)
-        detail = recording_capture_detail_view_v0_1(
-            prepared.manifest,
-            published,
-            analysis_state="pending",
-            recording_object_available=True,
+        PostgresCaptureProjectionWriter(capture_connect).project_recording(
+            RecordingProjectionCommand(
+                prepared.manifest,
+                published,
+                recording_object_available=True,
+            )
         )
-        PostgresRecordingCaptureDetailProjectionWriter(capture_connect).publish(detail)
         # Cleanup is deliberately last; a failure before here leaves no public
         # ambiguity and TemporaryDirectory removes only this invocation's staging.
         local.cleanup(completed)

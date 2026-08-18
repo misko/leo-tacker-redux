@@ -217,6 +217,36 @@ def test_capture_diagnostics_group_quality_and_psd_without_losing_identity() -> 
             browser.close()
 
 
+def test_absent_waterfall_is_a_terminal_missing_state() -> None:
+    with running_detail_dashboard() as base_url, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, env=browser_environment())
+        try:
+            page = browser.new_page()
+            page.route(
+                f"**/api/v3/recordings/{RECORDING_ID}/waterfall",
+                lambda route: route.fulfill(
+                    status=404,
+                    json={
+                        "error": {
+                            "code": "not_found",
+                            "message": "waterfall is absent",
+                        }
+                    },
+                ),
+            )
+            response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
+            assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
+            expect(page.locator("#waterfall-state")).to_have_attribute(
+                "data-state", "missing"
+            )
+            expect(page.locator("#waterfall-state")).to_contain_text(
+                "has not been projected"
+            )
+        finally:
+            browser.close()
+
+
 def test_capture_detail_renders_candidates_without_a_detection_count() -> None:
     with (
         running_detail_dashboard(with_starlink=True) as base_url,

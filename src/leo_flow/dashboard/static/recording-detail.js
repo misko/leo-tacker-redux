@@ -369,6 +369,10 @@ async function loadWaterfall(recordingId) {
     drawWaterfall(waterfallTiles[0]);
     setState("waterfall-state", "ready", `${waterfallTiles.length} projected segment/receiver waterfall tile${waterfallTiles.length === 1 ? "" : "s"}.`);
   } catch (error) {
+    if (error?.status === 404) {
+      setState("waterfall-state", "missing", "Waterfall analysis has not been projected for this recording.");
+      return;
+    }
     setState("waterfall-state", "error", `Waterfall unavailable: ${safeError(error)}`);
   }
 }

@@ -410,7 +410,7 @@ def _contracts(
         (activity_manifest,),
         (segment,),
         _PLAN_ID,
-        "leo-retro-qam-recording-import/0.1.0",
+        "leo-retro-qam-recording-import:0.1.0",
         tags,
     )
     hardware = HardwareMetadataSnapshot(
