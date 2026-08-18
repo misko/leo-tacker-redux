@@ -472,6 +472,48 @@
     }
   }
 
+  async function loadPilotPrescreen(current) {
+    state("prescreen", "pending", "Loading complete-IQ OFDM periodicity timelines…");
+    try {
+      const recordings = selectedRecordings();
+      const receivers = checked("receiver"); const lnbs = checked("lnb"); const edges = checked("edge"); const channels = new Set(checked("channel").map(Number));
+      if (!recordings.length || !receivers.length || !lnbs.length || !edges.length || !channels.size) {
+        node("evidence-prescreen-canvas").hidden = true; node("evidence-prescreen-legend").replaceChildren(); state("prescreen", "missing", "Select at least one radio, LNB, receiver, channel, and edge."); return;
+      }
+      const fetched = await availablePayloads(recordings.map((recording) => {
+        const parameters = new URLSearchParams({radio_ids: recording.radio_id, lnb_ids: lnbs.join(","), receiver_chain_ids: receivers.join(","), edges: edges.join(","), maximum_points: "8192"});
+        return `/api/v27/recordings/${encodeURIComponent(recording.recording_id)}/starlink-pilot-prescreen?${parameters}`;
+      }));
+      if (current !== generation) return;
+      if (!fetched.payloads.length) {
+        node("evidence-prescreen-canvas").hidden = true; node("evidence-prescreen-legend").replaceChildren(); state("prescreen", "pending", "The complete-IQ OFDM prescreen is pending for every selected recording.");
+        setApproachRows("prescreen", [{kind: "prescreen", key: "pending", approach: "Complete-IQ OFDM pilot prescreen", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "pattern-blind cyclic-prefix periodicity", response: "periodicity vs UTC", status: "not yet published"}]); return;
+      }
+      const series = []; const approach = []; let original = 0; let shown = 0; let truncated = false;
+      for (const payload of fetched.payloads) {
+        if (payload.candidate_only !== true || payload.calibrated_detection_count !== null) throw new Error("unsafe pilot-prescreen semantics");
+        original += Number(payload.original_window_count || 0); truncated ||= payload.truncated === true;
+        for (const stream of payload.streams || []) {
+          const selection = stream.selection; if (!channels.has(Number(selection.channel_number))) continue;
+          const base = identity([payload.recording_id, selection.radio_id, selection.lnb_id, selection.receiver_chain_id, `CH${selection.channel_number}`, selection.edge]);
+          const points = (stream.windows || []).map((window) => ({x: (Number(window.start_utc_ns) + Number(window.stop_utc_ns)) / 2, y: Number(window.ofdm_periodicity_score)}));
+          shown += points.length; series.push({label: `${base} · every IQ tile`, points});
+          const seeds = (stream.windows || []).filter((window) => window.periodicity_rank !== null || window.power_rank !== null).map((window) => ({x: (Number(window.start_utc_ns) + Number(window.stop_utc_ns)) / 2, y: Number(window.ofdm_periodicity_score)}));
+          if (seeds.length) series.push({label: `${base} · exact-refinement seeds`, points: seeds});
+          approach.push({kind: "prescreen", key: base, approach: "Complete-IQ OFDM pilot prescreen", scope: base, window: `${stream.original_window_count} contiguous × ${duration(payload.plan.tile_sample_count, selection.sample_rate_hz)}; short tail retained`, coverage: `${duration(stream.analyzed_sample_count, selection.sample_rate_hz)} / ${duration(selection.segment_sample_count, selection.sample_rate_hz)} (${percent(stream.coverage_fraction)})`, search: `pattern-blind cyclic-prefix periodicity; top ${payload.plan.maximum_periodicity_seeds_per_stream} periodicity + top ${payload.plan.maximum_power_seeds_per_stream} power seeds`, response: "OFDM periodicity vs UTC; selected exact-search seeds highlighted", status: "100% prescreen coverage; exact Qin/surrogate refinement required; candidate-only"});
+        }
+      }
+      setApproachRows("prescreen", approach);
+      drawChart("evidence-prescreen-canvas", series, "OFDM cyclic-prefix periodicity [0–1]", "windows", "UTC tile midpoint");
+      seriesLegend("evidence-prescreen-legend", series);
+      state("prescreen", series.length ? "ready" : "missing", series.length ? `${shown.toLocaleString()} of ${original.toLocaleString()} contiguous periodicity records shown; every source sample was prescreened.${truncated ? " Display response was seeds/extrema/time decimated." : " No display decimation."}` : "No pilot-prescreen streams match the selected scope.");
+    } catch (error) {
+      if (current !== generation) return;
+      node("evidence-prescreen-canvas").hidden = true; node("evidence-prescreen-legend").replaceChildren(); state("prescreen", error.status === 404 ? "pending" : "error", error.status === 404 ? "The complete-IQ OFDM prescreen is pending." : `Pilot prescreen failed: ${error.message}`);
+      setApproachRows("prescreen", [{kind: "prescreen", key: "error", approach: "Complete-IQ OFDM pilot prescreen", scope: "selected recording(s)", window: "unavailable", coverage: "unavailable", search: "pattern-blind cyclic-prefix periodicity", response: "periodicity vs UTC", status: error.status === 404 ? "not yet published" : error.message}]);
+    }
+  }
+
   async function loadQam(current) {
     state("qam", "pending", "Loading bounded acquired-QAM evidence…");
     try {
@@ -720,7 +762,7 @@
     generation += 1;
     const current = generation;
     approachRows.clear(); renderApproachRows();
-    void Promise.all([loadApproaches(current), loadAdaptiveQamApproaches(current), loadTimeline(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
+    void Promise.all([loadApproaches(current), loadAdaptiveQamApproaches(current), loadTimeline(current), loadPilotPrescreen(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
   }
 
   async function initialize() {

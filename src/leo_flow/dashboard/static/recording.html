@@ -117,6 +117,13 @@
           <div id="evidence-timeline-legend" class="evidence-series-legend"></div>
           <p class="availability-note">Every contiguous tile contributes to this lightweight curve. Highlighted refinement points are the smaller subset that received the expensive Qin/surrogate detector search; power alone is not a Starlink detection.</p>
         </article>
+        <article class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-prescreen-heading">
+          <div class="decision-heading"><h3 id="evidence-prescreen-heading">Complete-IQ OFDM pilot prescreen</h3><span id="evidence-prescreen-badge" class="status-badge" data-tone="warning">Pending</span></div>
+          <div id="evidence-prescreen-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
+          <canvas id="evidence-prescreen-canvas" class="evidence-chart" width="1200" height="420" role="img" aria-label="Pattern-blind OFDM cyclic-prefix periodicity for every contiguous IQ tile" hidden></canvas>
+          <div id="evidence-prescreen-legend" class="evidence-series-legend"></div>
+          <p class="availability-note">Every raw-IQ sample contributes to a contiguous tile. The curve is pattern-blind OFDM cyclic-prefix periodicity, so it can seed exact Qin/surrogate searches even when a pilot is not a high-power tile. Stationary OFDM and tones can also score; this is candidate selection, not detection.</p>
+        </article>
         <article id="evidence-qam" class="detail-card evidence-product" aria-labelledby="evidence-qam-heading">
           <div class="decision-heading"><h3 id="evidence-qam-heading">Pilot QAM</h3><span id="evidence-qam-badge" class="status-badge" data-tone="warning">Pending</span></div>
           <div id="evidence-qam-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>

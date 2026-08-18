@@ -23,6 +23,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV24,
     DashboardJsonApplicationV25,
     DashboardJsonApplicationV26,
+    DashboardJsonApplicationV27,
     JsonRequest,
     JsonResponse,
 )
@@ -66,6 +67,7 @@ class EvidencePorts:
         self.advanced_doppler_queries: list[Any] = []
         self.timeline_queries: list[Any] = []
         self.pilot_doppler_queries: list[Any] = []
+        self.pilot_prescreen_queries: list[Any] = []
         self.approach_queries: list[str] = []
 
     def recording_evidence_context(self, recording_id: RecordingId) -> dict[str, Any]:
@@ -187,6 +189,64 @@ class EvidencePorts:
             "candidate_only": True,
             "calibration_required": True,
             "streams": streams,
+        }
+
+    def recording_starlink_pilot_prescreen(self, query: Any) -> dict[str, Any]:
+        self.pilot_prescreen_queries.append(query)
+        identity = _identity(str(query.recording_id))
+        if identity is None:
+            raise DashboardNotFound("pilot prescreen recording was not found")
+        radio, receiver, lnb, segment = identity
+        if not _matches(query.radio_ids, radio) or not _matches(
+            query.receiver_chain_ids, receiver
+        ) or (query.lnb_ids and lnb not in query.lnb_ids):
+            streams = []
+        else:
+            windows = [
+                {
+                    "window_index": index,
+                    "start_sample": index * 20_000,
+                    "stop_sample": (index + 1) * 20_000,
+                    "start_utc_ns": 1_000_000_000 + index * 8_000_000,
+                    "stop_utc_ns": 1_008_000_000 + index * 8_000_000,
+                    "mean_power_counts_squared": 1000.0 + index,
+                    "ofdm_periodicity_score": 0.1 + index * 0.2,
+                    "best_symbol_phase_sample": 0,
+                    "useful_symbol_lag_samples": 10,
+                    "total_symbol_samples": 11,
+                    "periodicity_rank": 0 if index == 3 else None,
+                    "power_rank": 0 if index == 2 else None,
+                }
+                for index in range(4)
+            ]
+            streams = [{
+                "selection": {
+                    "radio_id": radio,
+                    "lnb_id": lnb,
+                    "segment_id": segment,
+                    "receiver_chain_id": receiver,
+                    "channel_number": 4,
+                    "edge": "lower",
+                    "sample_rate_hz": 2_500_000,
+                    "segment_sample_count": 80_000,
+                },
+                "windows": windows,
+                "original_window_count": 4,
+                "analyzed_sample_count": 80_000,
+                "coverage_fraction": 1.0,
+            }]
+        return {
+            "recording_id": str(query.recording_id),
+            "plan": {
+                "tile_sample_count": 20_000,
+                "maximum_periodicity_seeds_per_stream": 32,
+                "maximum_power_seeds_per_stream": 8,
+            },
+            "streams": streams,
+            "original_window_count": 4,
+            "truncated": False,
+            "candidate_only": True,
+            "calibrated_detection_count": None,
         }
 
     def recording_starlink_adaptive_qam(self, query: Any) -> dict[str, Any]:
@@ -762,7 +822,8 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
     v23 = DashboardJsonApplicationV23(v20, fixture_port)
     v24 = DashboardJsonApplicationV24(v23, fixture_port)
     v25 = DashboardJsonApplicationV25(v24, fixture_port)
-    return DashboardUiApplication(DashboardJsonApplicationV26(v25, fixture_port))
+    v26 = DashboardJsonApplicationV26(v25, fixture_port)
+    return DashboardUiApplication(DashboardJsonApplicationV27(v26, fixture_port))
 
 
 @contextmanager
@@ -837,11 +898,24 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             expect(page.locator("#evidence-timeline-state")).to_contain_text(
                 "source union coverage is 100%"
             )
+            expect(page.locator("#evidence-prescreen-state")).to_have_attribute(
+                "data-state", "ready"
+            )
+            expect(page.locator("#evidence-prescreen-state")).to_contain_text(
+                "every source sample was prescreened"
+            )
+            expect(page.locator("#evidence-prescreen-canvas")).to_be_visible()
+            expect(page.locator("#evidence-prescreen-canvas")).to_have_attribute(
+                "data-point-count", "12"
+            )
             expect(page.locator("#evidence-approaches-state")).to_have_attribute(
                 "data-state", "ready"
             )
             approach_rows = page.locator("#evidence-approaches-body tr")
-            expect(approach_rows).to_have_count(14)
+            expect(approach_rows).to_have_count(16)
+            expect(
+                approach_rows.filter(has_text="Complete-IQ OFDM pilot prescreen")
+            ).to_have_count(2)
             expect(
                 page.locator('#evidence-approaches-body tr[data-approach="qam"]')
             ).to_have_count(2)
@@ -948,6 +1022,11 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             assert all(
                 query.maximum_windows_per_stream == 32
                 for query in ports.pilot_doppler_queries
+            )
+            assert len(ports.pilot_prescreen_queries) == 2
+            assert all(
+                query.maximum_points == 8192
+                for query in ports.pilot_prescreen_queries
             )
 
             page.locator("#evidence-mode").select_option("windows")

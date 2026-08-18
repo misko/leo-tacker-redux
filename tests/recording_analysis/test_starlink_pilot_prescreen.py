@@ -17,6 +17,7 @@ from leo_flow.analysis.recording.starlink_pilot_prescreen_codec import (
 )
 from leo_flow.analysis.recording.starlink_pilot_prescreen_persistence import (
     CatalogedStarlinkPilotPrescreenV0_1,
+    DurableRecordingStarlinkPilotPrescreenQueryV0_1,
     DurableStarlinkPilotPrescreenStoreV0_1,
     StarlinkPilotPrescreenConflictError,
 )
@@ -27,6 +28,7 @@ from leo_flow.contracts.starlink_full_dwell_timeline_product import (
 )
 from leo_flow.contracts.starlink_pilot_prescreen import (
     StarlinkPilotPrescreenPlanV0_1,
+    StarlinkPilotPrescreenQueryV0_1,
     StarlinkPilotPrescreenRequestV0_1,
 )
 from leo_flow.storage.filesystem import FileSystemBlobStore
@@ -53,6 +55,14 @@ class _Catalog:
 
     def get_starlink_pilot_prescreen(self, ref):  # type: ignore[no-untyped-def]
         return self.item if self.item is not None and self.item.ref == ref else None
+
+    def latest_starlink_pilot_prescreen(self, recording_id):  # type: ignore[no-untyped-def]
+        return (
+            self.item.ref
+            if self.item is not None
+            and self.item.projection.recording_id == recording_id
+            else None
+        )
 
 
 def _ci16(left: np.ndarray, right: np.ndarray) -> bytes:
@@ -160,10 +170,20 @@ def test_complete_prescreen_tiles_tail_selects_periodicity_and_replays(
     with pytest.raises(MalformedStarlinkPilotPrescreenError, match="canonical"):
         decode_starlink_pilot_prescreen(payload + b"\n")
 
+    catalog = _Catalog()
     store = DurableStarlinkPilotPrescreenStoreV0_1(
-        FileSystemBlobStore(tmp_path / "cas"), _Catalog()
+        FileSystemBlobStore(tmp_path / "cas"), catalog
     )
     ref = store.publish(request, result, idempotency_key="pilot-prescreen:one")
     assert store.publish(request, result, idempotency_key="pilot-prescreen:one") == ref
     with store.open(ref) as replay:
         assert replay == result
+    view_result = DurableRecordingStarlinkPilotPrescreenQueryV0_1(
+        store, catalog
+    ).recording_starlink_pilot_prescreen(
+        StarlinkPilotPrescreenQueryV0_1(request.recording_id, maximum_points=4)
+    )
+    assert view_result.original_window_count == 6
+    assert sum(len(stream.windows) for stream in view_result.streams) == 4
+    assert view_result.truncated
+    assert all(stream.coverage_fraction == 1.0 for stream in view_result.streams)

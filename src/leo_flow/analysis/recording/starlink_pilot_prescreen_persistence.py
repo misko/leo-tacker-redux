@@ -8,11 +8,15 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
-from leo_flow.contracts.core import Digest, RecordingId
+from leo_flow.contracts.core import V0_1, ArtifactRef, Digest, RecordingId, SchemaRef
 from leo_flow.contracts.starlink_pilot_prescreen import (
+    RecordingStarlinkPilotPrescreenViewV0_1,
     StarlinkPilotPrescreenBundleV0_1,
+    StarlinkPilotPrescreenPresentationStreamV0_1,
     StarlinkPilotPrescreenProductRefV0_1,
+    StarlinkPilotPrescreenQueryV0_1,
     StarlinkPilotPrescreenRequestV0_1,
+    StarlinkPilotPrescreenWindowV0_1,
 )
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 from leo_flow.storage.ports import BlobReader, BlobWriter
@@ -73,6 +77,10 @@ class StarlinkPilotPrescreenCatalogV0_1(Protocol):
     def get_starlink_pilot_prescreen(
         self, ref: StarlinkPilotPrescreenProductRefV0_1
     ) -> CatalogedStarlinkPilotPrescreenV0_1 | None: ...
+
+    def latest_starlink_pilot_prescreen(
+        self, recording_id: RecordingId
+    ) -> StarlinkPilotPrescreenProductRefV0_1 | None: ...
 
 
 class StarlinkPilotPrescreenBlobStore(BlobReader, BlobWriter, Protocol):
@@ -166,6 +174,64 @@ class DurableStarlinkPilotPrescreenStoreV0_1:
         yield bundle
 
 
+class DurableRecordingStarlinkPilotPrescreenQueryV0_1:
+    def __init__(
+        self,
+        store: DurableStarlinkPilotPrescreenStoreV0_1,
+        catalog: StarlinkPilotPrescreenCatalogV0_1,
+    ) -> None:
+        self._store, self._catalog = store, catalog
+
+    def recording_starlink_pilot_prescreen(
+        self, query: StarlinkPilotPrescreenQueryV0_1
+    ) -> RecordingStarlinkPilotPrescreenViewV0_1:
+        ref = self._catalog.latest_starlink_pilot_prescreen(query.recording_id)
+        if ref is None:
+            raise LookupError("recording has no complete-IQ pilot prescreen")
+        with self._store.open(ref) as bundle:
+            selected = tuple(
+                stream
+                for stream in bundle.streams
+                if (not query.radio_ids or stream.selection.radio_id in query.radio_ids)
+                and (not query.lnb_ids or stream.selection.lnb_id in query.lnb_ids)
+                and (
+                    not query.receiver_chain_ids
+                    or stream.selection.receiver_chain_id in query.receiver_chain_ids
+                )
+                and (not query.edges or stream.selection.edge in query.edges)
+            )
+            original = sum(len(stream.windows) for stream in selected)
+            remaining = query.maximum_points
+            views = []
+            for index, stream in enumerate(selected):
+                budget = max(1, remaining // (len(selected) - index))
+                windows = _bounded_windows(stream.windows, budget)
+                remaining -= len(windows)
+                views.append(
+                    StarlinkPilotPrescreenPresentationStreamV0_1(
+                        stream.selection,
+                        windows,
+                        len(stream.windows),
+                        stream.analyzed_sample_count,
+                        stream.coverage_fraction,
+                    )
+                )
+            shown = sum(len(stream.windows) for stream in views)
+            return RecordingStarlinkPilotPrescreenViewV0_1(
+                SchemaRef(RecordingStarlinkPilotPrescreenViewV0_1.SCHEMA_ID, V0_1),
+                bundle.recording_id,
+                ArtifactRef(bundle.analysis_id, ref.bundle_ref.digest, bundle.schema),
+                bundle.plan,
+                tuple(views),
+                original,
+                shown < original,
+                "none" if shown == original else "seeds-extrema-and-even-time",
+                True,
+                None,
+                bundle.warnings,
+            )
+
+
 def starlink_pilot_prescreen_projection_v0_1(
     request: StarlinkPilotPrescreenRequestV0_1,
     bundle: StarlinkPilotPrescreenBundleV0_1,
@@ -206,3 +272,43 @@ def _projection(
             for item in stream.windows
         ),
     )
+
+
+def _bounded_windows(
+    windows: tuple[StarlinkPilotPrescreenWindowV0_1, ...], maximum: int
+) -> tuple[StarlinkPilotPrescreenWindowV0_1, ...]:
+    if len(windows) <= maximum:
+        return windows
+    required = {
+        0,
+        len(windows) - 1,
+        windows.index(max(windows, key=lambda item: item.ofdm_periodicity_score)),
+        windows.index(max(windows, key=lambda item: item.mean_power_counts_squared)),
+        *(
+            index
+            for index, item in enumerate(windows)
+            if item.selected_for_exact_refinement
+        ),
+    }
+    if len(required) > maximum:
+        selected = sorted(
+            required,
+            key=lambda index: (
+                not windows[index].selected_for_exact_refinement,
+                windows[index].periodicity_rank
+                if windows[index].periodicity_rank is not None
+                else 1_000_000,
+                windows[index].power_rank
+                if windows[index].power_rank is not None
+                else 1_000_000,
+                index,
+            ),
+        )[:maximum]
+        return tuple(windows[index] for index in sorted(selected))
+    slots = maximum - len(required)
+    if slots:
+        required.update(
+            round(index * (len(windows) - 1) / max(1, slots - 1))
+            for index in range(slots)
+        )
+    return tuple(windows[index] for index in sorted(required)[:maximum])

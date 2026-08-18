@@ -111,6 +111,10 @@ from leo_flow.contracts.starlink_pilot_constellation_pipeline import (
     RecordingStarlinkPilotConstellationQueryPortV0_1,
     StarlinkPilotConstellationQueryV0_1,
 )
+from leo_flow.contracts.starlink_pilot_prescreen import (
+    RecordingStarlinkPilotPrescreenQueryPortV0_1,
+    StarlinkPilotPrescreenQueryV0_1,
+)
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
 from leo_flow.contracts.starlink_suite_pipeline import (
     RecordingStarlinkSuiteQueryPortV0_2,
@@ -1306,6 +1310,93 @@ class DashboardJsonApplicationV26:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class DashboardJsonApplicationV27:
+    """Expose complete-IQ pattern-blind OFDM pilot-prescreen timelines."""
+
+    _PREFIX = "/api/v27/recordings/"
+    _MAX_QUERY_BYTES = 8_192
+    _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        prescreens: RecordingStarlinkPilotPrescreenQueryPortV0_1,
+    ) -> None:
+        self._previous, self._prescreens = previous, prescreens
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-pilot-prescreen":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._prescreens.recording_starlink_pilot_prescreen(
+                _pilot_prescreen_query(
+                    RecordingId(unquote(parts[0])),
+                    request.query,
+                    self._MAX_QUERY_BYTES,
+                )
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("pilot-prescreen response exceeds its byte bound")
+        except ValueError as error:
+            return _error(400, "invalid_request", str(error))
+        except (DashboardNotFound, LookupError) as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _pilot_prescreen_query(
+    recording_id: RecordingId,
+    query: dict[str, str],
+    maximum_query_bytes: int,
+) -> StarlinkPilotPrescreenQueryV0_1:
+    allowed = {
+        "radio_ids",
+        "lnb_ids",
+        "receiver_chain_ids",
+        "edges",
+        "maximum_points",
+    }
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    if sum(len(key) + len(value) for key, value in query.items()) > maximum_query_bytes:
+        raise ValueError("pilot-prescreen query is too large")
+    try:
+        return StarlinkPilotPrescreenQueryV0_1(
+            recording_id,
+            tuple(
+                RadioId(value)
+                for value in (_comma_values(query, "radio_ids", 64) or ())
+            ),
+            _comma_values(query, "lnb_ids", 64) or (),
+            tuple(
+                ReceiverChainId(value)
+                for value in (_comma_values(query, "receiver_chain_ids", 32) or ())
+            ),
+            tuple(
+                StarlinkEdge(value)
+                for value in (_comma_values(query, "edges", 2) or ())
+            ),
+            int(query.get("maximum_points", "4096")),
+        )
+    except ValueError as error:
+        raise ValueError("invalid pilot-prescreen query value") from error
 
 
 def _pilot_doppler_association_query(

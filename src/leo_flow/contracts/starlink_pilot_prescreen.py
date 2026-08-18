@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Protocol
 
 from .core import (
     V0_1,
+    ArtifactRef,
     Digest,
     Provenance,
+    RadioId,
+    ReceiverChainId,
     RecordingId,
     SchemaRef,
     UtcNs,
     canonical_digest,
 )
+from .starlink import StarlinkEdge
 from .starlink_full_dwell_timeline_product import (
     FullDwellTimelineStreamSelectionV0_1,
 )
@@ -195,3 +200,64 @@ class StarlinkPilotPrescreenProductRefV0_1:
     def __post_init__(self) -> None:
         if not self.analysis_id:
             raise ValueError("pilot-prescreen analysis identity cannot be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class StarlinkPilotPrescreenQueryV0_1:
+    recording_id: RecordingId
+    radio_ids: tuple[RadioId, ...] = ()
+    lnb_ids: tuple[str, ...] = ()
+    receiver_chain_ids: tuple[ReceiverChainId, ...] = ()
+    edges: tuple[StarlinkEdge, ...] = ()
+    maximum_points: int = 4096
+
+    def __post_init__(self) -> None:
+        for values in (
+            self.radio_ids,
+            self.lnb_ids,
+            self.receiver_chain_ids,
+            self.edges,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("pilot-prescreen filters must be unique")
+        if not 1 <= self.maximum_points <= 16_384:
+            raise ValueError("pilot-prescreen query point bound is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class StarlinkPilotPrescreenPresentationStreamV0_1:
+    selection: FullDwellTimelineStreamSelectionV0_1
+    windows: tuple[StarlinkPilotPrescreenWindowV0_1, ...]
+    original_window_count: int
+    analyzed_sample_count: int
+    coverage_fraction: float
+
+
+@dataclass(frozen=True, slots=True)
+class RecordingStarlinkPilotPrescreenViewV0_1:
+    schema: SchemaRef
+    recording_id: RecordingId
+    analysis_ref: ArtifactRef
+    plan: StarlinkPilotPrescreenPlanV0_1
+    streams: tuple[StarlinkPilotPrescreenPresentationStreamV0_1, ...]
+    original_window_count: int
+    truncated: bool
+    decimation: str
+    candidate_only: bool
+    calibrated_detection_count: None
+    warnings: tuple[str, ...]
+
+    SCHEMA_ID = "org.leo-flow.dashboard.recording-starlink-pilot-prescreen"
+
+    def __post_init__(self) -> None:
+        if self.schema != SchemaRef(self.SCHEMA_ID, V0_1):
+            raise ValueError("unsupported pilot-prescreen dashboard schema")
+        shown = sum(len(stream.windows) for stream in self.streams)
+        if self.original_window_count < shown or not self.candidate_only:
+            raise ValueError("pilot-prescreen dashboard semantics are invalid")
+
+
+class RecordingStarlinkPilotPrescreenQueryPortV0_1(Protocol):
+    def recording_starlink_pilot_prescreen(
+        self, query: StarlinkPilotPrescreenQueryV0_1
+    ) -> RecordingStarlinkPilotPrescreenViewV0_1: ...
