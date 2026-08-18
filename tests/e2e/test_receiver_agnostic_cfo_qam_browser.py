@@ -11,12 +11,16 @@ from playwright.sync_api import expect, sync_playwright
 
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.contracts.core import canonical_json_bytes
+from leo_flow.contracts.dashboard_recording_analysis import (
+    RecordingAnalysisProductState,
+)
 from leo_flow.dashboard.api import (
     DashboardJsonApplicationV29,
     DashboardJsonApplicationV30,
     DashboardPublicJsonApplication,
     JsonRequest,
     JsonResponse,
+    RecordingAnalysisFacadeApplication,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
 
@@ -26,6 +30,18 @@ SEGMENT = "seg_plan_focused_loop_00000001_18cccbd3289eb706_b_ch4_lower"
 
 class _Previous:
     def handle(self, request: JsonRequest) -> JsonResponse:
+        if request.path == f"/api/v3/recordings/{RECORDING}":
+            return JsonResponse(
+                200,
+                (("content-type", "application/json"),),
+                canonical_json_bytes(
+                    {
+                        "recording_id": RECORDING,
+                        "capture_started_utc_ns": 0,
+                        "capture_finished_utc_ns": 60_000_000_000,
+                    }
+                ),
+            )
         if request.path == f"/api/v16/recordings/{RECORDING}/evidence-context":
             payload = {
                 "requested_recording_id": RECORDING,
@@ -77,6 +93,12 @@ class _Previous:
             (("content-type", "application/json"),),
             b'{"error":{"code":"not_found","message":"fixture route absent"}}',
         )
+
+
+class _Availability:
+    def recording_analysis_product_state(self, recording_id, product):  # type: ignore[no-untyped-def]
+        del recording_id, product
+        return RecordingAnalysisProductState.NOT_ANALYZED
 
 
 class _Port:
@@ -141,10 +163,11 @@ def _running(port: _Port) -> Iterator[str]:
         request_timeout_s=0.01, maximum_concurrent_requests=4
     )
     server.preflight("127.0.0.1", 0)
-    api = DashboardJsonApplicationV30(
+    versioned = DashboardJsonApplicationV30(
         cast(DashboardJsonApplicationV29, _Previous()), port
     )
-    application = DashboardUiApplication(DashboardPublicJsonApplication(api))
+    facade = RecordingAnalysisFacadeApplication(versioned, _Availability())
+    application = DashboardUiApplication(DashboardPublicJsonApplication(facade))
     stopped = threading.Event()
     worker = threading.Thread(
         target=lambda: _serve(server, application, stopped), name="cfo-qam-browser"

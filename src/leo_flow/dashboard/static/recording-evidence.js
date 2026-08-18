@@ -97,7 +97,9 @@
 
   async function fetchAnalysis(sections) {
     const payload = await json(`/api/recordings/${encodeURIComponent(recordingId)}/analysis?${facadeParameters(sections)}`);
-    if (payload.schema !== "org.leo-flow.dashboard.recording-analysis-facade" || payload.recording_id !== recordingId) throw new Error("invalid recording-analysis facade response");
+    const schema = payload.schema;
+    const schemaId = typeof schema === "string" ? schema : schema?.schema_id;
+    if (schemaId !== "org.leo-flow.dashboard.recording-analysis-facade" || payload.recording_id !== recordingId) throw new Error("invalid recording-analysis facade response");
     for (const section of payload.sections || []) {
       for (const envelope of section.products || []) {
         if (!["complete", "no_candidate", "pending", "failed", "not_analyzed"].includes(envelope.state)) throw new Error(`invalid ${envelope.product} availability state`);
