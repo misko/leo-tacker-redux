@@ -103,6 +103,21 @@
 
   function percent(value) { return `${(100 * Number(value)).toFixed(4)}%`; }
 
+  function intervalUnionSampleCount(intervals) {
+    const ordered = intervals
+      .map(([start, stop]) => [Number(start), Number(stop)])
+      .filter(([start, stop]) => Number.isFinite(start) && Number.isFinite(stop) && start >= 0 && stop > start)
+      .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+    if (!ordered.length) return 0;
+    let total = 0;
+    let [start, stop] = ordered[0];
+    for (const [nextStart, nextStop] of ordered.slice(1)) {
+      if (nextStart <= stop) stop = Math.max(stop, nextStop);
+      else { total += stop - start; start = nextStart; stop = nextStop; }
+    }
+    return total + stop - start;
+  }
+
   function setApproachRows(kind, rows) {
     for (const key of [...approachRows.keys()]) if (key.startsWith(`${kind}:`)) approachRows.delete(key);
     rows.forEach((row, index) => approachRows.set(`${kind}:${row.key || index}`, row));
@@ -148,6 +163,52 @@
     } catch (error) {
       if (current !== generation) return;
       setApproachRows("qam", [{kind: "qam", key: "error", approach: "Acquired pilot QAM v0.3", scope: "selected recording(s)", window: "unavailable", coverage: "unavailable", search: "unavailable", response: "QAM approach query failed", status: error.message}]);
+    }
+  }
+
+  async function loadAdaptiveQamApproaches(current) {
+    try {
+      const fetched = await availablePayloads(selectedRecordings().map((recording) => {
+        const parameters = new URLSearchParams({mode: "windows", maximum_streams: "4", maximum_windows_per_stream: "32", maximum_points_per_constellation: "1"});
+        return `/api/v25/recordings/${encodeURIComponent(recording.recording_id)}/starlink-adaptive-qam?${parameters}`;
+      }));
+      if (current !== generation) return;
+      const rows = [];
+      for (const payload of fetched.payloads) {
+        if (payload.candidate_only !== true || payload.calibration_required !== true || !payload.source_adaptive_response_ref) throw new Error("unsafe adaptive-QAM approach semantics");
+        for (const stream of payload.streams || []) {
+          const windows = stream.windows || [];
+          if (!windows.length) continue;
+          const qamIntervals = windows.map((item) => [item.selection.qam_start_sample, item.selection.qam_stop_sample]);
+          const sourceIntervals = windows.map((item) => [item.selection.source_start_sample, item.selection.source_stop_sample]);
+          const qamUnion = intervalUnionSampleCount(qamIntervals);
+          const sourceUnion = intervalUnionSampleCount(sourceIntervals);
+          const windowSizes = [...new Set(qamIntervals.map(([start, stop]) => Number(stop) - Number(start)))].sort((left, right) => left - right);
+          const sourceWindowSizes = [...new Set(sourceIntervals.map(([start, stop]) => Number(stop) - Number(start)))].sort((left, right) => left - right);
+          const reasons = [...new Set(windows.flatMap((item) => item.selection.reasons || []))].sort();
+          const winners = windows.map((item) => Number(item.qam.winning_cfo_hz)).filter(Number.isFinite);
+          const winnerSpan = winners.length ? `${(Math.min(...winners) / 1000).toFixed(1)}…${(Math.max(...winners) / 1000).toFixed(1)} kHz` : "winner CFO unavailable";
+          const rate = Number(stream.sample_rate_hz);
+          const segmentSamples = Number(stream.segment_sample_count);
+          const originalCount = Number(stream.original_window_count || windows.length);
+          rows.push({
+            kind: "qam-adaptive",
+            key: identity([payload.recording_id, stream.radio_id, stream.receiver_chain_id, stream.edge]),
+            approach: "Adaptive target/control QAM v0.4",
+            scope: identity([payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge]),
+            window: `${originalCount} × ${windowSizes.map((value) => duration(value, rate)).join("/")} QAM around ${sourceWindowSizes.map((value) => duration(value, rate)).join("/")} exact detector windows`,
+            coverage: `${duration(qamUnion, rate)} / ${duration(segmentSamples, rate)} (${percent(qamUnion / segmentSamples)}); source exact union ${duration(sourceUnion, rate)}`,
+            search: `each selected window repeats the persisted label-independent time×epoch×CFO search; winner CFO ${winnerSpan}; source ${payload.source_adaptive_response_ref.artifact_id}`,
+            response: `per-window known-pilot QAM plus source Qin/control/margin; selection reasons ${reasons.join(", ")}`,
+            status: `${stream.overall.derivation}; target/control selection bias disclosed; time×epoch×CFO maximum requires calibration`,
+          });
+        }
+      }
+      if (!rows.length && fetched.missingCount) rows.push({kind: "qam-adaptive", key: "pending", approach: "Adaptive target/control QAM v0.4", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "pending", response: "adaptive QAM evidence pending; v0.3 fallback may be shown", status: "not yet published"});
+      setApproachRows("qam-adaptive", rows);
+    } catch (error) {
+      if (current !== generation) return;
+      setApproachRows("qam-adaptive", [{kind: "qam-adaptive", key: "error", approach: "Adaptive target/control QAM v0.4", scope: "selected recording(s)", window: "unavailable", coverage: "unavailable", search: "unavailable", response: "adaptive QAM approach query failed", status: error.message}]);
     }
   }
 
@@ -659,7 +720,7 @@
     generation += 1;
     const current = generation;
     approachRows.clear(); renderApproachRows();
-    void Promise.all([loadApproaches(current), loadTimeline(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
+    void Promise.all([loadApproaches(current), loadAdaptiveQamApproaches(current), loadTimeline(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
   }
 
   async function initialize() {

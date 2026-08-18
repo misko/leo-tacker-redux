@@ -150,11 +150,18 @@ class EvidencePorts:
                     "segment_id": segment,
                     "receiver_chain_id": receiver,
                     "edge": "lower",
+                    "sample_rate_hz": 2_500_000,
+                    "segment_sample_count": 50_000_000,
+                    "original_window_count": 2,
                     "overall": {
                         "window_count": 2,
                         "selected_display_window_index": 0,
                         "support_weighted_hard_symbol_accuracy": 0.84,
                         "support_weighted_rms_evm": 0.72,
+                        "derivation": (
+                            "support-weighted-window-summary;"
+                            "display=max-held-out-margin-window"
+                        ),
                     },
                     "windows": [
                         {
@@ -718,11 +725,18 @@ class DualReceiverEvidencePorts(EvidencePorts):
                     "segment_id": "seg_a",
                     "receiver_chain_id": receiver,
                     "edge": "lower",
+                    "sample_rate_hz": 2_500_000,
+                    "segment_sample_count": 50_000_000,
+                    "original_window_count": 2,
                     "overall": {
                         "window_count": 2,
                         "selected_display_window_index": 0,
                         "support_weighted_hard_symbol_accuracy": 1.0,
                         "support_weighted_rms_evm": perturbation,
+                        "derivation": (
+                            "support-weighted-window-summary;"
+                            "display=max-held-out-margin-window"
+                        ),
                     },
                     "windows": windows,
                 }
@@ -827,12 +841,23 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
                 "data-state", "ready"
             )
             approach_rows = page.locator("#evidence-approaches-body tr")
-            expect(approach_rows).to_have_count(12)
+            expect(approach_rows).to_have_count(14)
             expect(
                 page.locator('#evidence-approaches-body tr[data-approach="qam"]')
             ).to_have_count(2)
             approaches = page.locator("#evidence-approaches-table")
             expect(approaches).to_contain_text("Acquired pilot QAM v0.3")
+            expect(approaches).to_contain_text("Adaptive target/control QAM v0.4")
+            expect(approaches).to_contain_text(
+                "2 × 10.000 ms QAM around 10.000 ms exact detector windows"
+            )
+            expect(approaches).to_contain_text("20.000 ms / 20.000 s (0.1000%)")
+            expect(approaches).to_contain_text(
+                "top-qin-minus-surrogate-margin, top-qin-score"
+            )
+            expect(approaches).to_contain_text(
+                "target/control selection bias disclosed"
+            )
             expect(approaches).to_contain_text("Complete IQ power timeline")
             expect(approaches).to_contain_text(
                 "Symmetric adaptive Qin + surrogate search"
@@ -952,10 +977,9 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             assert all(
                 query.maximum_windows_per_stream == 32 for query in ports.qam_queries
             )
-            assert all(
-                query.maximum_points_per_constellation == 128
-                for query in ports.qam_queries
-            )
+            assert {
+                query.maximum_points_per_constellation for query in ports.qam_queries
+            } == {1, 128}
 
             page.locator('#evidence-methods input[value="anchor-8"]').uncheck()
             expect(page.locator("#evidence-detector-canvas")).to_have_attribute(
