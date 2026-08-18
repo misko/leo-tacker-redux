@@ -12,6 +12,8 @@ import random
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+import numpy as np
+
 from leo_flow.contracts._validation import require_finite, require_positive
 from leo_flow.contracts.core import (
     ArtifactRef,
@@ -512,11 +514,20 @@ class StarlinkDetectorSuiteV0_2:
         results: dict[
             StarlinkDetectorMethod, StarlinkFullSearchControlMethodEvidenceV0_1
         ] = {}
-        acquire_winner = self._search_full_frame_template(
-            values,
-            templates.conditioned_control_samples,
-            templates.sample_rate_hz,
-            self._config.acquire_symbols,
+        acquire_winner = (
+            self._search_full_frame_template_vectorized(
+                values,
+                templates.conditioned_control_samples,
+                templates.sample_rate_hz,
+                self._config.acquire_symbols,
+            )
+            if condition_relative_on_acquire
+            else self._search_full_frame_template(
+                values,
+                templates.conditioned_control_samples,
+                templates.sample_rate_hz,
+                self._config.acquire_symbols,
+            )
         )
         for method, symbols, role in relative_specs:
             if condition_relative_on_acquire:
@@ -901,6 +912,71 @@ class StarlinkDetectorSuiteV0_2:
                 )
                 if scored.summary.support:
                     candidates.append(_Winner(epoch, cfo, scored))
+        if not candidates:
+            raise ValueError("no complete frame supports full-frame acquisition")
+        return max(candidates, key=_winner_key)
+
+    def _search_full_frame_template_vectorized(
+        self,
+        values: tuple[complex, ...],
+        template: tuple[complex, ...],
+        sample_rate_hz: float,
+        symbols: tuple[int, ...],
+    ) -> _Winner:
+        """Search the same cells using matrix evaluation for adaptive overlays."""
+
+        indexes_tuple = _pilot_sample_indexes(sample_rate_hz, len(template), symbols)
+        if not indexes_tuple:
+            raise ValueError("no pilot samples support full-frame acquisition")
+        indexes = np.asarray(indexes_tuple, dtype=np.int64)
+        received_values = np.asarray(values, dtype=np.complex128)
+        selected_template = np.asarray(template, dtype=np.complex128)[indexes]
+        template_energy = math.fsum(
+            abs(template[index]) ** 2 for index in indexes_tuple
+        )
+        reference_rows = np.asarray(
+            [
+                selected_template.conjugate()
+                * np.exp(-2j * math.pi * coarse_cfo_hz * indexes / sample_rate_hz)
+                for coarse_cfo_hz in self._config.coarse_cfo_hypotheses_hz
+            ],
+            dtype=np.complex128,
+        )
+        period = sample_rate_hz / FRAME_RATE_HZ
+        candidates: list[_Winner] = []
+        for epoch in self._config.epoch_hypotheses_samples:
+            starts = []
+            frame = 0
+            while True:
+                start = epoch + round(frame * period)
+                if start + indexes_tuple[-1] >= len(values):
+                    break
+                starts.append(start)
+                frame += 1
+            if not starts:
+                continue
+            rows = received_values[
+                np.asarray(starts, dtype=np.int64)[:, None] + indexes[None, :]
+            ]
+            data_energy = np.sum(np.abs(rows) ** 2, axis=1, dtype=np.float64)
+            denominators = np.sqrt(template_energy * data_energy)
+            numerators = rows @ reference_rows.T
+            ratios = np.divide(
+                np.abs(numerators),
+                denominators[:, None],
+                out=np.zeros_like(numerators.real),
+                where=denominators[:, None] != 0,
+            )
+            for cfo_index, coarse_cfo_hz in enumerate(
+                self._config.coarse_cfo_hypotheses_hz
+            ):
+                per_frame = tuple(float(value) for value in ratios[:, cfo_index])
+                scored = _Scored(
+                    _bounded_score(math.fsum(per_frame) / len(per_frame)),
+                    0.0,
+                    _summary(per_frame),
+                )
+                candidates.append(_Winner(epoch, coarse_cfo_hz, scored))
         if not candidates:
             raise ValueError("no complete frame supports full-frame acquisition")
         return max(candidates, key=_winner_key)

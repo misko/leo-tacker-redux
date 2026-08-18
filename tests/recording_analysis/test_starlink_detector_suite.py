@@ -484,12 +484,30 @@ def test_acquire_conditioned_control_keeps_all_methods_on_one_pattern_winner() -
         templates=templates,
         condition_relative_on_acquire=True,
     )
+    scalar = _analyzer().analyze_full_search_control(
+        values,
+        recording_id=RecordingId("rec_scalar_control"),
+        recording_identity_digest=Digest.sha256(b"scalar-control"),
+        segment_id=SegmentId("seg_scalar_control"),
+        receiver_chain_id=ReceiverChainId("rx_scalar_control"),
+        templates=templates,
+    )
 
     assert tuple(item.method for item in control.methods) == REPORT_METHOD_ORDER
     acquire = next(
         item
         for item in control.methods
         if item.method is StarlinkDetectorMethod.FULL_FRAME_ACQUIRE
+    )
+    scalar_acquire = next(
+        item
+        for item in scalar.methods
+        if item.method is StarlinkDetectorMethod.FULL_FRAME_ACQUIRE
+    )
+    assert acquire.winning_epoch_sample == scalar_acquire.winning_epoch_sample
+    assert acquire.winning_coarse_cfo_hz == scalar_acquire.winning_coarse_cfo_hz
+    assert acquire.full_search_control_score == pytest.approx(
+        scalar_acquire.full_search_control_score, abs=2e-12
     )
     assert all(
         item.winning_epoch_sample == acquire.winning_epoch_sample
