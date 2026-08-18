@@ -5,6 +5,9 @@ import inspect
 
 import pytest
 
+from leo_flow.adapters.hardware_link_postgres import (
+    RecordingHardwareLinkConflictError,
+)
 from leo_flow.contracts.core import RecordingId
 from leo_flow.contracts.deferred_analysis import DeferredAnalysisStage
 from leo_flow.deployments import gauss_focused_analysis_runtime
@@ -14,6 +17,10 @@ from leo_flow.deployments.gauss_focused_analysis_runtime import (
     focused_stage_worker_count,
 )
 from leo_flow.deployments.gauss_staged_analysis_runtime import _suite_compute
+from leo_flow.hardware.persistence import (
+    HardwareSnapshotIntegrityError,
+    HardwareSnapshotNotFoundError,
+)
 
 
 def test_focused_compute_policy_has_eight_worker_ceiling() -> None:
@@ -75,6 +82,48 @@ def test_focused_preparation_links_both_recordings_before_job_submission() -> No
     )
 
     assert linker.recording_ids == [RecordingId("rec_a"), RecordingId("rec_z")]
+
+
+def test_missing_hardware_snapshot_does_not_block_focused_analysis(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class Linker:
+        def __init__(self) -> None:
+            self.recording_ids: list[RecordingId] = []
+
+        def link(self, recording_id: RecordingId) -> object:
+            self.recording_ids.append(recording_id)
+            if recording_id == RecordingId("rec_a"):
+                raise HardwareSnapshotNotFoundError("snapshot is absent")
+            return object()
+
+    linker = Linker()
+    _link_focused_recording_hardware(
+        (RecordingId("rec_z"), RecordingId("rec_a")), linker
+    )
+
+    assert linker.recording_ids == [RecordingId("rec_a"), RecordingId("rec_z")]
+    assert "continuing analysis without hardware linkage" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        HardwareSnapshotIntegrityError("snapshot is corrupt"),
+        RecordingHardwareLinkConflictError("link conflicts"),
+    ],
+)
+def test_other_hardware_link_failures_still_block_focused_analysis(
+    error: RuntimeError,
+) -> None:
+    class Linker:
+        def link(self, recording_id: RecordingId) -> object:
+            raise error
+
+    with pytest.raises(type(error), match=str(error)):
+        _link_focused_recording_hardware(
+            (RecordingId("rec_a"), RecordingId("rec_z")), Linker()
+        )
 
 
 def test_focused_scope_invokes_authoritative_hardware_linkage_before_submission() -> (

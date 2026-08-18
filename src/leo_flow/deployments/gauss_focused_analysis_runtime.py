@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -45,7 +46,10 @@ from leo_flow.deployments.staged_analysis_pool import (
     BoundedSpawnDeferredAnalysisLaneV1,
 )
 from leo_flow.hardware.linkage import RecordingHardwareLinker
-from leo_flow.hardware.persistence import DurableHardwareMetadataRepository
+from leo_flow.hardware.persistence import (
+    DurableHardwareMetadataRepository,
+    HardwareSnapshotNotFoundError,
+)
 from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
 from leo_flow.services.capture_batch_analysis import (
     ClosedBatchAnalysisSelection,
@@ -78,6 +82,7 @@ from leo_station.analysis_v1 import (
 
 MAXIMUM_FOCUSED_COMPUTE_WORKERS = 8
 MAXIMUM_FOCUSED_PROJECTION_WORKERS = 1
+_LOG = logging.getLogger(__name__)
 
 
 class _RecordingHardwareLinkerPort(Protocol):
@@ -294,7 +299,14 @@ def _link_focused_recording_hardware(
     if len(recording_ids) != 2 or len(set(recording_ids)) != 2:
         raise RuntimeError("focused hardware linkage requires two recordings")
     for recording_id in sorted(recording_ids, key=str):
-        linker.link(recording_id)
+        try:
+            linker.link(recording_id)
+        except HardwareSnapshotNotFoundError:
+            _LOG.warning(
+                "focused recording hardware snapshot is not cataloged; "
+                "continuing analysis without hardware linkage",
+                extra={"recording_id": str(recording_id)},
+            )
 
 
 def _pair(values: list[JobId], name: str) -> tuple[JobId, JobId]:
