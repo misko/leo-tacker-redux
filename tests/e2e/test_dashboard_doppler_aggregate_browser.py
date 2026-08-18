@@ -113,7 +113,7 @@ def test_four_sources_remain_distinct_and_visibility_toggles_do_not_refetch() ->
             requests += 1
             route.fulfill(status=200, content_type="application/json", body=_payload())
 
-        page.route("**/api/v14/doppler-aggregate?*", route_api)
+        page.route("**/api/doppler-aggregate?*", route_api)
         response = page.goto(base_url + "/aggregate-doppler")
         assert response is not None and response.ok
         expect(page.locator("#doppler-aggregate-state")).to_have_attribute(
@@ -164,7 +164,7 @@ def test_pending_and_error_states_are_explicit() -> None:
         browser = playwright.chromium.launch(headless=True, env=_browser_environment())
         pending = browser.new_page()
         pending.route(
-            "**/api/v14/doppler-aggregate?*",
+            "**/api/doppler-aggregate?*",
             lambda route: route.fulfill(
                 status=200, content_type="application/json", body=_payload(empty=True)
             ),
@@ -176,7 +176,7 @@ def test_pending_and_error_states_are_explicit() -> None:
 
         failed = browser.new_page()
         failed.route(
-            "**/api/v14/doppler-aggregate?*",
+            "**/api/doppler-aggregate?*",
             lambda route: route.fulfill(
                 status=500, content_type="application/json", body='{"error":"failed"}'
             ),

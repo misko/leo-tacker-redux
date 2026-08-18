@@ -59,7 +59,7 @@ def test_browser_renders_every_surrogate_and_sends_bounded_filters() -> None:
                 )
 
             page.route(
-                f"**/api/v10/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
                 fulfill_surrogate,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -135,7 +135,7 @@ def test_browser_exposes_pending_until_the_projection_completes() -> None:
                 held.append(route)
 
             page.route(
-                f"**/api/v10/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
                 hold_surrogate,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -183,7 +183,7 @@ def test_browser_exposes_explicit_not_evaluated_state() -> None:
                 )
 
             page.route(
-                f"**/api/v10/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
                 fulfill_surrogate,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -236,7 +236,7 @@ def test_browser_exposes_unavailable_and_error_states(
                 )
 
             page.route(
-                f"**/api/v10/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-surrogate-null?*",
                 fulfill_surrogate,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")

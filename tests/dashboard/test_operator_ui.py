@@ -132,8 +132,8 @@ def test_aggregate_stats_page_has_bounded_density_controls_and_safe_rendering() 
         "Precommitted surrogate scores",
     ):
         assert required in html
-    assert "/api/v12/surrogate-score-distributions" in javascript
-    assert "/api/v13/temporal-pilot-aggregate" in javascript
+    assert "/api/surrogate-score-distributions" in javascript
+    assert "/api/temporal-pilot-aggregate" in javascript
     assert "Mean probe maximum" in html
     assert "CONTINUOUS_SAMPLE_START_UTC_NS" in javascript
     assert "visibleMethods" in javascript
@@ -160,7 +160,7 @@ def test_aggregate_doppler_page_separates_candidate_sources_and_controls() -> No
     ):
         assert required in html
     for required in (
-        "/api/v14/doppler-aggregate",
+        "/api/doppler-aggregate",
         'category === "source"',
         'category === "radio"',
         'category === "receiver"',
@@ -214,16 +214,14 @@ def test_recording_page_script_uses_only_projected_json_and_safe_dom_apis() -> N
         .body.decode()
     )
     for route in (
-        "/api/v3/recordings/",
-        "/api/v4/recordings/",
-        "/api/v13/recordings/",
         "/waterfall",
         "/api/recordings/",
         "/features?selector=*",
     ):
         assert route in javascript
-    assert "/api/v3/recordings/${encodeURIComponent(recordingId)}/starlink" not in (
-        javascript
+    assert (
+        "fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/starlink`)"
+        not in javascript
     )
     assert "getContext" in javascript and "fillRect" in javascript
     assert "innerHTML" not in javascript

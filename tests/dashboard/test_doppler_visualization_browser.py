@@ -132,7 +132,7 @@ def test_browser_selects_one_layer_and_renders_tracks_controls_and_provenance() 
                 )
 
             page.route(
-                f"**/api/v9/recordings/{RECORDING_ID}/doppler-visualization?*",
+                f"**/api/recordings/{RECORDING_ID}/doppler-visualization?*",
                 fulfill_doppler,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -289,7 +289,7 @@ def test_browser_clears_stale_doppler_details_for_non_complete_states(
                 )
 
             page.route(
-                f"**/api/v9/recordings/{RECORDING_ID}/doppler-visualization?*",
+                f"**/api/recordings/{RECORDING_ID}/doppler-visualization?*",
                 fulfill_doppler,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")

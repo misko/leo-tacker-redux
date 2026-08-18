@@ -304,6 +304,6 @@ def test_recording_ui_declares_safe_surrogate_controls_and_pending_state() -> No
     assert 'data-state="pending"' in html
     assert "not a calibrated p-value" in html
     assert "candidate evidence is not a Starlink detection" in html
-    assert "/api/v10/recordings/${encodeURIComponent(recordingId)}" in javascript
+    assert "/api/recordings/${encodeURIComponent(recordingId)}" in javascript
     assert "starlink-surrogate-null" in javascript
     assert "innerHTML" not in javascript

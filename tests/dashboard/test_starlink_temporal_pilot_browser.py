@@ -121,7 +121,7 @@ def test_browser_renders_temporal_trace_coverage_filters_and_exact_tooltip() -> 
                 )
 
             page.route(
-                f"**/api/v13/recordings/{RECORDING_ID}/starlink-temporal-pilot?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-temporal-pilot?*",
                 fulfill,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -164,7 +164,7 @@ def test_browser_temporal_missing_and_error_states(status: int, state: str) -> N
         try:
             page = browser.new_page()
             page.route(
-                f"**/api/v13/recordings/{RECORDING_ID}/starlink-temporal-pilot?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-temporal-pilot?*",
                 lambda route: route.fulfill(
                     status=status,
                     content_type="application/json",
@@ -187,7 +187,7 @@ def test_browser_temporal_stays_pending_until_product_arrives() -> None:
         try:
             page = browser.new_page()
             page.route(
-                f"**/api/v13/recordings/{RECORDING_ID}/starlink-temporal-pilot?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-temporal-pilot?*",
                 lambda route: held.append(route),
             )
             page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -252,7 +252,7 @@ def test_aggregate_page_renders_per_probe_maxima_and_exact_coverage() -> None:
         try:
             page = browser.new_page()
             page.route(
-                "**/api/v12/surrogate-score-distributions?*",
+                "**/api/surrogate-score-distributions?*",
                 lambda route: route.fulfill(
                     status=200,
                     content_type="application/json",
@@ -260,7 +260,7 @@ def test_aggregate_page_renders_per_probe_maxima_and_exact_coverage() -> None:
                 ),
             )
             page.route(
-                "**/api/v13/temporal-pilot-aggregate?*",
+                "**/api/temporal-pilot-aggregate?*",
                 lambda route: route.fulfill(
                     status=200,
                     content_type="application/json",

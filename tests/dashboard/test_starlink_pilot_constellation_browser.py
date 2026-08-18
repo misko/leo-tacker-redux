@@ -59,7 +59,7 @@ def test_browser_renders_qin_constellation_facts_and_selected_stream_filters() -
                 )
 
             page.route(
-                f"**/api/v11/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
                 fulfill_constellation,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -123,7 +123,7 @@ def test_browser_exposes_pending_until_constellation_projection_completes() -> N
         try:
             page = browser.new_page(viewport={"width": 1200, "height": 900})
             page.route(
-                f"**/api/v11/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
                 lambda route: held.append(route),
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -184,7 +184,7 @@ def test_browser_exposes_constellation_unavailable_and_error_states(
                 )
 
             page.route(
-                f"**/api/v11/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
                 fulfill_constellation,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
@@ -218,7 +218,7 @@ def test_browser_fails_closed_on_invalid_presentation_contract() -> None:
                 )
 
             page.route(
-                f"**/api/v11/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
+                f"**/api/recordings/{RECORDING_ID}/starlink-pilot-constellation?*",
                 fulfill_unsafe,
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")

@@ -149,14 +149,14 @@
     const current = ++generation;
     setState("loading", "Loading all 600 durable response points per selected hardware stream…");
     try {
-      context ||= await json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-context`);
+      context ||= await json(`/api/recordings/${encodeURIComponent(recordingId)}/evidence-context`);
       const suffix = parameters();
       if (suffix === null) {
         payload = {streams: [], point_count: 0, summary_derivation: "no hardware selected"};
         render();
         return;
       }
-      const result = await json(`/api/v29/recordings/${encodeURIComponent(recordingId)}/symbolwise-replay${suffix ? `?${suffix}` : ""}`);
+      const result = await json(`/api/recordings/${encodeURIComponent(recordingId)}/symbolwise-replay${suffix ? `?${suffix}` : ""}`);
       if (current !== generation) return;
       if (result.candidate_only !== true || result.calibrated_detection_count !== null || result.window_count_per_stream !== 600) throw new Error("unsafe symbolwise replay semantics");
       payload = result; render();

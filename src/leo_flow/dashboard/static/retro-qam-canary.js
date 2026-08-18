@@ -4,7 +4,7 @@ function add(parent, tag, value, className = "") { const node = document.createE
 function goodnessBand(value) { return value >= 0.7 ? "high" : value >= 0.35 ? "moderate" : "low"; }
 async function loadCanary() {
   try {
-    const response = await fetch("/api/v21/canaries/retro-qam/latest", {headers: {accept: "application/json"}, credentials: "same-origin"}); const payload = await response.json();
+    const response = await fetch("/api/canaries/retro-qam/latest", {headers: {accept: "application/json"}, credentials: "same-origin"}); const payload = await response.json();
     if (!response.ok) throw new Error(payload?.error?.message || `request failed (${response.status})`); if (payload.candidate_only !== true || payload.calibrated_detection !== null) throw new Error("unsafe canary semantics");
     const metrics = byId("canary-metrics"); metrics.hidden = false;
     for (const [label, value] of [["Oracle match", payload.metrics_match_oracle ? "PASS" : "FAIL"], ["Combined QAM goodness", `${Number(payload.combined_qam_goodness).toFixed(3)} · ${goodnessBand(Number(payload.combined_qam_goodness))}`], ["Combined accuracy", `${(100 * Number(payload.combined_hard_symbol_accuracy)).toFixed(2)}%`], ["Combined RMS EVM", Number(payload.combined_rms_evm).toFixed(3)], ["Completed UTC", new Date(Number(payload.completed_utc_ns) / 1_000_000).toISOString()], ["Cadence", `${Number(payload.schedule_interval_seconds) / 60} min`]]) { const item = document.createElement("div"); add(item, "span", label, "metric-label"); add(item, "strong", value, "metric-value"); metrics.append(item); }

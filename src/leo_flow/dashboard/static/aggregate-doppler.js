@@ -115,7 +115,7 @@ async function load() {
   byId("doppler-aggregate-state").dataset.state = "loading"; byId("doppler-aggregate-state").textContent = "Loading aggregate Doppler evidence…";
   try {
     const query = new URLSearchParams({start_utc_ns: utcNs(byId("start-utc").value), stop_utc_ns: utcNs(byId("stop-utc").value)});
-    const response = await fetch(`/api/v14/doppler-aggregate?${query}`);
+    const response = await fetch(`/api/doppler-aggregate?${query}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     if (!payload.warnings?.includes("candidate-only-evidence-not-satellite-detection") || !payload.warnings?.includes("radio-and-receiver-series-are-never-pooled")) throw new Error("unsafe aggregate semantics");

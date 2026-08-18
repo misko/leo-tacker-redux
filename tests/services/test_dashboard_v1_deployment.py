@@ -366,29 +366,29 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
     v2 = server.handler.handle(
         JsonRequest(
             "GET",
-            "/api/v2/capture-batches",
+            "/api/capture-batches",
             {"start_utc_ns": "0", "stop_utc_ns": "1"},
         )
     )
     assert v2.status == 200 and v2.body == b'{"items":[],"next_cursor":null}'
     v3 = server.handler.handle(
-        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}", {})
+        JsonRequest("GET", f"/api/recordings/{RECORDING_ID}", {})
     )
     assert v3.status == 200
     assert json.loads(v3.body)["recording_id"] == str(RECORDING_ID)
     waterfall_response = server.handler.handle(
-        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}/waterfall", {})
+        JsonRequest("GET", f"/api/recordings/{RECORDING_ID}/waterfall", {})
     )
     assert waterfall_response.status == 200
     assert json.loads(waterfall_response.body)["state"] == "complete"
     suite_response = server.handler.handle(
-        JsonRequest("GET", f"/api/v4/recordings/{RECORDING_ID}/starlink-suite", {})
+        JsonRequest("GET", f"/api/recordings/{RECORDING_ID}/starlink-suite", {})
     )
     assert suite_response.status == 404
     surrogate_response = server.handler.handle(
         JsonRequest(
             "GET",
-            f"/api/v10/recordings/{RECORDING_ID}/starlink-surrogate-null",
+            f"/api/recordings/{RECORDING_ID}/starlink-surrogate-null",
             {"methods": "glrt-32", "maximum_rows": "8"},
         )
     )
@@ -399,7 +399,7 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
     constellation_response = server.handler.handle(
         JsonRequest(
             "GET",
-            f"/api/v11/recordings/{RECORDING_ID}/starlink-pilot-constellation",
+            f"/api/recordings/{RECORDING_ID}/starlink-pilot-constellation",
             {"edges": "lower", "maximum_points_per_stream": "600"},
         )
     )
@@ -410,6 +410,11 @@ def test_normal_dashboard_composition_serves_v3_recordings_and_preserves_v1_v2()
     v1 = server.handler.handle(JsonRequest("GET", "/api/storage-health", {}))
     assert v1.status == 200
     assert v1.body == b'{"available":false,"free_bytes":null,"total_bytes":null}'
+    retired = server.handler.handle(
+        JsonRequest("GET", f"/api/v3/recordings/{RECORDING_ID}", {})
+    )
+    assert retired.status == 410
+    assert json.loads(retired.body)["error"]["code"] == "gone"
     service.shutdown()
 
 

@@ -129,6 +129,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV28,
     DashboardJsonApplicationV29,
     DashboardJsonApplicationV30,
+    DashboardPublicJsonApplication,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -772,7 +773,7 @@ def _build_dashboard(
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v30),
+        DashboardUiApplication(DashboardPublicJsonApplication(v30)),
         diagnostics=diagnostics,
     )
 
