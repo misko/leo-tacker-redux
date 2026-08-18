@@ -273,7 +273,7 @@ def test_html_has_keyboard_landmarks_labels_and_explicit_state_hooks() -> None:
         '<label for="window-hours"',
         '<label for="evaluation-id"',
         '<label for="model-id"',
-        '<option value="8">8 hours</option>',
+        '<option value="8" selected>8 hours</option>',
         '<option value="168">7 days</option>',
         '<option value="720">30 days</option>',
         'aria-live="polite"',

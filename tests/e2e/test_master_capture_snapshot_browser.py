@@ -15,9 +15,9 @@ from leo_flow.dashboard.api import DashboardJsonApplicationV2, JsonRequest, Json
 from leo_flow.dashboard.ui import DashboardUiApplication
 from tests.dashboard._fixtures import repository
 
-_NOW_MS = 7_200_000
+_NOW_MS = 28_800_000
 _START_NS = 0
-_STOP_NS = 7_200_000_000_000
+_STOP_NS = 28_800_000_000_000
 _QAM_STATES = ("complete", "pending", "no_candidate", "not_analyzed", "failed")
 
 
