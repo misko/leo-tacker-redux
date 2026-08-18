@@ -71,6 +71,10 @@ class FullDwellTimelineCatalogV0_1(Protocol):
         self, ref: FullDwellTimelineProductRefV0_1
     ) -> CatalogedFullDwellTimelineV0_1 | None: ...
 
+    def latest_full_dwell_timeline(
+        self, recording_id: RecordingId
+    ) -> FullDwellTimelineProductRefV0_1 | None: ...
+
 
 class FullDwellTimelineBlobStore(BlobReader, BlobWriter, Protocol):
     pass
@@ -81,6 +85,11 @@ class DurableFullDwellTimelineStoreV0_1:
         self, blobs: FullDwellTimelineBlobStore, catalog: FullDwellTimelineCatalogV0_1
     ) -> None:
         self._blobs, self._catalog = blobs, catalog
+
+    def latest(
+        self, recording_id: RecordingId
+    ) -> FullDwellTimelineProductRefV0_1 | None:
+        return self._catalog.latest_full_dwell_timeline(recording_id)
 
     def publish(
         self,

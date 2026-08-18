@@ -33,6 +33,14 @@ class _Catalog:
     def get_full_dwell_timeline(self, ref):
         return self.item if self.item is not None and self.item.ref == ref else None
 
+    def latest_full_dwell_timeline(self, recording_id):
+        return (
+            self.item.ref
+            if self.item is not None
+            and self.item.projection.recording_id == recording_id
+            else None
+        )
+
 
 def test_cas_first_timeline_is_immutable_and_exactly_replayable(tmp_path) -> None:
     _view, request, bundle = _case(19)

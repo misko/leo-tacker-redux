@@ -82,18 +82,51 @@ class DurableFullDwellTimelineLeaseProducerV0_1:
                 ),
                 lease.stream_selections,
             )
+        existing = self._products.latest(request.recording_id)
+        bundle = None
+        if existing is not None:
+            with self._products.open(existing) as persisted:
+                if (
+                    persisted.recording_id != request.recording_id
+                    or persisted.recording_identity_digest
+                    != request.recording_object_ref.identity_digest()
+                    or persisted.request_digest != request.digest
+                    or persisted.plan != request.plan
+                    or {
+                        tuple(
+                            map(
+                                str,
+                                (
+                                    item.radio_id,
+                                    item.lnb_id,
+                                    item.segment_id,
+                                    item.receiver_chain_id,
+                                    item.channel_number,
+                                    item.edge,
+                                ),
+                            )
+                        )
+                        for item in persisted.streams
+                    }
+                    != {item.identity for item in request.stream_selections}
+                ):
+                    raise ValueError("existing timeline differs from requested replay")
+                bundle = persisted
         with self._reader.open(lease.recording_ref) as recording:
-            bundle = self._analyzer.analyze(recording, request)
+            if bundle is None:
+                bundle = self._analyzer.analyze(recording, request)
             pilot_bundle = (
                 self._pilot_analyzer.analyze(recording, pilot_request)
                 if pilot_request is not None
                 else None
             )
-        ref = self._products.publish(
-            request,
-            bundle,
-            idempotency_key=f"timeline:{request.recording_id}:{request.digest.value}",
-        )
+        ref = existing
+        if ref is None:
+            ref = self._products.publish(
+                request,
+                bundle,
+                idempotency_key=f"timeline:{request.recording_id}:{request.digest.value}",
+            )
         timeline_ref = ArtifactRef(
             ref.analysis_id, ref.bundle_ref.digest, bundle.schema
         )
