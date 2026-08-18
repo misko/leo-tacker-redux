@@ -1,0 +1,33 @@
+{
+  "schema_id": "org.leo-flow.gauss-symbolwise-replay-deployment",
+  "schema_version": "0.1",
+  "required_migration": "0052_starlink_symbolwise_replay_product_v0_1.sql",
+  "enabled_by_default": false,
+  "admission": {
+    "mode": "explicit-request-only",
+    "automatic_capture_enqueue": false,
+    "maximum_claims_per_cycle": 1,
+    "maximum_optional_concurrency": 1,
+    "maximum_focused_backlog": 0,
+    "host_cpu_cores": 24,
+    "reserved_cpu_cores": 8,
+    "estimated_claim_cpu_cores": 3,
+    "minimum_memory_available_bytes": 8589934592,
+    "maximum_io_pressure_avg10": 5.0
+  },
+  "worker": {
+    "worker_id": "gauss-symbolwise-replay-1",
+    "lease_ttl_seconds": 7200,
+    "poll_seconds": 30,
+    "cpu_quota_percent": 300,
+    "memory_max_bytes": 12884901888,
+    "tasks_max": 16,
+    "nice": 15
+  },
+  "readiness": {
+    "release_verification_required": true,
+    "fresh_capture_guard_required": true,
+    "exact_recording_identity_required": true,
+    "immutable_frequency_center_required": true
+  }
+}

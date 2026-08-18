@@ -12,6 +12,10 @@ def test_every_optional_heavy_worker_shares_one_capture_aware_slot() -> None:
             "leo-gauss-prompt-full-dwell.service.in"
         ),
         Path("deploy/gauss-full-dwell-v1/leo-gauss-full-dwell.service.in"),
+        Path(
+            "deploy/gauss-symbolwise-replay-v1/"
+            "leo-gauss-symbolwise-replay.service.in"
+        ),
     )
     common = (
         "--capture-guard-status %t/leo-flow-optional-heavy/guard.json",
