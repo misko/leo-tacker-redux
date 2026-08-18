@@ -104,6 +104,6 @@ SELECT latest.source_kind,latest.recording_id
    SELECT 1 FROM public.dashboard_capture_qam_candidate_v0_1 summary
     WHERE summary.source_kind=latest.source_kind AND summary.analysis_id=latest.analysis_id
  )
- ORDER BY latest.published_at_utc,latest.analysis_id
+ ORDER BY latest.published_at_utc DESC,latest.analysis_id DESC
  LIMIT %s
 """
