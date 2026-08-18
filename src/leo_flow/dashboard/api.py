@@ -85,6 +85,10 @@ from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     StarlinkAcquiredConstellationQueryV0_3,
     StarlinkAcquiredConstellationViewMode,
 )
+from leo_flow.contracts.starlink_adaptive_response import (
+    RecordingStarlinkAdaptiveResponseQueryPortV0_1,
+    StarlinkAdaptiveResponseQueryV0_1,
+)
 from leo_flow.contracts.starlink_detector_suite import (
     REPORT_METHOD_ORDER,
     StarlinkDetectorMethod,
@@ -1149,6 +1153,103 @@ class DashboardJsonApplicationV23:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class DashboardJsonApplicationV24:
+    """Expose pattern-symmetric adaptive detector responses across a dwell."""
+
+    _PREFIX = "/api/v24/recordings/"
+    _MAX_QUERY_BYTES = 8_192
+    _MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        responses: RecordingStarlinkAdaptiveResponseQueryPortV0_1,
+    ) -> None:
+        self._previous, self._responses = previous, responses
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-adaptive-response":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._responses.recording_starlink_adaptive_response(
+                _starlink_adaptive_response_query(
+                    RecordingId(unquote(parts[0])),
+                    request.query,
+                    self._MAX_QUERY_BYTES,
+                )
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("adaptive response exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except LookupError as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _starlink_adaptive_response_query(
+    recording_id: RecordingId,
+    query: dict[str, str],
+    maximum_query_bytes: int,
+) -> StarlinkAdaptiveResponseQueryV0_1:
+    allowed = {
+        "methods",
+        "radio_ids",
+        "lnb_ids",
+        "receiver_chain_ids",
+        "edges",
+        "maximum_points",
+    }
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    if (
+        sum(len(key.encode()) + len(value.encode()) for key, value in query.items())
+        > maximum_query_bytes
+    ):
+        raise ValueError("adaptive response query text exceeds its bound")
+    methods_raw = _comma_values(query, "methods", len(REPORT_METHOD_ORDER))
+    try:
+        return StarlinkAdaptiveResponseQueryV0_1(
+            recording_id,
+            REPORT_METHOD_ORDER
+            if methods_raw is None
+            else tuple(StarlinkDetectorMethod(value) for value in methods_raw),
+            tuple(
+                RadioId(value)
+                for value in (_comma_values(query, "radio_ids", 64) or ())
+            ),
+            _comma_values(query, "lnb_ids", 64) or (),
+            tuple(
+                ReceiverChainId(value)
+                for value in (_comma_values(query, "receiver_chain_ids", 32) or ())
+            ),
+            tuple(
+                StarlinkEdge(value)
+                for value in (_comma_values(query, "edges", 2) or ())
+            ),
+            int(query.get("maximum_points", "4096")),
+        )
+    except ValueError as error:
+        raise ValueError("invalid adaptive response query value") from error
 
 
 def _capture_qam_summary_query(

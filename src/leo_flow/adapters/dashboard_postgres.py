@@ -96,6 +96,11 @@ from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     RecordingStarlinkAcquiredConstellationViewV0_3,
     StarlinkAcquiredConstellationQueryV0_3,
 )
+from leo_flow.contracts.starlink_adaptive_response import (
+    RecordingStarlinkAdaptiveResponseQueryPortV0_1,
+    RecordingStarlinkAdaptiveResponseViewV0_1,
+    StarlinkAdaptiveResponseQueryV0_1,
+)
 from leo_flow.contracts.starlink_full_dwell_response import (
     RecordingStarlinkFullDwellQueryPortV0_1,
     RecordingStarlinkFullDwellViewV0_1,
@@ -177,6 +182,8 @@ class PostgresDashboardRepository:
         full_dwell_timeline: RecordingFullDwellTimelineQueryPortV0_1 | None = None,
         acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3 | None = None,
         analysis_approaches: RecordingAnalysisApproachQueryPortV0_1 | None = None,
+        adaptive_responses: RecordingStarlinkAdaptiveResponseQueryPortV0_1
+        | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -206,6 +213,7 @@ class PostgresDashboardRepository:
         self._full_dwell_timeline = full_dwell_timeline
         self._acquired_qam = acquired_qam
         self._analysis_approaches = analysis_approaches
+        self._adaptive_responses = adaptive_responses
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
@@ -257,6 +265,20 @@ class PostgresDashboardRepository:
         except LookupError as error:
             raise DashboardNotFound(
                 f"analysis approaches for recording {recording_id} were not found"
+            ) from error
+
+    def recording_starlink_adaptive_response(
+        self, query: StarlinkAdaptiveResponseQueryV0_1
+    ) -> RecordingStarlinkAdaptiveResponseViewV0_1:
+        if self._adaptive_responses is None:
+            raise DashboardNotFound(
+                f"adaptive response for recording {query.recording_id} is unavailable"
+            )
+        try:
+            return self._adaptive_responses.recording_starlink_adaptive_response(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"adaptive response for recording {query.recording_id} was not found"
             ) from error
 
     def recording_evidence_context(

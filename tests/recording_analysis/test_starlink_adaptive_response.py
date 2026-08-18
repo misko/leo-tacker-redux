@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import cast
 
+import pytest
+
 from leo_flow.analysis.recording.starlink_adaptive_response import (
     ExactStarlinkAdaptiveResponseAnalyzerV0_1,
 )
@@ -54,7 +56,8 @@ def _paired_ci16(rx0: tuple[complex, ...], rx1: tuple[complex, ...]) -> bytes:
     return bytes(result)
 
 
-def test_adaptive_response_runs_every_method_on_pattern_symmetric_union() -> None:
+@pytest.fixture(scope="module")
+def adaptive_response_result():
     config = StarlinkDetectorSuiteConfigV0_2((0, 3), (0.0, 1_000.0), (0.0,))
     templates = qin_edge_pilot_template_pair_v0_1(SAMPLE_RATE_HZ, StarlinkEdge.LOWER)
     injection = synthesize_starlink_injection_v0_2(
@@ -115,6 +118,13 @@ def test_adaptive_response_runs_every_method_on_pattern_symmetric_union() -> Non
     result = ExactStarlinkAdaptiveResponseAnalyzerV0_1(
         config, execution_context()
     ).analyze(cast(RecordingView, view), request)
+    return view, request, result
+
+
+def test_adaptive_response_runs_every_method_on_pattern_symmetric_union(
+    adaptive_response_result,
+) -> None:
+    _view, _request, result = adaptive_response_result
     stream = result.streams[0]
     assert tuple((item.window_index, item.method) for item in stream.points) == tuple(
         (window.window_index, method)
@@ -122,7 +132,7 @@ def test_adaptive_response_runs_every_method_on_pattern_symmetric_union() -> Non
         for method in REPORT_METHOD_ORDER
     )
     assert stream.selection.exact_windows[0].start_sample == 0
-    assert stream.selection.exact_windows[-1].stop_sample == segment.sample_count
+    assert stream.selection.exact_windows[-1].stop_sample == stream.segment_sample_count
     assert all(len(item.surrogates) == 4 for item in stream.points)
     assert all(item.qin.effective_search_cell_count > 0 for item in stream.points)
     assert stream.exact_coverage_fraction > 0

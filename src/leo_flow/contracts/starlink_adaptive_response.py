@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Protocol
 
 from ._validation import require_finite, require_token
 from .core import (
@@ -30,7 +31,7 @@ from .starlink_full_dwell_response import (
     StarlinkFullDwellWinnerV0_1,
 )
 from .starlink_surrogate_null import StarlinkSearchGridV0_1
-from .storage import RecordingObjectRef
+from .storage import ObjectRef, RecordingObjectRef
 
 V0_1 = SchemaVersion(0, 1)
 MAXIMUM_ADAPTIVE_STREAMS = 16
@@ -306,6 +307,114 @@ class StarlinkAdaptiveResponseBundleV0_1:
     @property
     def digest(self) -> Digest:
         return canonical_digest(self)
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveResponseProductRefV0_1:
+    analysis_id: str
+    recording_id: RecordingId
+    bundle_ref: ObjectRef
+
+    @property
+    def artifact_ref(self) -> ArtifactRef:
+        return ArtifactRef(
+            self.analysis_id,
+            self.bundle_ref.digest,
+            SchemaRef(StarlinkAdaptiveResponseBundleV0_1.SCHEMA_ID, V0_1),
+        )
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveResponseCatalogProjectionV0_1:
+    analysis_id: str
+    recording_id: RecordingId
+    recording_identity_digest: Digest
+    timeline_ref: ArtifactRef
+    source_suite_ref: ArtifactRef
+    request_digest: Digest
+    stream_count: int
+    window_count: int
+    point_count: int
+
+    def __post_init__(self) -> None:
+        require_token(self.analysis_id, "analysis_id")
+        if (
+            not 1 <= self.stream_count <= MAXIMUM_ADAPTIVE_STREAMS
+            or not self.stream_count <= self.window_count
+            or self.point_count != self.window_count * len(REPORT_METHOD_ORDER)
+        ):
+            raise ValueError("adaptive response projection counts are invalid")
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveResponseQueryV0_1:
+    recording_id: RecordingId
+    methods: tuple[StarlinkDetectorMethod, ...] = REPORT_METHOD_ORDER
+    radio_ids: tuple[RadioId, ...] = ()
+    lnb_ids: tuple[str, ...] = ()
+    receiver_chain_ids: tuple[ReceiverChainId, ...] = ()
+    edges: tuple[StarlinkEdge, ...] = ()
+    maximum_points: int = 4096
+
+    def __post_init__(self) -> None:
+        for values, label in (
+            (self.methods, "methods"),
+            (self.radio_ids, "radios"),
+            (self.lnb_ids, "LNBs"),
+            (self.receiver_chain_ids, "receivers"),
+            (self.edges, "edges"),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"adaptive query {label} must be unique")
+        if not self.methods or not 1 <= self.maximum_points <= 16_384:
+            raise ValueError("adaptive query bounds are invalid")
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveResponsePresentationStreamV0_1:
+    radio_id: RadioId
+    lnb_id: str
+    segment_id: SegmentId
+    receiver_chain_id: ReceiverChainId
+    channel_number: int
+    edge: StarlinkEdge
+    sample_rate_hz: float
+    segment_sample_count: int
+    selection: StarlinkAdaptiveRefinementSelectionV0_1
+    points: tuple[StarlinkAdaptiveResponsePointV0_1, ...]
+    exact_coverage_fraction: float
+
+
+@dataclass(frozen=True)
+class RecordingStarlinkAdaptiveResponseViewV0_1:
+    schema: SchemaRef
+    recording_id: RecordingId
+    analysis_ref: ArtifactRef
+    timeline_ref: ArtifactRef
+    plan: StarlinkAdaptiveRefinementPlanV0_1
+    streams: tuple[StarlinkAdaptiveResponsePresentationStreamV0_1, ...]
+    original_point_count: int
+    truncated: bool
+    decimation: str
+    candidate_only: bool
+    calibration_required: bool
+    warnings: tuple[str, ...]
+
+    SCHEMA_ID = "org.leo-flow.dashboard.recording-starlink-adaptive-response"
+
+    def __post_init__(self) -> None:
+        if self.schema != SchemaRef(self.SCHEMA_ID, V0_1):
+            raise ValueError("unsupported adaptive response dashboard schema")
+        if self.original_point_count < sum(len(item.points) for item in self.streams):
+            raise ValueError("adaptive response presentation count is invalid")
+        if not self.candidate_only or not self.calibration_required:
+            raise ValueError("adaptive response dashboard must remain fail-closed")
+
+
+class RecordingStarlinkAdaptiveResponseQueryPortV0_1(Protocol):
+    def recording_starlink_adaptive_response(
+        self, query: StarlinkAdaptiveResponseQueryV0_1
+    ) -> RecordingStarlinkAdaptiveResponseViewV0_1: ...
 
 
 def _union_sample_count(intervals: tuple[tuple[int, int], ...]) -> int:

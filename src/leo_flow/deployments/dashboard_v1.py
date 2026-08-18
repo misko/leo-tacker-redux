@@ -63,6 +63,9 @@ from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPor
 from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     RecordingStarlinkAcquiredConstellationQueryPortV0_3,
 )
+from leo_flow.contracts.starlink_adaptive_response import (
+    RecordingStarlinkAdaptiveResponseQueryPortV0_1,
+)
 from leo_flow.contracts.starlink_full_dwell_response import (
     RecordingStarlinkFullDwellQueryPortV0_1,
 )
@@ -101,6 +104,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV21,
     DashboardJsonApplicationV22,
     DashboardJsonApplicationV23,
+    DashboardJsonApplicationV24,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -274,6 +278,14 @@ class DashboardV23QueryPort(
     """Add exact recording-level analysis/window/search facts."""
 
 
+class DashboardV24QueryPort(
+    DashboardV23QueryPort,
+    RecordingStarlinkAdaptiveResponseQueryPortV0_1,
+    Protocol,
+):
+    """Add bounded pattern-symmetric adaptive response traces."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -303,7 +315,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV23QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV24QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -341,6 +353,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV23Quer
     full_dwell = None
     full_dwell_timeline = None
     acquired_qam = None
+    adaptive_responses = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
         from leo_flow.adapters.dashboard_doppler_projection import (
@@ -490,6 +503,22 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV23Quer
             acquired_catalog,
             PostgresRecordingReceiverLnbResolverV0_3(connect),
         )
+        from leo_flow.adapters.starlink_adaptive_response_postgres import (
+            PostgresStarlinkAdaptiveResponseCatalogV0_1,
+        )
+        from leo_flow.analysis.recording.starlink_adaptive_response_persistence import (
+            DurableRecordingStarlinkAdaptiveResponseQueryV0_1,
+            DurableStarlinkAdaptiveResponseStoreV0_1,
+            StarlinkAdaptiveResponseBlobStore,
+        )
+
+        adaptive_catalog = PostgresStarlinkAdaptiveResponseCatalogV0_1(connect)
+        adaptive_responses = DurableRecordingStarlinkAdaptiveResponseQueryV0_1(
+            DurableStarlinkAdaptiveResponseStoreV0_1(
+                cast(StarlinkAdaptiveResponseBlobStore, blobs), adaptive_catalog
+            ),
+            adaptive_catalog,
+        )
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
@@ -503,6 +532,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV23Quer
         full_dwell_timeline=full_dwell_timeline,
         acquired_qam=acquired_qam,
         analysis_approaches=acquired_qam,
+        adaptive_responses=adaptive_responses,
     )
 
 
@@ -527,7 +557,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV23QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV24QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -565,10 +595,11 @@ def _build_dashboard(
     v21 = DashboardJsonApplicationV21(v20, canary)
     v22 = DashboardJsonApplicationV22(v21, queries)
     v23 = DashboardJsonApplicationV23(v22, queries)
+    v24 = DashboardJsonApplicationV24(v23, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v23),
+        DashboardUiApplication(v24),
         diagnostics=diagnostics,
     )
 

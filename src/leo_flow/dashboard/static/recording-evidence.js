@@ -387,34 +387,51 @@
   }
 
   async function loadDetectors(current) {
-    state("detector", "pending", "Loading bounded full-dwell detector evidence…");
+    state("detector", "pending", "Loading symmetric adaptive detector evidence…");
     try {
       const methods = checked("method"); const edges = checked("edge"); const channels = new Set(checked("channel").map(Number));
       const radios = new Set(selectedRecordings().map((item) => item.radio_id)); const receivers = new Set(checked("receiver")); const lnbs = new Set(checked("lnb")); const patterns = checked("pattern");
       if (!radios.size || !receivers.size || !lnbs.size || !channels.size || !edges.length || !methods.length || !patterns.length) {
         node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren(); state("detector", "missing", "Select at least one value in every detector scope."); return;
       }
-      const fetched = await availablePayloads(selectedRecordings().map((recording) => {
-        const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
-        return `/api/v15/recordings/${encodeURIComponent(recording.recording_id)}/starlink-full-dwell?${parameters}`;
-      }));
+      const adaptivePaths = selectedRecordings().map((recording) => {
+        const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, lnb_ids: [...lnbs].join(","), receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
+        return `/api/v24/recordings/${encodeURIComponent(recording.recording_id)}/starlink-adaptive-response?${parameters}`;
+      });
+      let fetched = await availablePayloads(adaptivePaths);
+      let adaptive = fetched.payloads.length > 0;
+      if (!adaptive) {
+        fetched = await availablePayloads(selectedRecordings().map((recording) => {
+          const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
+          return `/api/v15/recordings/${encodeURIComponent(recording.recording_id)}/starlink-full-dwell?${parameters}`;
+        }));
+      }
       if (current !== generation) return;
       if (!fetched.payloads.length) {
         node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
-        state("detector", "pending", "Full-dwell detector evidence is pending for every selected recording."); return;
+        state("detector", "pending", "Adaptive detector evidence is queued; no legacy fallback product is available yet."); return;
       }
       const grouped = new Map(); const approach = []; const mode = node("evidence-mode").value;
       for (const payload of fetched.payloads) for (const stream of payload.streams || []) {
-        const lnb = assignment(payload.recording_id, stream.receiver_chain_id)?.lnb_id;
+        const lnb = stream.lnb_id || assignment(payload.recording_id, stream.receiver_chain_id)?.lnb_id;
         if (!radios.has(stream.radio_id) || !receivers.has(stream.receiver_chain_id) || !lnbs.has(lnb) || !channels.has(Number(stream.channel_number)) || !edges.includes(stream.edge)) continue;
         const base = identity([payload.recording_id, stream.radio_id, lnb, stream.receiver_chain_id, `CH${stream.channel_number}`, stream.edge]);
-        approach.push({
-          kind: "detector", key: base, approach: "Qin + paired-surrogate detector suite", scope: base,
+        const exactWindows = stream.selection?.exact_windows || [];
+        const stages = [...new Set(exactWindows.map((item) => item.stage))];
+        approach.push(adaptive ? {
+          kind: "detector", key: base, approach: "Symmetric adaptive Qin + surrogate search", scope: base,
+          window: `${exactWindows.length} exact windows; stages ${stages.join(", ")}; ${duration(payload.plan.probe_sample_count, stream.sample_rate_hz)} probes`,
+          coverage: `${percent(stream.exact_coverage_fraction)} exact; fixed sentinels span the dwell and local windows remain sparse`,
+          search: `same union of sentinel, power-seed, Qin-selected, surrogate-selected, and local windows for every pattern; identical epoch/CFO grid; methods ${methods.join(", ")}`,
+          response: "algorithm score vs exact-window UTC; selection stage, finite paired rank, Qin-minus-max-surrogate margin",
+          status: "time look-elsewhere calibration required; candidate-only; maximum is descriptive",
+        } : {
+          kind: "detector", key: base, approach: "Legacy sparse Qin + paired-surrogate fallback", scope: base,
           window: `${stream.exact_window_count} exact selected windows from ${stream.prescreen_window_count} complete prescreen tiles`,
           coverage: `${percent(stream.exact_coverage_fraction)} exact; ${percent(stream.prescreen_coverage_fraction)} pattern-blind prescreen`,
           search: `identical epoch/CFO grid for Qin and every precommitted surrogate; methods ${methods.join(", ")}`,
           response: "algorithm score vs exact-window UTC; finite paired rank and Qin-minus-surrogate margin",
-          status: `${stream.refinement_is_data_adaptive ? "power-selected dependent windows" : "fixed windows"}; maximum over returned windows is descriptive, not calibrated`,
+          status: `${stream.refinement_is_data_adaptive ? "power-selected dependent windows" : "fixed windows"}; adaptive product pending; not calibrated`,
         });
         for (const point of stream.points || []) for (const pattern of patterns) {
           if (!methods.includes(point.method)) continue;
@@ -432,12 +449,12 @@
       drawChart("evidence-detector-canvas", series, "score [0,1]", mode, "series (maximum over returned exact windows)");
       seriesLegend("evidence-detector-legend", series);
       const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
-      state("detector", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled series; ${mode === "overall" ? "overall is the maximum over returned sparse exact windows" : "each point is one exact analyzed window"}.${partial}` : "No full-dwell points match the selected scope.");
+      state("detector", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled series from the ${adaptive ? "pattern-symmetric adaptive" : "legacy sparse fallback"} product; ${mode === "overall" ? "overall is the maximum over returned exact windows" : "each point is one exact analyzed window"}.${partial}` : "No detector points match the selected scope.");
     } catch (error) {
       if (current !== generation) return;
       node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
-      state("detector", error.status === 404 ? "pending" : "error", error.status === 404 ? "Full-dwell detector evidence is pending in the asynchronous queue." : `Detector evidence failed: ${error.message}`);
-      setApproachRows("detector", [{kind: "detector", key: "pending", approach: "Qin + paired-surrogate detector suite", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "identical Qin/surrogate search pending", response: "algorithm score vs UTC", status: error.status === 404 ? "queued" : error.message}]);
+      state("detector", error.status === 404 ? "pending" : "error", error.status === 404 ? "Adaptive detector evidence is pending in the asynchronous queue." : `Detector evidence failed: ${error.message}`);
+      setApproachRows("detector", [{kind: "detector", key: "pending", approach: "Symmetric adaptive Qin + surrogate search", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "same candidate/local windows and epoch/CFO search for every pattern", response: "algorithm score vs UTC", status: error.status === 404 ? "queued" : error.message}]);
     }
   }
 

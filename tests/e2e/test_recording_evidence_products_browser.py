@@ -20,6 +20,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV19,
     DashboardJsonApplicationV20,
     DashboardJsonApplicationV23,
+    DashboardJsonApplicationV24,
     JsonRequest,
     JsonResponse,
 )
@@ -282,6 +283,87 @@ class EvidencePorts:
             "streams": streams,
         }
 
+    def recording_starlink_adaptive_response(self, query: Any) -> dict[str, Any]:
+        self.detector_queries.append(query)
+        if str(query.recording_id) in self.missing_detector_recordings:
+            raise DashboardNotFound("adaptive response recording was not found")
+        self._raise_for_state(self.detector_state, "adaptive response")
+        identity = _identity(str(query.recording_id))
+        if identity is None:
+            raise DashboardNotFound("adaptive response recording was not found")
+        radio, receiver, lnb, segment = identity
+        if (
+            not _matches(query.radio_ids, radio)
+            or not _matches(query.receiver_chain_ids, receiver)
+            or (query.lnb_ids and lnb not in query.lnb_ids)
+            or (
+                query.edges
+                and "lower" not in {str(value.value) for value in query.edges}
+            )
+        ):
+            streams: list[dict[str, Any]] = []
+        else:
+            exact_windows = [
+                {
+                    "window_index": 0,
+                    "start_sample": 0,
+                    "stop_sample": 20_000,
+                    "stage": "sentinel",
+                    "selected_by_patterns": [],
+                },
+                {
+                    "window_index": 1,
+                    "start_sample": 20_000,
+                    "stop_sample": 40_000,
+                    "stage": "local",
+                    "selected_by_patterns": ["qin", "surrogate-0"],
+                },
+            ]
+            points = []
+            for method_offset, method in enumerate(query.methods):
+                for window_index in range(2):
+                    qin = 0.84 - method_offset * 0.08 - window_index * 0.02
+                    points.append(
+                        {
+                            "method": method.value,
+                            "window_index": window_index,
+                            "interval_start_utc_ns": 1_000_000_000
+                            + window_index * 10_000_000,
+                            "interval_stop_utc_ns": 1_010_000_000
+                            + window_index * 10_000_000,
+                            "qin": {"score": qin},
+                            "surrogates": [
+                                {"winner": {"score": qin - 0.25}},
+                                {"winner": {"score": qin - 0.30}},
+                            ],
+                            "finite_upper_tail_rank": 1,
+                            "qin_minus_max_surrogate": 0.25,
+                        }
+                    )
+            streams = [
+                {
+                    "radio_id": radio,
+                    "lnb_id": lnb,
+                    "segment_id": segment,
+                    "receiver_chain_id": receiver,
+                    "channel_number": 4,
+                    "edge": "lower",
+                    "sample_rate_hz": 2_500_000.0,
+                    "segment_sample_count": 60_000,
+                    "selection": {"exact_windows": exact_windows},
+                    "exact_coverage_fraction": 2 / 3,
+                    "points": points,
+                }
+            ]
+        return {
+            "recording_id": str(query.recording_id),
+            "candidate_only": True,
+            "calibration_required": True,
+            "plan": {"probe_sample_count": 20_000},
+            "streams": streams,
+            "warnings": ["time-look-elsewhere-calibration-required"],
+        }
+
     def recording_full_dwell_timeline(self, query: Any) -> dict[str, Any]:
         self.timeline_queries.append(query)
         identity = _identity(str(query.recording_id))
@@ -443,7 +525,8 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
     v17 = DashboardJsonApplicationV17(v16, fixture_port)
     v19 = DashboardJsonApplicationV19(v17, fixture_port)
     v20 = DashboardJsonApplicationV20(v19, fixture_port)
-    return DashboardUiApplication(DashboardJsonApplicationV23(v20, fixture_port))
+    v23 = DashboardJsonApplicationV23(v20, fixture_port)
+    return DashboardUiApplication(DashboardJsonApplicationV24(v23, fixture_port))
 
 
 @contextmanager
@@ -529,7 +612,13 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             approaches = page.locator("#evidence-approaches-table")
             expect(approaches).to_contain_text("Acquired pilot QAM v0.3")
             expect(approaches).to_contain_text("Complete IQ power timeline")
-            expect(approaches).to_contain_text("Qin + paired-surrogate detector suite")
+            expect(approaches).to_contain_text(
+                "Symmetric adaptive Qin + surrogate search"
+            )
+            expect(approaches).to_contain_text("stages sentinel, local")
+            expect(approaches).to_contain_text(
+                "same union of sentinel, power-seed, Qin-selected, surrogate-selected"
+            )
             expect(approaches).to_contain_text("Basic blind Doppler track")
             expect(approaches).to_contain_text("Advanced-path-only Doppler")
             expect(approaches).to_contain_text("-1040.0…1040.0 kHz physical CFO")
