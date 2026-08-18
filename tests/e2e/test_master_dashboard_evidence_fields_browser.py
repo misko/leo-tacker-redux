@@ -47,7 +47,7 @@ class _MasterEvidencePorts:
             "analysis_ref": {"artifact_id": f"slqam3rec_{recording_id}"},
             "candidate_only": True,
             "calibration_required": True,
-            "mode": "overall",
+            "mode": query.mode.value,
             "streams": [
                 {
                     "radio_id": "radio_a",
@@ -60,7 +60,20 @@ class _MasterEvidencePorts:
                         "support_weighted_rms_evm": 0.78,
                         "window_count": 32,
                     },
-                    "windows": [],
+                    "windows": [
+                        {
+                            "window_index": 0,
+                            "hard_symbol_accuracy": 0.26,
+                            "rms_evm": 4.0,
+                            "verify_minus_control_margin": 0.001,
+                        },
+                        {
+                            "window_index": 31,
+                            "hard_symbol_accuracy": 0.88,
+                            "rms_evm": 0.65,
+                            "verify_minus_control_margin": 0.3,
+                        },
+                    ],
                 }
             ],
         }
