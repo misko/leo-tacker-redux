@@ -72,6 +72,15 @@
   width: 0.65rem;
 }
 
+.capture-doppler-summary[data-state="pending"] { color: var(--warning); }
+.capture-doppler-summary[data-state="error"] { color: var(--danger); }
+.capture-doppler-summary[data-state="unavailable"] { color: var(--muted); }
+.capture-doppler-candidate {
+  display: block;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+}
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 19rem; background: #09100e; color: var(--ink); }

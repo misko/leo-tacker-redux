@@ -15,6 +15,8 @@ let loadedCaptureBatches = [];
 let currentCaptureBounds = null;
 let captureBatchGeneration = 0;
 let starlinkRecordingStates = new Map();
+let captureDopplerSummaries = new Map();
+let captureDopplerBulkState = "loading";
 const captureDurationCache = new Map();
 const captureDurationQueued = new Set();
 const captureDurationQueue = [];
@@ -192,6 +194,50 @@ function appendStatusIcon(cell, state, kind) {
   cell.title = `${kind === "capture" ? "Capture" : "Analysis"}: ${state.replaceAll("_", " ")}`;
 }
 
+function formatDriftRate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "Unavailable";
+  return Math.abs(numeric) >= 1000
+    ? `${(numeric / 1000).toFixed(2)} kHz/s`
+    : `${numeric.toFixed(1)} Hz/s`;
+}
+
+function appendCaptureDopplerCell(row, attempt) {
+  const cell = document.createElement("td");
+  cell.className = "capture-doppler-summary";
+  if (!attempt.recording_id) {
+    cell.textContent = "—";
+    cell.dataset.state = "unavailable";
+  } else if (captureDopplerBulkState === "loading") {
+    cell.textContent = "Loading…";
+    cell.dataset.state = "pending";
+  } else if (captureDopplerBulkState === "error") {
+    cell.textContent = "Error";
+    cell.dataset.state = "error";
+    cell.title = "Bulk measured Doppler projection failed";
+  } else {
+    const summary = captureDopplerSummaries.get(attempt.recording_id);
+    const state = summary?.state || "unavailable";
+    cell.dataset.state = state;
+    if (state === "complete") {
+      for (const candidate of summary.candidates || []) {
+        const line = appendText(
+          cell,
+          "span",
+          `${candidate.lnb_id} / ${candidate.receiver_chain_id}: ${formatDriftRate(candidate.drift_rate_hz_s)}`,
+          "capture-doppler-candidate",
+        );
+        line.title = `Candidate-only published total fit; ${candidate.candidate_id}; ${candidate.model}; ranking score ${candidate.ranking_score}; Doppler product ${candidate.doppler_id}; algorithm ${candidate.algorithm_version}`;
+      }
+      cell.title = "Highest public ranking-score candidate selected independently for each authoritative LNB / receiver; not a calibrated detection";
+    } else {
+      cell.textContent = state === "pending" ? "Pending" : state === "error" ? "Error" : "Unavailable";
+      cell.title = (summary?.reason_codes || ["published-total-doppler-unavailable"]).join(", ");
+    }
+  }
+  row.append(cell);
+}
+
 function radioMatchesFilter(radioId, radioFilter) {
   if (radioFilter === "") return true;
   const stableId = String(radioId).toLowerCase();
@@ -358,6 +404,8 @@ function appendBatchAttemptRow(body, batch, attempt) {
   appendStatusIcon(analysisCell, attempt.analysis_state, "analysis");
   row.append(analysisCell);
 
+  appendCaptureDopplerCell(row, attempt);
+
   const pilotCell = document.createElement("td");
   pilotCell.className = "pilot-detection-counts";
   pilotCell.textContent = "— / —";
@@ -449,6 +497,32 @@ async function loadCaptureBatches(bounds, cursor = null, drainForRadio = false) 
     }
     setState("capture-batches-state", "error", `Capture batches unavailable: ${safeError(error)}`);
     throw error;
+  }
+}
+
+async function loadCaptureDopplerSummaries(bounds) {
+  captureDopplerBulkState = "loading";
+  captureDopplerSummaries = new Map();
+  renderCaptureRows();
+  try {
+    const payload = await fetchJson(`/api/v18/capture-doppler-summaries?${timeQuery(bounds)}&maximum_recordings=400`);
+    if (
+      payload.candidate_only !== true
+      || payload.calibrated_detection_count !== null
+      || !(payload.warnings || []).includes("radio-lnb-receiver-candidates-are-never-pooled")
+    ) {
+      throw new Error("Dashboard returned unsafe capture Doppler semantics");
+    }
+    captureDopplerSummaries = new Map(
+      (payload.recordings || []).map((item) => [item.recording_id, item]),
+    );
+    captureDopplerBulkState = "ready";
+  } catch (error) {
+    captureDopplerSummaries = new Map();
+    captureDopplerBulkState = error?.dashboardStatus === 404 ? "unavailable" : "error";
+    if (captureDopplerBulkState === "error") throw error;
+  } finally {
+    renderCaptureRows();
   }
 }
 
@@ -720,6 +794,7 @@ async function refreshDashboard() {
     loadActivity(currentBounds),
     loadObservationAggregate(currentBounds),
     loadCaptureBatches(currentBounds, null, captureRadioFilter() !== ""),
+    loadCaptureDopplerSummaries(currentBounds),
     loadRecordings(currentBounds),
     loadTracks(currentBounds),
     loadStorage(),
@@ -753,7 +828,10 @@ byId("capture-batches-more").addEventListener("click", () => {
 byId("capture-filters").addEventListener("submit", (event) => {
   event.preventDefault();
   const bounds = selectedCaptureBounds();
-  loadCaptureBatches(bounds, null, captureRadioFilter() !== "").catch(() => {});
+  Promise.allSettled([
+    loadCaptureBatches(bounds, null, captureRadioFilter() !== ""),
+    loadCaptureDopplerSummaries(bounds),
+  ]);
 });
 
 byId("capture-starlink-filter").addEventListener("change", () => {

@@ -36,6 +36,10 @@ from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardView,
     CaptureBatchTimeRangeQuery,
 )
+from leo_flow.contracts.dashboard_capture_doppler import (
+    CaptureDopplerSummaryQueryV0_1,
+    CaptureDopplerSummaryViewV0_1,
+)
 from leo_flow.contracts.dashboard_doppler import (
     DopplerVisualizationState,
     DopplerWaterfallLayer,
@@ -97,12 +101,18 @@ from leo_flow.contracts.starlink_temporal_pilot import (
     StarlinkTemporalPilotQueryV0_1,
 )
 from leo_flow.dashboard import DashboardNotFound, InvalidCursor
+from leo_flow.services.capture_doppler_summary import (
+    CaptureDopplerSummaryQueryServiceV0_1,
+)
 from leo_flow.services.recording_evidence import (
     RecordingEvidenceDopplerQueryServiceV0_1,
 )
 
 from . import dashboard_postgres_sql as sql
 from .dashboard_batch_postgres import PostgresCaptureBatchDashboardRepository
+from .dashboard_capture_doppler_postgres import (
+    PostgresCaptureDopplerScopeRepositoryV0_1,
+)
 from .dashboard_observation_postgres import PostgresObservationAggregateRepositoryV0_1
 from .dashboard_recording_evidence_postgres import (
     PostgresRecordingEvidenceContextRepositoryV0_1,
@@ -167,6 +177,14 @@ class PostgresDashboardRepository:
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
+        self._capture_doppler_summaries = CaptureDopplerSummaryQueryServiceV0_1(
+            PostgresCaptureDopplerScopeRepositoryV0_1(connect), self
+        )
+
+    def capture_doppler_summaries(
+        self, query: CaptureDopplerSummaryQueryV0_1
+    ) -> CaptureDopplerSummaryViewV0_1:
+        return self._capture_doppler_summaries.capture_doppler_summaries(query)
 
     def recording_starlink_acquired_constellation(
         self, query: StarlinkAcquiredConstellationQueryV0_3
