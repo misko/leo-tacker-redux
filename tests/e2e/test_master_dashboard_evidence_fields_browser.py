@@ -12,9 +12,13 @@ from typing import Any, cast
 from playwright.sync_api import expect, sync_playwright
 
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
-from leo_flow.contracts.core import RecordingId
-from leo_flow.contracts.core import CaptureAttemptId, CaptureBatchId, RadioId, UtcNs
-from leo_flow.dashboard.repository import CaptureBatchProjection, InMemoryDashboardRepository
+from leo_flow.contracts.core import (
+    CaptureAttemptId,
+    CaptureBatchId,
+    RadioId,
+    RecordingId,
+    UtcNs,
+)
 from leo_flow.dashboard.api import (
     DashboardJsonApplicationV3,
     DashboardJsonApplicationV16,
@@ -23,6 +27,10 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV22,
     JsonRequest,
     JsonResponse,
+)
+from leo_flow.dashboard.repository import (
+    CaptureBatchProjection,
+    InMemoryDashboardRepository,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
 from tests.dashboard._fixtures import capture_batches, repository
