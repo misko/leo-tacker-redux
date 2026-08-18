@@ -1,0 +1,24 @@
+[Unit]
+Description=Redux historical Starlink pilot/QAM regression canary
+ConditionPathExists=@CORPUS_MANIFEST@
+
+[Service]
+Type=oneshot
+WorkingDirectory=@SOURCE_ROOT@
+Environment="PYTHONNOUSERSITE=1"
+ExecStart=@PYTHON_ENV_ROOT@/bin/leo-starlink-retro-qam-canary --corpus-manifest @CORPUS_MANIFEST@ --receipt @STATE_ROOT@/latest.receipt.json --git-commit @SOURCE_COMMIT@
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=@SOURCE_ROOT@ @CORPUS_ROOT@
+ReadWritePaths=@STATE_ROOT@
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+MemoryHigh=2G
+MemoryMax=4G
+TasksMax=32
+

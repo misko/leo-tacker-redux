@@ -26,7 +26,7 @@ from leo_flow.contracts.starlink import StarlinkEdge
 from .fakes import execution_context
 
 MANIFEST_PATH = Path(__file__).parent / "fixtures/retro_qam_2026_08_17_v1.json"
-MANIFEST_SHA256 = "6b566c056146726c851f38fbde03ddb2ebb4fe3f74a21be1f81a608a3c05f2bc"
+MANIFEST_SHA256 = "47a5c98064128cfdcebcf1350acb3b3005f2646e769d45d8c92a5f2def22ba7e"
 
 
 def _manifest() -> dict[str, Any]:
@@ -49,7 +49,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def test_frozen_manifest_separates_conditioned_decode_from_future_search() -> None:
+def test_frozen_manifest_accepts_native_v03_search_without_detection_claim() -> None:
     assert hashlib.sha256(MANIFEST_PATH.read_bytes()).hexdigest() == MANIFEST_SHA256
     document = _manifest()
 
@@ -63,11 +63,11 @@ def test_frozen_manifest_separates_conditioned_decode_from_future_search() -> No
         "payload_decoded": False,
     }
     assert document["future_revised_search_acceptance"]["status"] == (
-        "pending-revised-search"
+        "accepted-native-v0.3-multibasin-search"
     )
     assert (
         document["future_revised_search_acceptance"]["asserted_by_current_regression"]
-        is False
+        is True
     )
 
 

@@ -14,11 +14,18 @@ epoch and CFO. No `leo-tracker` code is imported or used at runtime.
 
 This is candidate evidence for a known published synchronization pilot. It is
 not a calibrated detection and does not decode payload. The manifest records
-the historical acquisition winners as pending acceptance targets for a revised
-search. The current test deliberately does not require the present production
-search to reproduce them, because doing so would freeze its known acquisition
-failure as desired behavior.
+the historical acquisition winners as accepted targets for the additive native
+v0.3 multi-basin search. The archived integration regression now requires Redux
+to recover the exact epoch on both receivers, CFO within 35 Hz, the held-out
+exact/control margin, individual constellation accuracy/EVM, and the historical
+inverse-noise dual-receiver metrics. The published v0.2 search remains
+immutable and is not reinterpreted.
+
+The independent `leo-starlink-retro-qam-canary` oneshot repeats this check from
+the raw object on a systemd timer. It hashes the complete 500,200,000-byte IQ
+object before every run and atomically publishes a candidate-only receipt. A
+passing canary is a numerical regression result for a known pilot, never a
+calibrated detection verdict.
 
 When the QNAP corpus is unavailable, external tests skip cleanly. The manifest
-scope and the separation between conditioned decode and future search
-acceptance remain covered without the mount.
+scope and candidate-only boundary remain covered without the mount.

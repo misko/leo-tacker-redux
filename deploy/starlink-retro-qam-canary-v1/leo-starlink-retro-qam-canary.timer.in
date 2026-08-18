@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodically verify historical Starlink pilot/QAM metrics in Redux
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+AccuracySec=1min
+Persistent=true
+Unit=leo-starlink-retro-qam-canary.service
+
+[Install]
+WantedBy=timers.target
+

@@ -249,3 +249,31 @@ signal-absent sections and must run the full target search. Existing v0.2 rows s
 the new statistic as unavailable until an explicit, versioned back-process creates
 the additive product; no historical value may be synthesized from the conditioned
 score.
+
+## 2026-08-18 — Periodic historical QAM regression canary
+
+**Status:** accepted as an operational numerical regression; never a detection
+calibration.
+
+The retained `2026_08_17_RETRO_QAM` corpus is the immutable acceptance oracle for
+the CH4 lower-edge observation at original dwell time 68.7 seconds. Redux must
+hash the complete raw CI16 object before each run, recover the v0.3 acquisition
+winner independently on RX0 and RX1, reproduce the individual pilot-QAM metrics,
+and reproduce the historical inverse-noise dual-receiver improvement within
+declared numerical tolerances. `leo-tracker` remains an offline oracle and is not
+imported at runtime.
+
+The check runs as an independent oneshot on a 30-minute systemd timer. It has no
+radio, capture, network, database, or dashboard capability and cannot delay live
+dwells. Each successful run atomically replaces one receipt bound to the corpus,
+selected window, algorithm/config identities, source commit, and measured
+metrics. A mismatch fails the service. Success means only that the known-pilot
+regression agrees with the frozen oracle; the receipt is candidate-only and has
+no calibrated detection field or threshold.
+
+The immutable v0.2 acquisition remains unchanged for replay. Acceptance applies
+to the additive v0.3 multi-basin acquisition, which covers at least ±400 kHz,
+retains separated timing/CFO basins, refines each at sample-level timing and fine
+CFO resolution, then selects on held-out pilot symbols. Any future change to the
+search space requires a new identity and re-evaluation of its whole-search null
+distribution.

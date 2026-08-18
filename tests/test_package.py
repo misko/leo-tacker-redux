@@ -21,5 +21,7 @@ def test_operator_console_scripts_are_part_of_the_release_surface() -> None:
         "leo-gauss-focused-capture": "leo_flow.deployments.gauss_focused_capture_operator:main",
         "leo-gauss-focused-analysis": "leo_flow.deployments.gauss_focused_analysis_operator:main",
         "leo-gauss-focused-continuous": "leo_flow.deployments.gauss_focused_continuous_operator:main",
+        "leo-gauss-full-dwell": "leo_station.full_dwell_operator:main",
+        "leo-starlink-retro-qam-canary": "leo_flow.deployments.starlink_retro_qam_canary:main",
         "leo-v5-supercycle-canary": "leo_flow.deployments.gauss_v5_supercycle_canary_operator:main",
     }

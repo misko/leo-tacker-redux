@@ -42,7 +42,7 @@ from .fakes import execution_context
 RATE = 2_500_000.0
 SAMPLE_COUNT = 14_000
 MANIFEST_PATH = Path(__file__).parent / "fixtures/retro_qam_2026_08_17_v1.json"
-MANIFEST_SHA256 = "6b566c056146726c851f38fbde03ddb2ebb4fe3f74a21be1f81a608a3c05f2bc"
+MANIFEST_SHA256 = "47a5c98064128cfdcebcf1350acb3b3005f2646e769d45d8c92a5f2def22ba7e"
 
 
 def _templates():

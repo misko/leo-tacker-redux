@@ -91,6 +91,11 @@
       "winning_epoch_sample": 2063
     }
   ],
+  "historical_combined_expectation": {
+    "hard_symbol_accuracy": 0.88375,
+    "rms_evm": 0.6380024919780618,
+    "soft_mean_confidence": 0.8936395049095154
+  },
   "iq_object": {
     "byte_count": 500200000,
     "bytes_per_sample": 8,
@@ -116,7 +121,7 @@
     "start_s_in_original_recording": 68.7
   },
   "future_revised_search_acceptance": {
-    "asserted_by_current_regression": false,
+    "asserted_by_current_regression": true,
     "expected_receiver_winners": [
       {
         "receiver_index": 0,
@@ -129,6 +134,6 @@
         "winning_epoch_sample": 2063
       }
     ],
-    "status": "pending-revised-search"
+    "status": "accepted-native-v0.3-multibasin-search"
   }
 }

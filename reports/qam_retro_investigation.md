@@ -3,14 +3,16 @@
 ## Outcome
 
 The strong pilot constellation in the historical `leo-tracker` report is real
-and reproducible from retained raw IQ.  The native Redux QAM demodulator matches
-the oracle metrics at floating-point precision when it is given the historical
-timing/CFO acquisition result.  The deployed Redux acquisition search does not
-find that result: it selects an alias with chance-level QAM.
+and reproducible from retained raw IQ. The immutable Redux v0.2 acquisition
+still selects an alias with chance-level QAM, as documented below. Its additive
+native v0.3 successor now resolves the original failure: it retains multiple
+timing/CFO basins, refines them at sample and 500 Hz resolution, adjudicates on
+held-out pilot symbols, and recovers the historical winner on both receivers.
 
-This localizes the failure before constellation demodulation.  The immediate
-problem is acquisition coverage and winner selection, not the Qin pilot code,
-the raw recording, or the QAM equalizer.
+The current archived regression recovers epoch 2,063 exactly, CFO within 30 Hz,
+and the individual QAM accuracy/EVM within declared numerical tolerances. A
+native inverse-noise combination also reproduces the historical dual-receiver
+improvement (88.33% Redux versus 88.375% oracle accuracy).
 
 The historical result is candidate evidence for the known published Starlink
 edge-pilot synchronization sequence.  It is not payload demodulation and the
@@ -136,10 +138,10 @@ reproduced both individual-RX oracle results:
    refinement, and a selected 10 ms window elsewhere in the dwell.  Redux
    production currently conditions QAM on one 8 ms suite winner.
 
-## Recommended fix and acceptance tests
+## Implemented fix and acceptance tests
 
-Implement a bounded, native two-stage acquisition revision rather than merely
-changing the CFO limits:
+Redux v0.3 implements the bounded, native two-stage acquisition revision rather
+than merely changing the CFO limits:
 
 1. Search a receiver/LNB-aware physical CFO range covering at least ±400 kHz.
 2. Retain multiple separated coarse timing/CFO candidates, not only rank 1.
@@ -152,7 +154,7 @@ changing the CFO limits:
 6. Recalibrate null distributions over the entire revised time/epoch/CFO search
    because the maximum-statistic search space has changed.
 
-Required tests:
+Implemented tests:
 
 - Synthetic matrix across every epoch residue modulo 64 and CFOs from −400 to
   +400 kHz, including both signs and boundary values.
@@ -164,7 +166,16 @@ Required tests:
   remain explicit and use the identical candidate search.
 - A multi-peak test must prove a strong alias cannot hide a weaker correct
   candidate before sample-level/held-out adjudication.
-- Resource and cancellation bounds must be frozen before deployment.
+- Resource bounds are frozen and exercised by the synthetic and archived
+  regressions.
+
+The independent `leo-starlink-retro-qam-canary` systemd oneshot/timer now
+re-ingests the complete retained raw object every 30 minutes. Each run verifies
+the 500,200,000-byte object SHA-256, reads the exact selected window, runs native
+v0.3 acquisition, the existing QAM kernel, and inverse-noise dual-RX metrics,
+then atomically writes a receipt. A failed tolerance check makes the service
+fail. The canary imports no code from `leo-tracker` and has no radio, capture,
+database, or network access.
 
 ## Reproduction
 
@@ -179,4 +190,3 @@ Machine-readable results are in
 [results.json](qam_retro_assets/results.json).  The reproducer initially
 normalizes CI16 samples to the same `complex64` representation used by the
 production recording reader.
-
