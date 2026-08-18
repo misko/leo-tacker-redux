@@ -51,6 +51,11 @@ from leo_flow.contracts.dashboard_full_dwell_timeline import (
     FullDwellTimelineQueryV0_1,
     RecordingFullDwellTimelineQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_master_capture import (
+    MAX_MASTER_CAPTURE_RECORDINGS,
+    MasterCaptureSnapshotQueryPortV0_1,
+    MasterCaptureSnapshotQueryV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_pilot_doppler import (
     PilotDopplerAssociationQueryV0_1,
@@ -1561,7 +1566,6 @@ class RecordingAnalysisFacadeApplication:
             "surrogate_maximum_rows",
         }
     )
-
     def __init__(
         self,
         previous: JsonDashboardHandler,
@@ -2039,6 +2043,44 @@ class RecordingAnalysisFacadeApplication:
         return {destination: values[source]} if source in values else {}
 
 
+class DashboardJsonApplicationCaptures:
+    """Expose one stored page-load snapshot at the stable capture resource."""
+
+    _ROUTE = "/api/captures"
+    _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        captures: MasterCaptureSnapshotQueryPortV0_1,
+    ) -> None:
+        self._previous, self._captures = previous, captures
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._ROUTE:
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            query, cursor = _master_capture_snapshot_query(request.query)
+            encoded = canonical_json_bytes(
+                self._captures.master_capture_snapshot(query, cursor)
+            )
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("master capture snapshot exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
 def _receiver_agnostic_cfo_qam_query(
     recording_id: RecordingId,
     query: dict[str, str],
@@ -2059,6 +2101,29 @@ def _receiver_agnostic_cfo_qam_query(
         ),
         int(query.get("maximum_windows", "6")),
     )
+
+
+def _master_capture_snapshot_query(
+    query: dict[str, str],
+) -> tuple[MasterCaptureSnapshotQueryV0_1, str | None]:
+    allowed = {"start_utc_ns", "stop_utc_ns", "maximum_recordings", "cursor"}
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    try:
+        parsed = MasterCaptureSnapshotQueryV0_1(
+            UtcNs(int(query["start_utc_ns"])),
+            UtcNs(int(query["stop_utc_ns"])),
+            int(query.get("maximum_recordings", str(MAX_MASTER_CAPTURE_RECORDINGS))),
+        )
+    except KeyError as error:
+        raise ValueError(f"missing query parameter {error.args[0]}") from error
+    except ValueError as error:
+        raise ValueError("master capture snapshot query is invalid") from error
+    cursor = query.get("cursor")
+    if cursor == "":
+        raise ValueError("master capture cursor cannot be empty")
+    return parsed, cursor
 
 
 def _symbolwise_replay_dashboard_query(
