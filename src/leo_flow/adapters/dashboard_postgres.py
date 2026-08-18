@@ -88,6 +88,10 @@ from leo_flow.contracts.dashboard_surrogate_distribution import (
     SurrogateScoreDistributionQueryPortV0_1,
     SurrogateScoreDistributionViewV0_1,
 )
+from leo_flow.contracts.dashboard_symbolwise_replay import (
+    RecordingSymbolwiseReplayDashboardQueryV0_1,
+    RecordingSymbolwiseReplayDashboardViewV0_1,
+)
 from leo_flow.contracts.dashboard_temporal_pilot import (
     TemporalPilotAggregateQueryPortV0_1,
     TemporalPilotAggregateViewV0_1,
@@ -136,12 +140,19 @@ from leo_flow.contracts.starlink_surrogate_null_pipeline import (
     RecordingStarlinkSurrogateNullViewV0_1,
     StarlinkSurrogateNullQueryV0_1,
 )
+from leo_flow.contracts.starlink_symbolwise_replay_product import (
+    RecordingStarlinkSymbolwiseReplayViewV0_1,
+    StarlinkSymbolwiseReplayQueryV0_1,
+)
 from leo_flow.contracts.starlink_temporal_pilot import (
     RecordingStarlinkTemporalPilotQueryPortV0_1,
     RecordingStarlinkTemporalPilotViewV0_1,
     StarlinkTemporalPilotQueryV0_1,
 )
 from leo_flow.dashboard import DashboardNotFound, InvalidCursor
+from leo_flow.dashboard.symbolwise_replay import (
+    RecordingSymbolwiseReplayDashboardProjectionV0_1,
+)
 from leo_flow.services.capture_doppler_summary import (
     CaptureDopplerSummaryQueryServiceV0_1,
 )
@@ -184,6 +195,12 @@ class _DashboardDopplerSourcePort(
     pass
 
 
+class _RecordingSymbolwiseReplaySourcePort(Protocol):
+    def recording_starlink_symbolwise_replay(
+        self, query: StarlinkSymbolwiseReplayQueryV0_1
+    ) -> RecordingStarlinkSymbolwiseReplayViewV0_1: ...
+
+
 class PostgresDashboardRepository:
     """Query normalized projections without gaining any write capability."""
 
@@ -209,6 +226,7 @@ class PostgresDashboardRepository:
         adaptive_qam: RecordingStarlinkAdaptiveQamQueryPortV0_4 | None = None,
         pilot_prescreens: RecordingStarlinkPilotPrescreenQueryPortV0_1 | None = None,
         pilot_refinements: RecordingStarlinkPilotRefinementQueryPortV0_1 | None = None,
+        symbolwise_replays: _RecordingSymbolwiseReplaySourcePort | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -242,6 +260,13 @@ class PostgresDashboardRepository:
         self._adaptive_qam = adaptive_qam
         self._pilot_prescreens = pilot_prescreens
         self._pilot_refinements = pilot_refinements
+        self._symbolwise_replay = (
+            None
+            if symbolwise_replays is None
+            else RecordingSymbolwiseReplayDashboardProjectionV0_1(
+                symbolwise_replays, self._recording_evidence
+            )
+        )
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
@@ -358,6 +383,20 @@ class PostgresDashboardRepository:
         except LookupError as error:
             raise DashboardNotFound(
                 f"pilot refinement for recording {query.recording_id} was not found"
+            ) from error
+
+    def recording_symbolwise_replay_dashboard(
+        self, query: RecordingSymbolwiseReplayDashboardQueryV0_1
+    ) -> RecordingSymbolwiseReplayDashboardViewV0_1:
+        if self._symbolwise_replay is None:
+            raise DashboardNotFound(
+                f"symbolwise replay for recording {query.recording_id} is unavailable"
+            )
+        try:
+            return self._symbolwise_replay.recording_symbolwise_replay_dashboard(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"symbolwise replay for recording {query.recording_id} was not found"
             ) from error
 
     def recording_pilot_doppler_association(

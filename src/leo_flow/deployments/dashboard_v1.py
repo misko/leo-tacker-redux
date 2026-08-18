@@ -57,6 +57,9 @@ from leo_flow.contracts.dashboard_score_distribution import (
 from leo_flow.contracts.dashboard_surrogate_distribution import (
     SurrogateScoreDistributionQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_symbolwise_replay import (
+    RecordingSymbolwiseReplayDashboardQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_temporal_pilot import (
     TemporalPilotAggregateQueryPortV0_1,
 )
@@ -121,6 +124,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV26,
     DashboardJsonApplicationV27,
     DashboardJsonApplicationV28,
+    DashboardJsonApplicationV29,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -334,6 +338,14 @@ class DashboardV28QueryPort(
     """Add exact Qin/surrogate responses at complete-IQ prescreen seeds."""
 
 
+class DashboardV29QueryPort(
+    DashboardV28QueryPort,
+    RecordingSymbolwiseReplayDashboardQueryPortV0_1,
+    Protocol,
+):
+    """Add complete durable symbolwise replay curves with hardware context."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -363,7 +375,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV27QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV29QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -405,6 +417,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV27Quer
     adaptive_qam = None
     pilot_prescreens = None
     pilot_refinements = None
+    symbolwise_replays = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
         from leo_flow.adapters.dashboard_doppler_projection import (
@@ -619,6 +632,23 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV27Quer
             ),
             pilot_refinement_catalog,
         )
+        from leo_flow.adapters.starlink_symbolwise_replay_postgres import (
+            PostgresStarlinkSymbolwiseReplayRepositoryV0_1,
+        )
+        from leo_flow.analysis.recording.starlink_symbolwise_replay_product_persistence import (
+            DurableRecordingStarlinkSymbolwiseReplayQueryV0_1,
+            DurableStarlinkSymbolwiseReplayStoreV0_1,
+            StarlinkSymbolwiseReplayBlobStore,
+        )
+
+        symbolwise_catalog = PostgresStarlinkSymbolwiseReplayRepositoryV0_1(connect)
+        symbolwise_replays = DurableRecordingStarlinkSymbolwiseReplayQueryV0_1(
+            DurableStarlinkSymbolwiseReplayStoreV0_1(
+                cast(StarlinkSymbolwiseReplayBlobStore, blobs),
+                symbolwise_catalog,
+            ),
+            symbolwise_catalog,
+        )
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
@@ -636,6 +666,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV27Quer
         adaptive_qam=adaptive_qam,
         pilot_prescreens=pilot_prescreens,
         pilot_refinements=pilot_refinements,
+        symbolwise_replays=symbolwise_replays,
     )
 
 
@@ -660,7 +691,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV28QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV29QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -703,10 +734,11 @@ def _build_dashboard(
     v26 = DashboardJsonApplicationV26(v25, queries)
     v27 = DashboardJsonApplicationV27(v26, queries)
     v28 = DashboardJsonApplicationV28(v27, queries)
+    v29 = DashboardJsonApplicationV29(v28, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v28),
+        DashboardUiApplication(v29),
         diagnostics=diagnostics,
     )
 
