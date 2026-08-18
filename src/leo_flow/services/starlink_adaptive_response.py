@@ -56,7 +56,10 @@ class StaleAdaptiveResponseLeaseError(RuntimeError):
 # coverage layer; these sentinels guarantee that exact evidence is distributed
 # across the dwell instead of clustering only at global score maxima.
 ADAPTIVE_SENTINEL_STRIDE_SECONDS = 1.0
-ADAPTIVE_LOCAL_RADIUS_SECONDS = 0.1
+# Once a pattern wins a one-second sentinel, replay the same Qin/control union
+# at the legacy 100 ms cadence across +/-500 ms.  With Qin plus four controls,
+# 61 sentinels and eight power seeds this remains below the 128-window bound.
+ADAPTIVE_LOCAL_RADIUS_SECONDS = 0.5
 ADAPTIVE_LOCAL_STRIDE_SECONDS = 0.1
 ADAPTIVE_CENTERS_PER_PATTERN = 1
 ADAPTIVE_MAXIMUM_POWER_SEEDS = 8

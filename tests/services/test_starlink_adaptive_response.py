@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from leo_flow.analysis.recording.starlink_adaptive_refinement import (
     adaptive_base_windows_v0_1,
+    adaptive_refinement_selection_v0_1,
 )
 from leo_flow.contracts.core import (
     ArtifactRef,
@@ -13,6 +14,9 @@ from leo_flow.contracts.core import (
     SchemaRef,
 )
 from leo_flow.contracts.starlink import StarlinkEdge
+from leo_flow.contracts.starlink_adaptive_refinement import (
+    StarlinkAdaptivePatternScoreV0_1,
+)
 from leo_flow.contracts.starlink_full_dwell_timeline_product import (
     V0_1,
     FullDwellRefinementRequestV0_1,
@@ -144,7 +148,7 @@ def test_adaptive_response_plan_spans_dwell_with_a_bounded_exact_union() -> None
 
     assert plan.probe_sample_count == 20_000
     assert plan.sentinel_stride_samples == 2_500_000  # 1 second
-    assert plan.local_radius_samples == 250_000  # +/- 100 milliseconds
+    assert plan.local_radius_samples == 1_250_000  # +/- 500 milliseconds
     assert plan.local_stride_samples == 250_000  # 100 milliseconds
     assert plan.candidate_centers_per_pattern == 1
     assert plan.maximum_power_seeds == 8
@@ -164,3 +168,44 @@ def test_sixty_second_plan_places_exact_sentinels_through_the_entire_dwell() -> 
     assert starts[-1] == sample_count - plan.probe_sample_count
     assert len(windows) == 61
     assert all(item.selection_reasons == ("fixed-sentinel",) for item in windows)
+
+
+def test_production_qin_and_four_controls_fit_legacy_cadence_followups() -> None:
+    sample_rate = 2_500_000
+    sample_count = sample_rate * 60
+    plan = adaptive_response_plan_v0_1(float(sample_rate))
+    power = tuple(
+        (rank, sample_rate * second, sample_rate * second + plan.probe_sample_count)
+        for rank, second in enumerate((5, 12, 19, 26, 33, 40, 47, 54))
+    )
+    base = adaptive_base_windows_v0_1(sample_count, plan, power)
+    patterns = tuple(
+        ArtifactRef(
+            f"pattern-{index}", Digest.sha256(f"pattern-{index}".encode()), None
+        )
+        for index in range(5)
+    )
+    preferred = tuple(sample_rate * second for second in (10, 20, 30, 40, 50))
+    scores = tuple(
+        StarlinkAdaptivePatternScoreV0_1(
+            pattern,
+            window.start_sample,
+            0.9 if window.start_sample == winner else 0.1,
+        )
+        for pattern, winner in zip(patterns, preferred, strict=True)
+        for window in base
+    )
+
+    selection = adaptive_refinement_selection_v0_1(sample_count, plan, base, scores)
+
+    assert len(selection.exact_windows) <= plan.maximum_exact_windows
+    starts = {window.start_sample for window in selection.exact_windows}
+    assert all(
+        winner + offset in starts
+        for winner in preferred
+        for offset in range(
+            -plan.local_radius_samples,
+            plan.local_radius_samples + 1,
+            plan.local_stride_samples,
+        )
+    )
