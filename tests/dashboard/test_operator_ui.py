@@ -96,7 +96,13 @@ def test_overview_discloses_duty_candidate_and_calibration_semantics() -> None:
 
 def test_every_user_facing_page_links_the_top_level_analysis_views() -> None:
     app = application()
-    for path in ("/", "/aggregate-stats", "/aggregate-doppler", "/full-dwell", "/recordings/rec_1"):
+    for path in (
+        "/",
+        "/aggregate-stats",
+        "/aggregate-doppler",
+        "/full-dwell",
+        "/recordings/rec_1",
+    ):
         html = app.handle(JsonRequest("GET", path, {})).body.decode()
         assert 'href="/aggregate-stats"' in html
         assert 'href="/aggregate-doppler"' in html
