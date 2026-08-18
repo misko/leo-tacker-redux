@@ -212,8 +212,8 @@
     canvas.setAttribute("aria-label", `${yLabel}; ${series.length} unpooled series and ${points.length} ${mode === "windows" ? "window" : "overall"} estimates`);
   }
 
-  function drawQam(series) {
-    const canvas = node("evidence-qam-canvas");
+  function drawQam(series, canvasId = "evidence-qam-canvas", description = "Known pilot QAM candidate evidence") {
+    const canvas = node(canvasId);
     const ctx = canvas.getContext("2d");
     const all = series.flatMap((item) => item.points.map((point) => ({point, item})));
     if (!ctx || !all.length) { canvas.hidden = true; return; }
@@ -231,7 +231,76 @@
     ctx.globalAlpha = 1;
     canvas.dataset.seriesCount = String(series.length);
     canvas.dataset.pointCount = String(all.length);
-    canvas.setAttribute("aria-label", `Known pilot QAM candidate evidence; ${series.length} unpooled series and ${all.length} coefficients`);
+    canvas.setAttribute("aria-label", `${description}; ${series.length} series and ${all.length} coefficients`);
+  }
+
+  function idealQamPoint(expectedState) {
+    const phase = 0.5 * Math.PI * (Number(expectedState) + 0.5);
+    return {i: Math.cos(phase), q: Math.sin(phase)};
+  }
+
+  function pointIdentity(point, index) {
+    if (Number.isInteger(Number(point.symbol_index)) && Number.isInteger(Number(point.subcarrier_index))) {
+      return `${Number(point.symbol_index)}:${Number(point.subcarrier_index)}:${Number(point.expected_state)}`;
+    }
+    return `display:${index}:${Number(point.expected_state)}`;
+  }
+
+  function combinedQamSeries(candidates) {
+    const groups = new Map();
+    for (const candidate of candidates) {
+      const key = [candidate.recordingId, candidate.radioId, candidate.segmentId, candidate.edge, candidate.startUtcNs, candidate.stopUtcNs].join("|");
+      const group = groups.get(key) || [];
+      group.push(candidate);
+      groups.set(key, group);
+    }
+    const combined = [];
+    for (const group of groups.values()) {
+      group.sort((left, right) => `${left.lnbId}|${left.receiverId}`.localeCompare(`${right.lnbId}|${right.receiverId}`));
+      for (let leftIndex = 0; leftIndex < group.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < group.length; rightIndex += 1) {
+          const left = group[leftIndex]; const right = group[rightIndex];
+          if (left.receiverId === right.receiverId || left.lnbId === right.lnbId) continue;
+          const rightByIdentity = new Map(right.points.map((point, index) => [pointIdentity(point, index), point]));
+          const leftWeightRaw = 1 / Math.max(left.rmsEvm * left.rmsEvm, 1e-6);
+          const rightWeightRaw = 1 / Math.max(right.rmsEvm * right.rmsEvm, 1e-6);
+          const weightSum = leftWeightRaw + rightWeightRaw;
+          const leftWeight = leftWeightRaw / weightSum; const rightWeight = rightWeightRaw / weightSum;
+          const points = [];
+          let correct = 0; let squaredError = 0;
+          left.points.forEach((leftPoint, index) => {
+            const rightPoint = rightByIdentity.get(pointIdentity(leftPoint, index));
+            if (!rightPoint || Number(rightPoint.expected_state) !== Number(leftPoint.expected_state)) return;
+            const point = {
+              ...leftPoint,
+              i: leftWeight * Number(leftPoint.i) + rightWeight * Number(rightPoint.i),
+              q: leftWeight * Number(leftPoint.q) + rightWeight * Number(rightPoint.q),
+            };
+            const ideal = idealQamPoint(point.expected_state);
+            squaredError += (point.i - ideal.i) ** 2 + (point.q - ideal.q) ** 2;
+            const hardState = [0, 1, 2, 3].reduce((best, stateValue) => {
+              const statePoint = idealQamPoint(stateValue);
+              const distance = (point.i - statePoint.i) ** 2 + (point.q - statePoint.q) ** 2;
+              return distance < best.distance ? {state: stateValue, distance} : best;
+            }, {state: 0, distance: Number.POSITIVE_INFINITY}).state;
+            if (hardState === Number(point.expected_state)) correct += 1;
+            points.push(point);
+          });
+          if (!points.length) continue;
+          const accuracy = correct / points.length;
+          const rmsEvm = Math.sqrt(squaredError / points.length);
+          const goodness = qamGoodness(accuracy, rmsEvm);
+          if (goodness === null) continue;
+          const label = identity([left.recordingId, left.radioId, left.edge, `${left.lnbId}/${left.receiverId} + ${right.lnbId}/${right.receiverId}`, "time-matched paired QAM"]);
+          combined.push({
+            label, points, goodness, accuracy, rmsEvm,
+            leftWeight, rightWeight,
+            startUtcNs: left.startUtcNs, stopUtcNs: left.stopUtcNs,
+          });
+        }
+      }
+    }
+    return combined;
   }
 
   function qamGoodness(accuracy, rmsEvm) {
@@ -346,7 +415,9 @@
     state("qam", "pending", "Loading bounded acquired-QAM evidence…");
     try {
       if (!selectedRecordings().length || !checked("lnb").length || !checked("receiver").length || !checked("edge").length) {
-        node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
+        node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren();
+        node("evidence-qam-combined-canvas").hidden = true; node("evidence-qam-combined-legend").replaceChildren();
+        renderQamGoodness([]); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); state("qam-combined", "missing", "Select at least two receiver ports from one recording."); return;
       }
       const mode = node("evidence-mode").value;
       const fetchedResults = await Promise.all(selectedRecordings().map((recording) => {
@@ -365,10 +436,11 @@
       if (current !== generation) return;
       if (!fetched.payloads.length) {
         node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
+        node("evidence-qam-combined-canvas").hidden = true; node("evidence-qam-combined-legend").replaceChildren(); state("qam-combined", "pending", "Per-receiver QAM evidence is pending.");
         state("qam", "pending", "Acquired-QAM evidence is pending for every selected recording."); return;
       }
       const lnbSet = new Set(checked("lnb")); const receiverSet = new Set(checked("receiver")); const edgeSet = new Set(checked("edge"));
-      const series = []; const goodnessEntries = []; const goodnessSeries = [];
+      const series = []; const goodnessEntries = []; const goodnessSeries = []; const pairingCandidates = [];
       for (const payload of fetched.payloads) {
         if (payload.candidate_only !== true || payload.calibration_required !== true) throw new Error("unsafe acquired-QAM semantics");
         for (const stream of payload.streams || []) {
@@ -394,17 +466,34 @@
               goodnessEntries.push({label, goodness, accuracy: Number(accuracy), rmsEvm: Number(rmsEvm), selection: selectionDetail});
               timePoints.push({x: (Number(qam.interval_start_utc_ns) + Number(qam.interval_stop_utc_ns)) / 2, y: goodness});
             }
+            pairingCandidates.push({
+              recordingId: payload.recording_id,
+              radioId: stream.radio_id,
+              lnbId: stream.lnb_id,
+              segmentId: stream.segment_id,
+              receiverId: stream.receiver_chain_id,
+              edge: stream.edge,
+              startUtcNs: Number(qam.interval_start_utc_ns),
+              stopUtcNs: Number(qam.interval_stop_utc_ns),
+              rmsEvm: Number(qam.rms_evm),
+              points,
+            });
           });
           if (timePoints.length) goodnessSeries.push({label: identity([payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, "QAM goodness"]), points: timePoints});
         }
       }
+      const paired = combinedQamSeries(pairingCandidates);
       drawChart("evidence-qam-time-canvas", goodnessSeries, "QAM goodness [0,1]", mode, "selected overall window"); drawQam(series); seriesLegend("evidence-qam-legend", series); renderQamGoodness(goodnessEntries);
+      drawQam(paired, "evidence-qam-combined-canvas", "Time-matched dual-receiver known-pilot QAM candidate evidence");
+      seriesLegend("evidence-qam-combined-legend", paired.map((item) => ({label: `${item.label} · goodness ${item.goodness.toFixed(3)} · accuracy ${(100 * item.accuracy).toFixed(2)}% · RMS EVM ${item.rmsEvm.toFixed(3)} · weights ${item.leftWeight.toFixed(3)}/${item.rightWeight.toFixed(3)}`})));
+      state("qam-combined", paired.length ? "ready" : "missing", paired.length ? `${paired.length} exact-time paired candidate series; weights use measured per-window EVM and no label-derived frequency correction.` : "No two selected receiver streams share an exact analyzed QAM window and known-pilot point identity.");
       const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
       const adaptive = fetched.payloads.some((payload) => payload.source_adaptive_response_ref);
       state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series; ${adaptive ? "adaptive target/control window selection" : "legacy stratified-window fallback"}.${partial}` : "No acquired-QAM series match the selected hardware scope.");
     } catch (error) {
       if (current !== generation) return;
       node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
+      node("evidence-qam-combined-canvas").hidden = true; node("evidence-qam-combined-legend").replaceChildren(); state("qam-combined", error.status === 404 ? "pending" : "error", error.status === 404 ? "Per-receiver QAM evidence is pending." : `Paired QAM failed: ${error.message}`);
       state("qam", error.status === 404 ? "pending" : "error", error.status === 404 ? "Acquired-QAM evidence is pending or unavailable for this recording." : `QAM evidence failed: ${error.message}`);
     }
   }

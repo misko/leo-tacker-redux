@@ -638,6 +638,105 @@ def _matches(values: tuple[Any, ...], expected: str) -> bool:
     return not values or expected in {str(value) for value in values}
 
 
+class DualReceiverEvidencePorts(EvidencePorts):
+    """One recording with two authoritative receivers and exact-time QAM windows."""
+
+    def recording_evidence_context(self, recording_id: RecordingId) -> dict[str, Any]:
+        payload = super().recording_evidence_context(recording_id)
+        payload["receivers"].insert(
+            1,
+            {
+                "recording_id": REQUESTED,
+                "radio_id": "radio_a",
+                "receiver_chain_id": "rx_a2",
+                "lnb_id": "lnb_authoritative_a2",
+                "radio_channel": 1,
+            },
+        )
+        payload["segments"][0]["receiver_chain_ids"] = ["rx_a", "rx_a2"]
+        return payload
+
+    def recording_starlink_adaptive_qam(self, query: Any) -> dict[str, Any]:
+        self.qam_queries.append(query)
+        if str(query.recording_id) != REQUESTED:
+            raise DashboardNotFound("adaptive QAM recording was not found")
+        streams = []
+        receiver_rows = (
+            ("rx_a", "lnb_authoritative_a", 0.70, 0.18),
+            ("rx_a2", "lnb_authoritative_a2", 0.82, 0.28),
+        )
+        for receiver, lnb, amplitude, perturbation in receiver_rows:
+            if not _matches(query.receiver_chain_ids, receiver) or (
+                query.lnb_ids and lnb not in query.lnb_ids
+            ):
+                continue
+            window_count = 1 if query.mode.value == "overall" else 2
+            windows = []
+            for index in range(window_count):
+                starts = 1_000_000_000 + index * 10_000_000
+                signs = ((1, 1), (-1, 1), (-1, -1), (1, -1))
+                points = [
+                    {
+                        "symbol_index": state + 2,
+                        "subcarrier_index": 488,
+                        "expected_state": state,
+                        "i": sign_i * amplitude + perturbation * 0.02,
+                        "q": sign_q * amplitude - perturbation * 0.02,
+                    }
+                    for state, (sign_i, sign_q) in enumerate(signs)
+                ]
+                windows.append(
+                    {
+                        "selection": {
+                            "source_window_index": index,
+                            "source_start_sample": index * 25_000,
+                            "source_stop_sample": (index + 1) * 25_000,
+                            "qam_start_sample": index * 25_000,
+                            "qam_stop_sample": (index + 1) * 25_000,
+                            "reasons": ["top-qin-score"],
+                            "source_qin_score": 0.8,
+                            "source_max_surrogate_score": 0.2,
+                            "source_qin_minus_max_surrogate": 0.6,
+                        },
+                        "qam": {
+                            "window_index": index,
+                            "start_sample": index * 25_000,
+                            "stop_sample": (index + 1) * 25_000,
+                            "interval_start_utc_ns": starts,
+                            "interval_stop_utc_ns": starts + 10_000_000,
+                            "hard_symbol_accuracy": 1.0,
+                            "rms_evm": perturbation,
+                            "display_points": points,
+                        },
+                    }
+                )
+            streams.append(
+                {
+                    "recording_id": REQUESTED,
+                    "radio_id": "radio_a",
+                    "lnb_id": lnb,
+                    "segment_id": "seg_a",
+                    "receiver_chain_id": receiver,
+                    "edge": "lower",
+                    "overall": {
+                        "window_count": 2,
+                        "selected_display_window_index": 0,
+                        "support_weighted_hard_symbol_accuracy": 1.0,
+                        "support_weighted_rms_evm": perturbation,
+                    },
+                    "windows": windows,
+                }
+            )
+        return {
+            "recording_id": REQUESTED,
+            "mode": query.mode.value,
+            "candidate_only": True,
+            "calibration_required": True,
+            "source_adaptive_response_ref": {"artifact_id": "sladapt_dual"},
+            "streams": streams,
+        }
+
+
 def _application(ports: EvidencePorts) -> DashboardUiApplication:
     base = cast(DashboardJsonApplicationV14, _NotFoundApplication())
     fixture_port = cast(Any, ports)
@@ -930,6 +1029,36 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
                 "data-state", "ready"
             )
             page.locator('#evidence-edges input[value="lower"]').check()
+        finally:
+            browser.close()
+
+
+def test_detail_page_combines_only_exact_time_known_pilot_receiver_pairs() -> None:
+    ports = DualReceiverEvidencePorts()
+    with running_dashboard(ports) as base_url, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, env=browser_environment())
+        try:
+            page = browser.new_page(viewport={"width": 1600, "height": 1300})
+            response = page.goto(f"{base_url}/recordings/{REQUESTED}")
+            assert response is not None and response.ok
+
+            combined = page.locator("#evidence-qam-combined-state")
+            expect(combined).to_have_attribute("data-state", "ready")
+            expect(combined).to_contain_text("1 exact-time paired candidate series")
+            expect(combined).to_contain_text("no label-derived frequency correction")
+            canvas = page.locator("#evidence-qam-combined-canvas")
+            expect(canvas).to_be_visible()
+            expect(canvas).to_have_attribute("data-series-count", "1")
+            expect(canvas).to_have_attribute("data-point-count", "4")
+            legend = page.locator("#evidence-qam-combined-legend")
+            expect(legend).to_contain_text(
+                "lnb_authoritative_a/rx_a + lnb_authoritative_a2/rx_a2"
+            )
+            expect(legend).to_contain_text("weights")
+
+            page.locator('#evidence-receivers input[value="rx_a2"]').uncheck()
+            expect(combined).to_have_attribute("data-state", "missing")
+            expect(canvas).to_be_hidden()
         finally:
             browser.close()
 

@@ -124,6 +124,11 @@
           <canvas id="evidence-qam-time-canvas" class="evidence-chart" width="760" height="300" role="img" aria-label="QAM goodness by analyzed window time" hidden></canvas>
           <canvas id="evidence-qam-canvas" class="evidence-chart" width="760" height="440" role="img" aria-label="Selected QAM constellation series" hidden></canvas>
           <div id="evidence-qam-legend" class="evidence-series-legend"></div>
+          <h4>Time-matched dual-receiver combination</h4>
+          <div id="evidence-qam-combined-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for per-receiver QAM evidence…</div>
+          <canvas id="evidence-qam-combined-canvas" class="evidence-chart" width="760" height="440" role="img" aria-label="Time-matched dual-receiver QAM candidate evidence" hidden></canvas>
+          <div id="evidence-qam-combined-legend" class="evidence-series-legend"></div>
+          <p class="availability-note">Receivers are combined only when they belong to the same recording, radio, segment, edge, and exact UTC window and share the same published known-pilot symbol identities. Weighting is derived from each window’s measured EVM. No historical LNB label offset is applied, and the result remains candidate-only.</p>
         </article>
         <article class="detail-card evidence-product" aria-labelledby="evidence-detector-heading">
           <div class="decision-heading"><h3 id="evidence-detector-heading">Starlink algorithm scores</h3><span id="evidence-detector-badge" class="status-badge" data-tone="warning">Pending</span></div>
