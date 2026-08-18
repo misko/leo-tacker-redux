@@ -85,8 +85,7 @@ def test_legacy_qam_backfill_is_explicitly_bounded_and_skips_projected_products(
         backfill.backfill(0)
     with pytest.raises(ValueError, match="bound"):
         backfill.backfill(101)
-    assert "NOT EXISTS" in _PENDING_SQL and "LIMIT %s" in _PENDING_SQL
-    assert "published_at_utc DESC" in _PENDING_SQL
+    assert "read_pending_dashboard_capture_qam_products_v0_1" in _PENDING_SQL
 
 
 def _row(

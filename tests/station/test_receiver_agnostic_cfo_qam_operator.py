@@ -43,7 +43,7 @@ def _argv() -> list[str]:
         "--credential-directory",
         "/credentials",
         "--capture-guard-status",
-        "/run/leo-flow/focused-capture-guard.json",
+        "/run/leo-flow-optional-heavy/guard.json",
         "--recording-id",
         "rec_operator",
         "--window",

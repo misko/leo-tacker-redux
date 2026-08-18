@@ -48,8 +48,8 @@ two physical receivers without legacy LNB corrections:
 
 ```bash
 leo-gauss-receiver-agnostic-cfo-qam \
-  --credential-directory /run/credentials/leo-receiver-agnostic-cfo-qam.service \
-  --capture-guard-status /run/leo-flow/focused-capture-guard.json \
+  --credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis \
+  --capture-guard-status /run/leo-flow-optional-heavy/guard.json \
   --recording-id rec_01M09J1R6E59GCC8ANJVYVRN1B \
   --window seg_plan_focused_loop_00000001_18cccbd3289eb706_b_ch4_lower:rx_lnb_c:lower:149500000:25000 \
   --window seg_plan_focused_loop_00000001_18cccbd3289eb706_b_ch4_lower:rx_lnb_d:lower:149500000:25000

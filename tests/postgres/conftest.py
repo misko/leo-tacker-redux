@@ -71,6 +71,7 @@ _EXPECTED_MIGRATIONS = (
     "0052_starlink_symbolwise_replay_product_v0_1.sql",
     "0053_recording_receiver_agnostic_cfo_qam_v0_6.sql",
     "0054_dashboard_capture_qam_summary_projection.sql",
+    "0055_dashboard_capture_qam_summary_backfill.sql",
 )
 
 
