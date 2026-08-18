@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Protocol
 
 from ._validation import require_finite, require_token
 from .core import (
@@ -20,7 +21,7 @@ from .core import (
 )
 from .starlink import StarlinkEdge
 from .starlink_adaptive_response import StarlinkAdaptiveResponsePointV0_1
-from .starlink_detector_suite import REPORT_METHOD_ORDER
+from .starlink_detector_suite import REPORT_METHOD_ORDER, StarlinkDetectorMethod
 from .starlink_surrogate_null import StarlinkSearchGridV0_1
 from .storage import ObjectRef, RecordingObjectRef
 
@@ -206,3 +207,92 @@ class StarlinkPilotRefinementProductRefV0_1:
     analysis_id: str
     recording_id: RecordingId
     bundle_ref: ObjectRef
+
+
+@dataclass(frozen=True, slots=True)
+class StarlinkPilotRefinementCatalogProjectionV0_1:
+    analysis_id: str
+    recording_id: RecordingId
+    recording_identity_digest: Digest
+    source_prescreen_ref: ArtifactRef
+    source_suite_ref: ArtifactRef
+    request_digest: Digest
+    stream_count: int
+    seed_count: int
+    point_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.analysis_id
+            or not 1 <= self.stream_count <= MAXIMUM_PILOT_REFINEMENT_STREAMS
+            or not self.stream_count <= self.seed_count
+            or self.point_count != self.seed_count * len(REPORT_METHOD_ORDER)
+        ):
+            raise ValueError("pilot-refinement projection counts are invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class StarlinkPilotRefinementQueryV0_1:
+    recording_id: RecordingId
+    methods: tuple[StarlinkDetectorMethod, ...] = REPORT_METHOD_ORDER
+    radio_ids: tuple[RadioId, ...] = ()
+    lnb_ids: tuple[str, ...] = ()
+    receiver_chain_ids: tuple[ReceiverChainId, ...] = ()
+    edges: tuple[StarlinkEdge, ...] = ()
+    maximum_points: int = 4096
+
+    def __post_init__(self) -> None:
+        for values in (
+            self.methods,
+            self.radio_ids,
+            self.lnb_ids,
+            self.receiver_chain_ids,
+            self.edges,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("pilot-refinement query filters must be unique")
+        if not self.methods or not 1 <= self.maximum_points <= 16_384:
+            raise ValueError("pilot-refinement query bounds are invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class StarlinkPilotRefinementPresentationStreamV0_1:
+    selection: StarlinkPilotRefinementStreamSelectionV0_1
+    points: tuple[StarlinkAdaptiveResponsePointV0_1, ...]
+    original_point_count: int
+    exact_covered_sample_count: int
+    exact_coverage_fraction: float
+
+
+@dataclass(frozen=True, slots=True)
+class RecordingStarlinkPilotRefinementViewV0_1:
+    schema: SchemaRef
+    recording_id: RecordingId
+    analysis_ref: ArtifactRef
+    source_prescreen_ref: ArtifactRef
+    source_suite_ref: ArtifactRef
+    streams: tuple[StarlinkPilotRefinementPresentationStreamV0_1, ...]
+    original_point_count: int
+    truncated: bool
+    decimation: str
+    candidate_only: bool
+    calibration_required: bool
+    warnings: tuple[str, ...]
+
+    SCHEMA_ID = "org.leo-flow.dashboard.recording-starlink-pilot-refinement"
+
+    def __post_init__(self) -> None:
+        shown = sum(len(stream.points) for stream in self.streams)
+        if (
+            self.schema != SchemaRef(self.SCHEMA_ID, V0_1)
+            or self.original_point_count < shown
+            or not self.candidate_only
+            or not self.calibration_required
+        ):
+            raise ValueError("pilot-refinement view semantics are invalid")
+
+
+class RecordingStarlinkPilotRefinementQueryPortV0_1(Protocol):
+    def recording_starlink_pilot_refinement(
+        self, query: StarlinkPilotRefinementQueryV0_1
+    ) -> RecordingStarlinkPilotRefinementViewV0_1: ...

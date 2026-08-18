@@ -18,6 +18,11 @@ from leo_flow.analysis.recording.starlink_pilot_refinement_codec import (
     decode_starlink_pilot_refinement,
     encode_starlink_pilot_refinement,
 )
+from leo_flow.analysis.recording.starlink_pilot_refinement_persistence import (
+    CatalogedStarlinkPilotRefinementV0_1,
+    DurableRecordingStarlinkPilotRefinementQueryV0_1,
+    DurableStarlinkPilotRefinementStoreV0_1,
+)
 from leo_flow.analysis.recording.starlink_surrogate_null import (
     starlink_search_grid_v0_1,
 )
@@ -36,10 +41,12 @@ from leo_flow.contracts.starlink import StarlinkEdge
 from leo_flow.contracts.starlink_detector_suite import REPORT_METHOD_ORDER
 from leo_flow.contracts.starlink_pilot_refinement import (
     StarlinkPilotRefinementBundleV0_1,
+    StarlinkPilotRefinementQueryV0_1,
     StarlinkPilotRefinementRequestV0_1,
     StarlinkPilotRefinementSeedV0_1,
     StarlinkPilotRefinementStreamSelectionV0_1,
 )
+from leo_flow.storage.filesystem import FileSystemBlobStore
 from leo_flow.storage.ports import RecordingView
 
 from .fakes import FakeRecordingView, SegmentFixture, execution_context, make_view
@@ -54,7 +61,7 @@ def _paired_ci16(left: tuple[complex, ...], right: tuple[complex, ...]) -> bytes
     return bytes(output)
 
 
-def test_prescreen_refinement_runs_all_methods_and_symmetric_controls() -> None:
+def _case():  # type: ignore[no-untyped-def]
     rate = 2_500_000.0
     config = StarlinkDetectorSuiteConfigV0_2((0, 3), (0.0, 1_000.0), (0.0,))
     template = qin_edge_pilot_template_pair_v0_1(rate, StarlinkEdge.LOWER)
@@ -103,6 +110,11 @@ def test_prescreen_refinement_runs_all_methods_and_symmetric_controls() -> None:
     result = ExactStarlinkPilotRefinementAnalyzerV0_1(
         config, execution_context()
     ).analyze(cast(RecordingView, view), request)
+    return request, result
+
+
+def test_prescreen_refinement_runs_all_methods_and_symmetric_controls() -> None:
+    _request, result = _case()
 
     stream = result.streams[0]
     assert tuple(point.method for point in stream.points) == REPORT_METHOD_ORDER
@@ -114,3 +126,49 @@ def test_prescreen_refinement_runs_all_methods_and_symmetric_controls() -> None:
     assert decode_starlink_pilot_refinement(payload) == result
     with pytest.raises(MalformedStarlinkPilotRefinementError, match="canonical"):
         decode_starlink_pilot_refinement(payload + b"\n")
+
+
+class _Catalog:
+    def __init__(self) -> None:
+        self.item = None
+
+    def publish_starlink_pilot_refinement(
+        self, projection, bundle_ref, recording_ref, *, idempotency_key
+    ):  # type: ignore[no-untyped-def]
+        del recording_ref, idempotency_key
+        candidate = CatalogedStarlinkPilotRefinementV0_1(projection, bundle_ref)
+        if self.item is not None and self.item != candidate:
+            raise RuntimeError("conflict")
+        self.item = candidate
+        return candidate.ref
+
+    def get_starlink_pilot_refinement(self, ref):  # type: ignore[no-untyped-def]
+        return self.item if self.item is not None and self.item.ref == ref else None
+
+    def latest_starlink_pilot_refinement(self, recording_id):  # type: ignore[no-untyped-def]
+        return (
+            self.item.ref
+            if self.item is not None
+            and self.item.projection.recording_id == recording_id
+            else None
+        )
+
+
+def test_pilot_refinement_persists_and_queries_bounded_points(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    request, result = _case()
+    catalog = _Catalog()
+    store = DurableStarlinkPilotRefinementStoreV0_1(
+        FileSystemBlobStore(tmp_path / "cas"), catalog
+    )
+    ref = store.publish(request, result, idempotency_key="pilot-refinement:test")
+    with store.open(ref) as replay:
+        assert replay == result
+    view = DurableRecordingStarlinkPilotRefinementQueryV0_1(
+        store, catalog
+    ).recording_starlink_pilot_refinement(
+        StarlinkPilotRefinementQueryV0_1(request.recording_id, maximum_points=3)
+    )
+    assert view.original_point_count == len(REPORT_METHOD_ORDER)
+    assert sum(len(stream.points) for stream in view.streams) == 3
+    assert view.truncated
+    assert view.candidate_only and view.calibration_required
