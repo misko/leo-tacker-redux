@@ -490,7 +490,7 @@ def test_acquired_qam_backfill_command_is_narrow_and_bounded(tmp_path: Path) -> 
         "gauss_acquired_qam_v0_3_backfill_complete"
     )
     assert stderr.getvalue() == ""
-    assert lock_calls == ["acquire", "release"]
+    assert lock_calls == []
 
 
 def test_submit_batch_uses_only_explicit_public_snapshot_and_checked_science(

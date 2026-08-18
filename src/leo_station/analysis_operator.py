@@ -1106,12 +1106,13 @@ def main(
 
     if arguments.command == "backfill-acquired-qam-v0-3":
         try:
-            _under_mode_lock(
-                mode_lock_factory,
-                lambda: acquired_qam_backfiller(
-                    RecordingId(arguments.recording_id),
-                    credential_factory(arguments.credential_directory),
-                ),
+            # This command reads an immutable recording/source-suite pair and
+            # publishes only an additive V0.3 product.  It neither contacts a
+            # radio nor changes capture mode, so it must remain runnable while
+            # continuous capture owns the pipeline-mode lock.
+            acquired_qam_backfiller(
+                RecordingId(arguments.recording_id),
+                credential_factory(arguments.credential_directory),
             )
         except Exception:  # noqa: BLE001 - sanitize the process boundary
             _emit(stderr, {"event": "gauss_acquired_qam_v0_3_backfill_failed"})
