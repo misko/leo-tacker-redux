@@ -74,6 +74,7 @@ def test_analysis_process_claim_and_proven_dead_recovery_are_explicit(
         123,
         456,
     )
+    assert running.analysis_attempt_count == 1
 
     journal.abandon_analysis_process(0)
     captured = journal.get(0)
@@ -81,6 +82,17 @@ def test_analysis_process_claim_and_proven_dead_recovery_are_explicit(
     assert captured.state == "captured"
     assert captured.analysis_pid is None
     assert captured.analysis_command_digest is None
+    assert captured.analysis_attempt_count == 1
+
+    journal.claim_analysis_process(
+        0,
+        pid=789,
+        process_start_ticks=987,
+        command_digest="sha256:" + "c" * 64,
+    )
+    retried = journal.get(0)
+    assert retried is not None
+    assert retried.analysis_attempt_count == 2
 
 
 def test_analysis_recovery_cas_rejects_stale_or_inexact_identity(
@@ -174,3 +186,4 @@ def test_existing_journal_is_additively_upgraded_for_process_identity(
         command_digest="sha256:" + "c" * 64,
     )
     assert journal.get(0).analysis_pid == 10  # type: ignore[union-attr]
+    assert journal.get(0).analysis_attempt_count == 1  # type: ignore[union-attr]

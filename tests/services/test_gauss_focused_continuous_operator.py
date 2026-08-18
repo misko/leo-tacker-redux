@@ -76,6 +76,7 @@ def test_help_describes_continuous_capture_and_async_analysis() -> None:
     assert "Continuously capture" in text
     assert "asynchronously" in text
     assert "--maximum-in-flight-analyses" in text
+    assert "--maximum-analysis-attempts" in text
 
 
 def test_capture_child_is_capture_only_and_analysis_child_is_capture_safe(
@@ -132,9 +133,11 @@ def test_user_service_is_one_continuous_loop_without_timer_or_shell_engine() -> 
     ).read_text(encoding="utf-8")
     assert "leo-gauss-focused-continuous" in unit
     assert "--maximum-in-flight-analyses 6" in unit
-    assert "--compute-workers 8" in unit
+    assert "--maximum-analysis-attempts 3" in unit
+    assert "--compute-workers 2" in unit
     assert "--analysis-nice 15" in unit
     assert "--duration-seconds 60" in unit
+    assert "--lead-seconds 57" in unit
     assert "Restart=no" in unit
     assert "KillMode=process" in unit
     assert "--shutdown-protocol graceful-drain-v1" in unit
@@ -609,7 +612,7 @@ def test_recovery_closes_from_valid_receipt_without_dispatch(
     assert journal.get(0).state == "complete"  # type: ignore[union-attr]
 
 
-def test_zero_exit_without_exact_completion_evidence_fails_closed(
+def test_zero_exit_without_exact_completion_evidence_is_retried(
     tmp_path: Path, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
     journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
@@ -645,8 +648,35 @@ def test_zero_exit_without_exact_completion_evidence_fails_closed(
         lambda _record: False,
     )
     children = {0: _AnalysisChild(running, Exited())}
-    assert _reap(children, journal) is False
+    _reap(children, journal)
+    retryable = journal.get(0)
+    assert retryable is not None
+    assert retryable.state == "captured"
+    assert retryable.error is None
+    assert retryable.analysis_attempt_count == 1
+
+
+def test_analysis_exhaustion_is_dead_lettered_without_stopping_capture(
+    tmp_path: Path,
+) -> None:
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    journal.insert_planned(replace(_record(tmp_path), state="planned"))
+    journal.transition(0, "planned", "captured")
+    digest = "sha256:" + "b" * 64
+    journal.claim_analysis_process(
+        0, pid=123, process_start_ticks=456, command_digest=digest
+    )
+    running = journal.get(0)
+    assert running is not None
+
+    class Exited:
+        def poll(self):  # type: ignore[no-untyped-def]
+            return 9
+
+    children = {0: _AnalysisChild(running, Exited())}
+    _reap(children, journal, maximum_analysis_attempts=1)
     failed = journal.get(0)
     assert failed is not None
     assert failed.state == "failed"
-    assert failed.error == "analysis-completion-evidence-missing-or-invalid"
+    assert failed.error == "analysis-exit-9"
+    assert failed.analysis_attempt_count == 1

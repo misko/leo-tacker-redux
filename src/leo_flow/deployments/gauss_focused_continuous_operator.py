@@ -109,6 +109,15 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=MAXIMUM_IN_FLIGHT_ANALYSES,
     )
+    parser.add_argument(
+        "--maximum-analysis-attempts",
+        type=int,
+        default=3,
+        help=(
+            "bounded attempts per captured dwell before analysis is dead-lettered; "
+            "capture continues after analysis exhaustion"
+        ),
+    )
     parser.add_argument("--lead-seconds", type=int, default=DEFAULT_LEAD_SECONDS)
     parser.add_argument("--duration-seconds", type=int, default=20)
     parser.add_argument("--maximum-dwells", type=int, default=0)
@@ -160,9 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         while not stopping and (
             args.maximum_dwells == 0 or completed_capture_count < args.maximum_dwells
         ):
-            if not _reap(children, journal):
-                _write_failure_latch(failure_latch, "analysis-failed")
-                return 4
+            _reap(children, journal, args.maximum_analysis_attempts)
             _dispatch_captured_available(args, journal, children)
             if stopping:
                 break
@@ -201,9 +208,7 @@ def main(argv: list[str] | None = None) -> int:
             _dispatch_captured_available(args, journal, children)
             completed_capture_count += 1
         while children or _captured_work(journal):
-            if not _reap(children, journal):
-                _write_failure_latch(failure_latch, "analysis-failed")
-                return 4
+            _reap(children, journal, args.maximum_analysis_attempts)
             _dispatch_captured_available(args, journal, children)
             if children:
                 time.sleep(DEFAULT_POLL_INTERVAL_S)
@@ -240,6 +245,7 @@ def _valid_args(args: argparse.Namespace) -> bool:
         and 1 <= args.compute_workers <= 8
         and 0 <= args.analysis_nice <= 19
         and 1 <= args.maximum_in_flight_analyses <= MAXIMUM_IN_FLIGHT_ANALYSES
+        and 1 <= args.maximum_analysis_attempts <= 10
         and args.lead_seconds * 1_000_000_000 >= MINIMUM_LEAD_NS
         and 1 <= args.duration_seconds <= 300
         and args.maximum_dwells >= 0
@@ -454,8 +460,8 @@ def _dispatch_captured_available(
 def _reap(
     children: dict[int, _AnalysisChild],
     journal: SQLiteFocusedContinuousJournalV0_1,
-) -> bool:
-    healthy = True
+    maximum_analysis_attempts: int = 3,
+) -> None:
     for sequence, child in tuple(children.items()):
         result = child.process.poll()
         if result is None:
@@ -464,24 +470,30 @@ def _reap(
             if _completion_matches(child.record):
                 journal.transition(sequence, "analysis_running", "complete")
                 event = "focused_continuous_analysis_complete"
+                error = None
+            else:
+                error = "analysis-completion-evidence-missing-or-invalid"
+        else:
+            error = f"analysis-exit-{result}"
+        if error is not None:
+            if child.record.analysis_attempt_count < maximum_analysis_attempts:
+                journal.abandon_exact_analysis_process(
+                    sequence,
+                    expected_pid=child.record.analysis_pid,
+                    expected_process_start_ticks=(
+                        child.record.analysis_process_start_ticks
+                    ),
+                    expected_command_digest=child.record.analysis_command_digest,
+                )
+                event = "focused_continuous_analysis_retryable"
             else:
                 journal.transition(
                     sequence,
                     "analysis_running",
                     "failed",
-                    error="analysis-completion-evidence-missing-or-invalid",
+                    error=error,
                 )
-                event = "focused_continuous_analysis_failed"
-                healthy = False
-        else:
-            journal.transition(
-                sequence,
-                "analysis_running",
-                "failed",
-                error=f"analysis-exit-{result}",
-            )
-            event = "focused_continuous_analysis_failed"
-            healthy = False
+                event = "focused_continuous_analysis_dead_lettered"
         print(
             json.dumps(
                 {
@@ -489,13 +501,14 @@ def _reap(
                     "sequence": sequence,
                     "batch_id": child.record.batch_id,
                     "exit_status": result,
+                    "analysis_attempt": child.record.analysis_attempt_count,
+                    "maximum_analysis_attempts": maximum_analysis_attempts,
                 },
                 sort_keys=True,
             ),
             flush=True,
         )
         del children[sequence]
-    return healthy
 
 
 def _recover(

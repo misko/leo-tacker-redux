@@ -21,6 +21,7 @@ class FocusedContinuousRecordV0_1:
     analysis_pid: int | None = None
     analysis_process_start_ticks: int | None = None
     analysis_command_digest: str | None = None
+    analysis_attempt_count: int = 0
 
 
 class SQLiteFocusedContinuousJournalV0_1:
@@ -78,6 +79,10 @@ class SQLiteFocusedContinuousJournalV0_1:
                         "(analysis_command_digest GLOB 'sha256:[0-9a-f]*' AND "
                         "length(analysis_command_digest)=71))"
                     ),
+                ),
+                (
+                    "analysis_attempt_count",
+                    "INTEGER NOT NULL DEFAULT 0 CHECK (analysis_attempt_count >= 0)",
                 ),
             ):
                 if name not in columns:
@@ -157,7 +162,9 @@ class SQLiteFocusedContinuousJournalV0_1:
                 UPDATE focused_dwell
                    SET state='analysis_running',error=NULL,
                        analysis_pid=?,analysis_process_start_ticks=?,
-                       analysis_command_digest=?,revision=revision+1
+                       analysis_command_digest=?,
+                       analysis_attempt_count=analysis_attempt_count+1,
+                       revision=revision+1
                  WHERE sequence=? AND state='captured'
                    AND analysis_pid IS NULL
                    AND analysis_process_start_ticks IS NULL
@@ -238,7 +245,7 @@ class SQLiteFocusedContinuousJournalV0_1:
                 SELECT sequence,monitor_id,requested_start_utc_ns,
                        definition_digest,state_root,batch_id,state,error,
                        analysis_pid,analysis_process_start_ticks,
-                       analysis_command_digest
+                       analysis_command_digest,analysis_attempt_count
                   FROM focused_dwell
                  WHERE state NOT IN ('complete','failed')
                  ORDER BY sequence
@@ -253,7 +260,7 @@ class SQLiteFocusedContinuousJournalV0_1:
                 SELECT sequence,monitor_id,requested_start_utc_ns,
                        definition_digest,state_root,batch_id,state,error,
                        analysis_pid,analysis_process_start_ticks,
-                       analysis_command_digest
+                       analysis_command_digest,analysis_attempt_count
                   FROM focused_dwell WHERE sequence=?
                 """,
                 (sequence,),
@@ -281,4 +288,5 @@ class SQLiteFocusedContinuousJournalV0_1:
             None if row[8] is None else int(str(row[8])),
             None if row[9] is None else int(str(row[9])),
             None if row[10] is None else str(row[10]),
+            int(str(row[11])),
         )

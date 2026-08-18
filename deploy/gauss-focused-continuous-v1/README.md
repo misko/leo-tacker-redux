@@ -12,9 +12,11 @@ remain in the durable journal and are dispatched FIFO as slots open; capture
 does not wait for analysis capacity. PostgreSQL migration 0037 records
 each terminal pair and its exact six jobs before any lease is claimed; the
 capture gate permits only those registered jobs to overlap radio work.  An
-unregistered lease, low-capacity gate, uncertain capture, failed analysis, or
-conflicting journal transition halts the service and creates
-`failure-latch.json`.  Capture is never replayed.  After a clean service
+unregistered lease, low-capacity gate, uncertain capture, or conflicting
+journal transition halts the service and creates `failure-latch.json`.
+Analysis failures are retried from the immutable captured pair up to three
+times, then dead-lettered without stopping capture. Capture is never replayed.
+After a clean service
 restart, terminal captured pairs and idempotent analysis are resumed from the
 full-sync SQLite journal.
 
@@ -32,10 +34,14 @@ capture-definition digest, both recording identity digests, feature jobs, and
 result artifacts. A valid receipt closes either `captured` or `analysis_running`
 after restart; malformed or contradictory evidence fails closed.
 
-The 30-second lead is active capture preparation, not a ten-minute scheduling
-pause.  The service has no timer and remains continuously active until stopped
-or a fail-closed condition occurs.
+The 57-second lead is active capture preparation. Together with a 60-second
+dwell and normal publication overhead it targets one capture start every 120
+seconds. The service has no timer and remains continuously active until stopped
+or a capture-integrity fail-closed condition occurs.
 
 The deployed template selects 60-second dwells with `--duration-seconds 60`.
+Each pair uses two useful compute workers and the supervisor permits six pair
+analyses in flight, providing twelve useful analysis workers while preserving
+capture headroom.
 Duration is part of every immutable capture-definition digest and is passed
 unchanged to the capture child; historical 20-second definitions remain valid.
