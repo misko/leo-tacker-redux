@@ -472,6 +472,40 @@ def test_full_search_control_mirrors_all_target_search_modes_without_verdict() -
         replace(control.methods[0], surrogate_only=False)
 
 
+def test_acquire_conditioned_control_keeps_all_methods_on_one_pattern_winner() -> None:
+    templates = qin_edge_pilot_template_pair_v0_1(SAMPLE_RATE_HZ, StarlinkEdge.UPPER)
+    values = synthesize_starlink_injection_v0_2(templates, _case())
+    control = _analyzer().analyze_full_search_control(
+        values,
+        recording_id=RecordingId("rec_conditioned_control"),
+        recording_identity_digest=Digest.sha256(b"conditioned-control"),
+        segment_id=SegmentId("seg_conditioned_control"),
+        receiver_chain_id=ReceiverChainId("rx_conditioned_control"),
+        templates=templates,
+        condition_relative_on_acquire=True,
+    )
+
+    assert tuple(item.method for item in control.methods) == REPORT_METHOD_ORDER
+    acquire = next(
+        item
+        for item in control.methods
+        if item.method is StarlinkDetectorMethod.FULL_FRAME_ACQUIRE
+    )
+    assert all(
+        item.winning_epoch_sample == acquire.winning_epoch_sample
+        and item.winning_coarse_cfo_hz == acquire.winning_coarse_cfo_hz
+        and item.selection_method is StarlinkDetectorMethod.FULL_FRAME_ACQUIRE
+        for item in control.methods
+    )
+    assert all(
+        item.search_mode
+        is StarlinkFullSearchControlMode.CONDITIONED_ON_ROLLED_ACQUIRE_WINNER
+        for item in control.methods
+        if item.method is not StarlinkDetectorMethod.FULL_FRAME_ACQUIRE
+    )
+    assert control.provenance.dependency_digests
+
+
 def test_full_search_control_recording_codec_is_canonical_and_strict() -> None:
     templates = qin_edge_pilot_template_pair_v0_1(SAMPLE_RATE_HZ, StarlinkEdge.LOWER)
     values = synthesize_starlink_injection_v0_2(templates, _case())

@@ -61,7 +61,10 @@ class ExactStarlinkAdaptiveResponseAnalyzerV0_1:
         self._config = config
         self._execution = execution
         self._paired = paired_analyzer or StarlinkPairedSurrogateAnalyzerV0_1(
-            ReportMethodStarlinkDetectorV0_1(execution), config
+            ReportMethodStarlinkDetectorV0_1(
+                execution, condition_relative_on_acquire=True
+            ),
+            config,
         )
 
     def analyze(
@@ -122,6 +125,7 @@ class ExactStarlinkAdaptiveResponseAnalyzerV0_1:
                 "time-look-elsewhere-calibration-required",
                 "base-sentinels-span-dwell-but-do-not-cover-every-sample",
                 "all-patterns-search-the-union-of-selected-local-windows",
+                "report-methods-conditioned-on-each-patterns-full-frame-acquire-winner",
                 "exact-window-union-is-sparse-and-dependent",
             ),
             None,

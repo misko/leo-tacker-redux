@@ -445,8 +445,8 @@
           kind: "detector", key: base, approach: "Symmetric adaptive Qin + surrogate search", scope: base,
           window: `${exactWindows.length} exact windows; stages ${stages.join(", ")}; ${duration(payload.plan.probe_sample_count, stream.sample_rate_hz)} probes`,
           coverage: `${percent(stream.exact_coverage_fraction)} exact; fixed sentinels span the dwell and local windows remain sparse`,
-          search: `same union of sentinel, power-seed, Qin-selected, surrogate-selected, and local windows for every pattern; identical epoch/CFO grid; methods ${methods.join(", ")}`,
-          response: "algorithm score vs exact-window UTC; selection stage, finite paired rank, Qin-minus-max-surrogate margin",
+          search: `same union of sentinel, power-seed, Qin-selected, surrogate-selected, and local windows for every pattern; each Qin/surrogate pattern independently searches one full-frame epoch/CFO winner; methods ${methods.join(", ")} are conditioned at that pattern winner`,
+          response: "conditioned algorithm score vs exact-window UTC; pattern acquisition winner, selection stage, finite paired rank, Qin-minus-max-surrogate margin",
           status: "time look-elsewhere calibration required; candidate-only; maximum is descriptive",
         } : {
           kind: "detector", key: base, approach: "Legacy sparse Qin + paired-surrogate fallback", scope: base,
@@ -477,7 +477,7 @@
       if (current !== generation) return;
       node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
       state("detector", error.status === 404 ? "pending" : "error", error.status === 404 ? "Adaptive detector evidence is pending in the asynchronous queue." : `Detector evidence failed: ${error.message}`);
-      setApproachRows("detector", [{kind: "detector", key: "pending", approach: "Symmetric adaptive Qin + surrogate search", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "same candidate/local windows and epoch/CFO search for every pattern", response: "algorithm score vs UTC", status: error.status === 404 ? "queued" : error.message}]);
+      setApproachRows("detector", [{kind: "detector", key: "pending", approach: "Symmetric adaptive Qin + surrogate search", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "same candidate/local windows for every pattern; one independent full-frame epoch/CFO winner per Qin/surrogate pattern", response: "conditioned algorithm score vs UTC", status: error.status === 404 ? "queued" : error.message}]);
     }
   }
 

@@ -660,6 +660,12 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             expect(approaches).to_contain_text(
                 "same union of sentinel, power-seed, Qin-selected, surrogate-selected"
             )
+            expect(approaches).to_contain_text(
+                "each Qin/surrogate pattern independently searches one full-frame epoch/CFO winner"
+            )
+            expect(approaches).to_contain_text(
+                "conditioned algorithm score vs exact-window UTC"
+            )
             expect(approaches).to_contain_text("Basic blind Doppler track")
             expect(approaches).to_contain_text("Advanced-path-only Doppler")
             expect(approaches).to_contain_text("-1040.0…1040.0 kHz physical CFO")

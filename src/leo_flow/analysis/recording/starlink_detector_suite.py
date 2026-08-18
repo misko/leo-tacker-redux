@@ -59,6 +59,10 @@ ALGORITHM_ID = "starlink-report-detector-suite"
 ALGORITHM_VERSION = "0.2.0"
 FULL_SEARCH_CONTROL_ALGORITHM_ID = "starlink-rolled-template-full-search-control"
 FULL_SEARCH_CONTROL_ALGORITHM_VERSION = "0.1.0"
+ACQUIRE_CONDITIONED_CONTROL_ALGORITHM_ID = (
+    "starlink-pattern-acquire-conditioned-report-method-control"
+)
+ACQUIRE_CONDITIONED_CONTROL_ALGORITHM_VERSION = "0.1.0"
 CONFIG_SCHEMA_ID = "org.leo-flow.starlink-detector-suite-config"
 PSS_SSS_TEMPLATE_SCHEMA_ID = "org.leo-flow.starlink-pss-sss-template"
 OFDM_SYMBOL_DURATION_S = 4.4e-6
@@ -393,6 +397,7 @@ class StarlinkDetectorSuiteV0_2:
         segment_id: SegmentId,
         receiver_chain_id: ReceiverChainId,
         templates: KnownCodePilotTemplatePairV0_1,
+        condition_relative_on_acquire: bool = False,
     ) -> StarlinkFullSearchControlSuiteV0_1:
         """Search the rolled template independently over the target grid.
 
@@ -402,7 +407,16 @@ class StarlinkDetectorSuiteV0_2:
 
         values = tuple(complex(value) for value in samples)
         self._validate_inputs(values, templates, None)
-        algorithm_ref = starlink_full_search_control_algorithm_ref_v0_1()
+        algorithm_ref = (
+            starlink_acquire_conditioned_control_algorithm_ref_v0_1()
+            if condition_relative_on_acquire
+            else starlink_full_search_control_algorithm_ref_v0_1()
+        )
+        control_search = (
+            "pattern-acquire-search-then-condition-report-methods"
+            if condition_relative_on_acquire
+            else "rolled-template-independent-full-search"
+        )
         config_ref = starlink_detector_suite_config_ref_v0_2(self._config)
         suite_identity = canonical_digest(
             {
@@ -416,7 +430,7 @@ class StarlinkDetectorSuiteV0_2:
                 "sample_rate_hz": templates.sample_rate_hz,
                 "edge": templates.edge.value,
                 "methods": tuple(method.value for method in REPORT_METHOD_ORDER),
-                "control_search": "rolled-template-independent-full-search",
+                "control_search": control_search,
             }
         )
         evidence = self._run_full_search_controls(
@@ -425,6 +439,8 @@ class StarlinkDetectorSuiteV0_2:
             algorithm_ref=algorithm_ref,
             config_ref=config_ref,
             suite_identity=suite_identity,
+            condition_relative_on_acquire=condition_relative_on_acquire,
+            control_search=control_search,
         )
         input_digest = canonical_digest(
             {
@@ -482,6 +498,8 @@ class StarlinkDetectorSuiteV0_2:
         algorithm_ref: ArtifactRef,
         config_ref: ArtifactRef,
         suite_identity: Digest,
+        condition_relative_on_acquire: bool = False,
+        control_search: str = "rolled-template-independent-full-search",
     ) -> tuple[StarlinkFullSearchControlMethodEvidenceV0_1, ...]:
         anchors = _spread_symbols(8)
         relative_specs = (
@@ -494,22 +512,52 @@ class StarlinkDetectorSuiteV0_2:
         results: dict[
             StarlinkDetectorMethod, StarlinkFullSearchControlMethodEvidenceV0_1
         ] = {}
+        acquire_winner = self._search_full_frame_template(
+            values,
+            templates.conditioned_control_samples,
+            templates.sample_rate_hz,
+            self._config.acquire_symbols,
+        )
         for method, symbols, role in relative_specs:
-            winner = self._search_relative_template(
-                values,
-                templates.conditioned_control_samples,
-                templates.sample_rate_hz,
-                method,
-                symbols,
-            )
+            if condition_relative_on_acquire:
+                frames = _symbol_correlations(
+                    values,
+                    templates.conditioned_control_samples,
+                    templates.sample_rate_hz,
+                    acquire_winner.epoch,
+                    acquire_winner.coarse_cfo_hz,
+                    symbols,
+                )
+                scored = self._score_relative_frames(frames, method)
+                winner = _Winner(
+                    acquire_winner.epoch,
+                    acquire_winner.coarse_cfo_hz,
+                    scored,
+                )
+            else:
+                winner = self._search_relative_template(
+                    values,
+                    templates.conditioned_control_samples,
+                    templates.sample_rate_hz,
+                    method,
+                    symbols,
+                )
             results[method] = self._full_search_control_evidence(
                 method,
                 algorithm_ref,
                 config_ref,
                 templates,
                 suite_identity,
-                StarlinkFullSearchControlMode.SEARCHED_ROLLED_TEMPLATE,
-                method,
+                (
+                    StarlinkFullSearchControlMode.CONDITIONED_ON_ROLLED_ACQUIRE_WINNER
+                    if condition_relative_on_acquire
+                    else StarlinkFullSearchControlMode.SEARCHED_ROLLED_TEMPLATE
+                ),
+                (
+                    StarlinkDetectorMethod.FULL_FRAME_ACQUIRE
+                    if condition_relative_on_acquire
+                    else method
+                ),
                 (
                     self._config.glrt_effective_search_cell_count
                     if method
@@ -520,14 +568,9 @@ class StarlinkDetectorSuiteV0_2:
                 symbols,
                 role,
                 None,
+                "rolled-template-independent-full-search",
             )
 
-        acquire_winner = self._search_full_frame_template(
-            values,
-            templates.conditioned_control_samples,
-            templates.sample_rate_hz,
-            self._config.acquire_symbols,
-        )
         for method, symbols, role, mode in (
             (
                 StarlinkDetectorMethod.FULL_FRAME_ACQUIRE,
@@ -574,6 +617,7 @@ class StarlinkDetectorSuiteV0_2:
                 symbols,
                 role,
                 self._config.symbol_split_digest,
+                "rolled-template-independent-full-search",
             )
         return tuple(results[method] for method in REPORT_METHOD_ORDER)
 
@@ -767,29 +811,35 @@ class StarlinkDetectorSuiteV0_2:
                 )
                 if not frames.support:
                     continue
-                if method is StarlinkDetectorMethod.ANCHOR_8:
-                    scored = _coherent_symbol_score(frames, 0.0)
-                elif method in (
-                    StarlinkDetectorMethod.DIFFERENTIAL_16,
-                    StarlinkDetectorMethod.DIFFERENTIAL_32,
-                ):
-                    scored = _differential_score(frames)
-                else:
-                    scored = max(
-                        (
-                            _coherent_symbol_score(frames, residual)
-                            for residual in self._config.glrt_residual_cfo_hypotheses_hz
-                        ),
-                        key=lambda item: (
-                            item.score,
-                            -abs(item.residual_cfo_hz),
-                            -item.residual_cfo_hz,
-                        ),
-                    )
+                scored = self._score_relative_frames(frames, method)
                 candidates.append(_Winner(epoch, coarse, scored))
         if not candidates:
             raise ValueError(f"no complete frame supports {method.value}")
         return max(candidates, key=_winner_key)
+
+    def _score_relative_frames(
+        self, frames: _Frames, method: StarlinkDetectorMethod
+    ) -> _Scored:
+        if not frames.support:
+            return _Scored(0.0, 0.0, _empty_summary())
+        if method is StarlinkDetectorMethod.ANCHOR_8:
+            return _coherent_symbol_score(frames, 0.0)
+        if method in (
+            StarlinkDetectorMethod.DIFFERENTIAL_16,
+            StarlinkDetectorMethod.DIFFERENTIAL_32,
+        ):
+            return _differential_score(frames)
+        return max(
+            (
+                _coherent_symbol_score(frames, residual)
+                for residual in self._config.glrt_residual_cfo_hypotheses_hz
+            ),
+            key=lambda item: (
+                item.score,
+                -abs(item.residual_cfo_hz),
+                -item.residual_cfo_hz,
+            ),
+        )
 
     def _condition_relative(
         self,
@@ -869,6 +919,7 @@ class StarlinkDetectorSuiteV0_2:
         symbols: tuple[int, ...],
         role: str,
         split_digest: Digest | None,
+        control_search: str,
     ) -> StarlinkFullSearchControlMethodEvidenceV0_1:
         identity = canonical_digest(
             {
@@ -878,7 +929,7 @@ class StarlinkDetectorSuiteV0_2:
                 "selection_method": selection_method.value,
                 "effective_search_cell_count": effective_search_cells,
                 "symbols": symbols,
-                "control_search": "rolled-template-independent-full-search",
+                "control_search": control_search,
             }
         )
         return StarlinkFullSearchControlMethodEvidenceV0_1(
@@ -902,7 +953,7 @@ class StarlinkDetectorSuiteV0_2:
             symbols,
             role,
             split_digest,
-            "rolled-template-independent-full-search",
+            control_search,
             True,
             (
                 "same-hypothesis-grid-as-target",
@@ -1063,6 +1114,25 @@ def starlink_full_search_control_algorithm_ref_v0_1() -> ArtifactRef:
                     starlink_detector_suite_algorithm_ref_v0_2().digest
                 ),
                 "semantics": "rolled-template-independent-full-search",
+                "methods": tuple(method.value for method in REPORT_METHOD_ORDER),
+            }
+        ),
+        SchemaRef("org.leo-flow.recording-algorithm", FULL_SEARCH_CONTROL_V0_1),
+    )
+
+
+def starlink_acquire_conditioned_control_algorithm_ref_v0_1() -> ArtifactRef:
+    return ArtifactRef(
+        "starlink-pattern-acquire-conditioned-control-v0.1",
+        canonical_digest(
+            {
+                "algorithm_id": ACQUIRE_CONDITIONED_CONTROL_ALGORITHM_ID,
+                "algorithm_version": ACQUIRE_CONDITIONED_CONTROL_ALGORITHM_VERSION,
+                "target_suite_algorithm": str(
+                    starlink_detector_suite_algorithm_ref_v0_2().digest
+                ),
+                "selection": "independent-full-frame-acquire-per-pattern",
+                "relative_methods": "conditioned-on-pattern-acquire-winner",
                 "methods": tuple(method.value for method in REPORT_METHOD_ORDER),
             }
         ),

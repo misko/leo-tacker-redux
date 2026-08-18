@@ -38,6 +38,7 @@ from leo_flow.contracts.starlink_adaptive_response import (
     StarlinkAdaptiveStreamSelectionV0_1,
 )
 from leo_flow.contracts.starlink_detector_suite import REPORT_METHOD_ORDER
+from leo_flow.contracts.starlink_surrogate_null import StarlinkPatternSearchMode
 from leo_flow.storage.ports import RecordingView
 
 from .fakes import FakeRecordingView, SegmentFixture, execution_context, make_view
@@ -135,6 +136,27 @@ def test_adaptive_response_runs_every_method_on_pattern_symmetric_union(
     assert stream.selection.exact_windows[-1].stop_sample == stream.segment_sample_count
     assert all(len(item.surrogates) == 4 for item in stream.points)
     assert all(item.qin.effective_search_cell_count > 0 for item in stream.points)
+    for window in stream.selection.exact_windows:
+        points = tuple(
+            item for item in stream.points if item.window_index == window.window_index
+        )
+        assert (
+            sum(
+                item.qin.search_mode is StarlinkPatternSearchMode.SEARCHED
+                for item in points
+            )
+            == 1
+        )
+        assert all(
+            sum(
+                surrogate.winner.search_mode is StarlinkPatternSearchMode.SEARCHED
+                for surrogate in pattern_results
+            )
+            == 1
+            for pattern_results in zip(
+                *(item.surrogates for item in points), strict=True
+            )
+        )
     assert stream.exact_coverage_fraction > 0
     assert result.calibrated_detection_count is None
     assert "time-look-elsewhere-calibration-required" in result.warnings

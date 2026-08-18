@@ -22,6 +22,7 @@ from leo_flow.services.starlink_adaptive_response import (
     AdaptiveResponseWorkLeaseV0_1,
     BoundedAdaptiveResponseServiceV0_1,
     StaleAdaptiveResponseLeaseError,
+    adaptive_response_plan_v0_1,
 )
 from tests.recording_analysis.fakes import SegmentFixture, make_view
 
@@ -133,3 +134,16 @@ def test_stale_completion_does_not_retry_or_mutate_another_lease() -> None:
         work, _Producer(result), worker_id="worker-a", lease_ttl_s=90
     ).run_once()
     assert work.event == ""
+
+
+def test_adaptive_response_plan_spans_dwell_with_a_bounded_exact_union() -> None:
+    plan = adaptive_response_plan_v0_1(2_500_000.0)
+
+    assert plan.probe_sample_count == 20_000
+    assert plan.sentinel_stride_samples == 7_500_000  # 3 seconds
+    assert plan.local_radius_samples == 250_000  # +/- 100 milliseconds
+    assert plan.local_stride_samples == 250_000  # 100 milliseconds
+    assert plan.candidate_centers_per_pattern == 1
+    assert plan.maximum_power_seeds == 8
+    assert plan.maximum_base_windows == 64
+    assert plan.maximum_exact_windows == 64

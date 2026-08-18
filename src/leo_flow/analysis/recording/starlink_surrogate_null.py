@@ -50,6 +50,7 @@ from .starlink import (
 from .starlink_detector_suite import (
     StarlinkDetectorSuiteConfigV0_2,
     StarlinkDetectorSuiteV0_2,
+    starlink_acquire_conditioned_control_algorithm_ref_v0_1,
     starlink_detector_suite_algorithm_ref_v0_2,
     starlink_detector_suite_config_ref_v0_2,
 )
@@ -131,10 +132,16 @@ class StarlinkDetectorV0_1(Protocol):
 
 
 class ReportMethodStarlinkDetectorV0_1:
-    """Adapter that searches any declared pattern through all eight v0.2 methods."""
+    """Run report methods with independent or acquire-conditioned selection."""
 
-    def __init__(self, execution: AnalysisExecutionContext) -> None:
+    def __init__(
+        self,
+        execution: AnalysisExecutionContext,
+        *,
+        condition_relative_on_acquire: bool = False,
+    ) -> None:
         self._execution = execution
+        self._condition_relative_on_acquire = condition_relative_on_acquire
 
     def detect(
         self,
@@ -176,8 +183,13 @@ class ReportMethodStarlinkDetectorV0_1:
             segment_id=radio_signal.segment_id,
             receiver_chain_id=radio_signal.receiver_chain_id,
             templates=compatibility_pair,
+            condition_relative_on_acquire=self._condition_relative_on_acquire,
         )
-        target_algorithm = starlink_detector_suite_algorithm_ref_v0_2()
+        target_algorithm = (
+            starlink_acquire_conditioned_control_algorithm_ref_v0_1()
+            if self._condition_relative_on_acquire
+            else starlink_detector_suite_algorithm_ref_v0_2()
+        )
         search_grid = starlink_search_grid_v0_1(parameters.suite_config)
         methods = tuple(
             _map_method(

@@ -50,6 +50,15 @@ class StaleAdaptiveResponseLeaseError(RuntimeError):
     pass
 
 
+ADAPTIVE_SENTINEL_STRIDE_SECONDS = 3.0
+ADAPTIVE_LOCAL_RADIUS_SECONDS = 0.1
+ADAPTIVE_LOCAL_STRIDE_SECONDS = 0.1
+ADAPTIVE_CENTERS_PER_PATTERN = 1
+ADAPTIVE_MAXIMUM_POWER_SEEDS = 8
+ADAPTIVE_MAXIMUM_BASE_WINDOWS = 64
+ADAPTIVE_MAXIMUM_EXACT_WINDOWS = 64
+
+
 @dataclass(frozen=True)
 class AdaptiveResponseWorkLeaseV0_1:
     refinement_request: FullDwellRefinementRequestV0_1
@@ -240,7 +249,12 @@ def adaptive_response_request_v0_1(
         grouped.setdefault(key, []).append(window)
     streams = []
     for key in sorted(grouped):
-        windows = grouped[key]
+        # The prompt timeline ranks these windows using a pattern-blind power
+        # statistic over 100% of the IQ.  Exact Qin/surrogate searches are the
+        # expensive second stage, so retain a fixed top-ranked subset rather
+        # than allowing the queue producer's larger transport bound to dictate
+        # scientific runtime.  Fixed sentinels below still span the full dwell.
+        windows = _bounded_power_seeds(grouped[key])
         first = windows[0]
         segment = segments.get(first.segment_id)
         if (
@@ -271,17 +285,7 @@ def adaptive_response_request_v0_1(
     if len(sample_rates) != 1:
         raise ValueError("adaptive response streams require one sample-rate profile")
     sample_rate = next(iter(sample_rates))
-    probe = round(sample_rate * 0.008)
-    plan = StarlinkAdaptiveRefinementPlanV0_1(
-        probe,
-        round(sample_rate * 3.0),
-        round(sample_rate * 0.5),
-        round(sample_rate * 0.1),
-        2,
-        32,
-        128,
-        512,
-    )
+    plan = adaptive_response_plan_v0_1(sample_rate)
     return StarlinkAdaptiveResponseRequestV0_1(
         SchemaRef(StarlinkAdaptiveResponseRequestV0_1.SCHEMA_ID, V0_1),
         refinement.recording_id,
@@ -300,3 +304,32 @@ def adaptive_response_request_v0_1(
         4,
         SchemaRef(StarlinkAdaptiveResponseBundleV0_1.SCHEMA_ID, V0_1),
     )
+
+
+def adaptive_response_plan_v0_1(
+    sample_rate_hz: float,
+) -> StarlinkAdaptiveRefinementPlanV0_1:
+    """Return the bounded, full-dwell-spanning exact-refinement policy."""
+
+    if sample_rate_hz <= 0:
+        raise ValueError("adaptive response sample rate must be positive")
+    probe = round(sample_rate_hz * 0.008)
+    return StarlinkAdaptiveRefinementPlanV0_1(
+        probe,
+        round(sample_rate_hz * ADAPTIVE_SENTINEL_STRIDE_SECONDS),
+        round(sample_rate_hz * ADAPTIVE_LOCAL_RADIUS_SECONDS),
+        round(sample_rate_hz * ADAPTIVE_LOCAL_STRIDE_SECONDS),
+        ADAPTIVE_CENTERS_PER_PATTERN,
+        ADAPTIVE_MAXIMUM_POWER_SEEDS,
+        ADAPTIVE_MAXIMUM_BASE_WINDOWS,
+        ADAPTIVE_MAXIMUM_EXACT_WINDOWS,
+    )
+
+
+def _bounded_power_seeds(
+    windows: list[FullDwellRefinementWindowV0_1],
+) -> list[FullDwellRefinementWindowV0_1]:
+    ranks = [item.rank for item in windows]
+    if len(ranks) != len(set(ranks)) or any(rank < 0 for rank in ranks):
+        raise ValueError("adaptive response power-seed ranks are invalid")
+    return sorted(windows, key=lambda item: item.rank)[:ADAPTIVE_MAXIMUM_POWER_SEEDS]
