@@ -22,7 +22,7 @@ from tests.e2e.test_retro_qam_canary_browser import _receipt
 from tests.recording_import.test_retro_qam_import import _archive
 
 _RECORDING_ID = "rec_retro_qam_20260813_clip002"
-_TERMINAL_PANEL_STATE = re.compile(r"^(ready|pending|missing|empty|unavailable)$")
+_TERMINAL_PANEL_STATE = re.compile(r"^(ready|pending|missing|unavailable)$")
 
 
 def _unused_port() -> int:
@@ -238,6 +238,20 @@ def test_imported_retro_recording_is_complete_in_real_dashboard_browser(
             expect(page.locator("#evidence-receivers")).to_contain_text(
                 "rx_retro_qam_1"
             )
+            for label, href in (
+                ("Dashboard", "/"),
+                ("Capture facts", "#capture-facts"),
+                ("Evidence workspace", "#evidence-workspace"),
+                ("Segments & tunings", "#segments"),
+                ("Waterfall", "#waterfall"),
+                ("Doppler explorer", "#doppler"),
+                ("Surrogate controls", "#surrogate-null"),
+                ("Pilot constellation", "#pilot-constellation"),
+                ("Beacon decision", "#analysis"),
+            ):
+                expect(
+                    page.get_by_role("navigation").get_by_role("link", name=label)
+                ).to_have_attribute("href", href)
 
             page.locator("#evidence-load-extended").click()
             for selector in (
@@ -262,5 +276,20 @@ def test_imported_retro_recording_is_complete_in_real_dashboard_browser(
             expect(
                 page.locator('#evidence-workspace [data-state="loading"]')
             ).to_have_count(0)
+            for selector in (
+                "#evidence-receiver-agnostic-cfo-state",
+                "#evidence-symbolwise-state",
+                "#evidence-approaches-state",
+                "#evidence-timeline-state",
+                "#evidence-prescreen-state",
+                "#evidence-qam-state",
+                "#evidence-qam-combined-state",
+                "#evidence-detector-state",
+                "#evidence-doppler-state",
+                "#evidence-pilot-doppler-state",
+                "#waterfall-state",
+                "#doppler-state",
+            ):
+                expect(page.locator(selector)).not_to_be_empty()
         finally:
             browser.close()

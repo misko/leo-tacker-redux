@@ -5,6 +5,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,6 +13,8 @@ from playwright.sync_api import expect, sync_playwright
 
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.contracts.core import RecordingId
+from leo_flow.contracts.core import CaptureAttemptId, CaptureBatchId, RadioId, UtcNs
+from leo_flow.dashboard.repository import CaptureBatchProjection, InMemoryDashboardRepository
 from leo_flow.dashboard.api import (
     DashboardJsonApplicationV3,
     DashboardJsonApplicationV16,
@@ -22,7 +25,7 @@ from leo_flow.dashboard.api import (
     JsonResponse,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
-from tests.dashboard._fixtures import repository
+from tests.dashboard._fixtures import capture_batches, repository
 
 
 class _MasterEvidencePorts:
@@ -214,10 +217,15 @@ class _SummaryPriorityProbe:
 @contextmanager
 def _running_master_dashboard(
     priority_probe: _SummaryPriorityProbe | None = None,
+    *,
+    capture_queries: InMemoryDashboardRepository | None = None,
+    ports: _MasterEvidencePorts | None = None,
 ) -> Iterator[str]:
     queries = repository(50)
-    ports = _MasterEvidencePorts()
-    v3 = DashboardJsonApplicationV3(queries, queries, ports, ports, ports)
+    ports = ports or _MasterEvidencePorts()
+    v3 = DashboardJsonApplicationV3(
+        queries, capture_queries or queries, ports, ports, ports
+    )
     v17 = DashboardJsonApplicationV17(cast(DashboardJsonApplicationV16, v3), ports)
     v18 = DashboardJsonApplicationV18(v17, ports)
     base_app = DashboardUiApplication(DashboardJsonApplicationV22(v18, ports))
@@ -345,6 +353,137 @@ def test_master_capture_table_populates_every_evidence_and_navigation_field() ->
                 "aria-label",
                 "View capture details, waterfall, and analysis for rec_ready_a",
             )
+        finally:
+            browser.close()
+
+
+class _HundredQamPorts(_MasterEvidencePorts):
+    def capture_qam_summaries(self, query: Any) -> dict[str, object]:
+        assert query.maximum_recordings == 100
+        return {
+            "schema_version": 1,
+            "start_utc_ns": query.start_utc_ns,
+            "stop_utc_ns": query.stop_utc_ns,
+            "candidate_only": True,
+            "calibration_required": True,
+            "calibrated_detection_count": None,
+            "recordings": [
+                {
+                    "recording_id": f"rec_v22_{index:03d}",
+                    "radio_id": f"radio_j1_{'a' if index % 2 == 0 else 'b'}",
+                    "analysis_state": "complete",
+                    "state": "complete",
+                    "candidates": [
+                        {
+                            "recording_id": f"rec_v22_{index:03d}",
+                            "radio_id": (
+                                f"radio_j1_{'a' if index % 2 == 0 else 'b'}"
+                            ),
+                            "lnb_id": "lnb-j1",
+                            "receiver_chain_id": "rx-j1",
+                            "segment_id": f"seg_v22_{index:03d}",
+                            "edge": "lower",
+                            "qam_goodness": 0.91,
+                            "hard_symbol_accuracy": 0.94,
+                            "rms_evm": 0.42,
+                            "window_count": 32,
+                            "analysis_id": f"slqam3_v22_{index:03d}",
+                            "selection": (
+                                "highest-qam-goodness-per-recording-radio-lnb-receiver"
+                            ),
+                        }
+                    ],
+                    "reason_codes": [],
+                }
+                for index in range(100)
+            ],
+            "original_recording_count": 100,
+            "truncated": False,
+            "warnings": [
+                "candidate-only-qam-goodness-not-starlink-detection",
+                "highest-goodness-selected-independently-per-authoritative-lnb-receiver",
+                "best-analyzed-window-not-support-weighted-dwell-mean",
+                "radio-lnb-receiver-series-are-never-pooled",
+            ],
+        }
+
+    def capture_doppler_summaries(self, query: Any) -> dict[str, object]:
+        del query
+        return {
+            "candidate_only": True,
+            "calibrated_detection_count": None,
+            "warnings": ["radio-lnb-receiver-candidates-are-never-pooled"],
+            "recordings": [],
+        }
+
+
+def _hundred_capture_repository() -> InMemoryDashboardRepository:
+    template = capture_batches()[0].view
+    projections = []
+    for batch_index in range(50):
+        attempts = tuple(
+            replace(
+                template_attempt,
+                attempt_id=CaptureAttemptId(f"cattempt_v22_{index:03d}"),
+                radio_id=RadioId(f"radio_j1_{'a' if index % 2 == 0 else 'b'}"),
+                requested_start_utc_ns=UtcNs(1_000_000_000 + index),
+                observed_start_utc_ns=UtcNs(1_000_000_000 + index),
+                recording_id=RecordingId(f"rec_v22_{index:03d}"),
+            )
+            for template_attempt, index in zip(
+                template.attempts,
+                (batch_index * 2, batch_index * 2 + 1),
+                strict=True,
+            )
+        )
+        projections.append(
+            CaptureBatchProjection(
+                replace(
+                    template,
+                    batch_id=CaptureBatchId(f"cbatch_v22_{batch_index:03d}"),
+                    attempts=attempts,
+                ),
+                batch_index + 1,
+            )
+        )
+    return InMemoryDashboardRepository(capture_batches=projections, page_size=100)
+
+
+def test_master_v22_populates_the_full_bounded_one_hundred_recording_page() -> None:
+    with _running_master_dashboard(
+        capture_queries=_hundred_capture_repository(), ports=_HundredQamPorts()
+    ) as base_url, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, env=_browser_environment())
+        try:
+            page = browser.new_page()
+            page.add_init_script("""Date.now = () => 7200000;""")
+            response = page.goto(base_url)
+            assert response is not None and response.ok
+
+            rows = page.locator("#capture-attempts-body tr")
+            expect(rows).to_have_count(100)
+            qam_cells = rows.locator(".capture-qam-summary")
+            expect(qam_cells).to_have_count(100)
+            expect(qam_cells).to_have_attribute("data-state", "complete")
+            expect(qam_cells.locator(".capture-qam-candidate")).to_have_count(100)
+            links = qam_cells.locator(".qam-detail-link")
+            expect(links).to_have_count(100)
+            for index in (0, 50, 99):
+                recording_id = f"rec_v22_{index:03d}"
+                row = page.locator(f'[data-attempt-id="cattempt_v22_{index:03d}"]')
+                expect(row.locator("th, td")).to_have_count(9)
+                expect(row).to_have_attribute(
+                    "aria-label",
+                    f"View capture details, waterfall, and analysis for {recording_id}",
+                )
+                expect(row.locator(".qam-detail-link")).to_have_attribute(
+                    "href", f"/recordings/{recording_id}#evidence-qam"
+                )
+                expect(row.locator(".capture-doppler-summary")).to_have_attribute(
+                    "data-state", "unavailable"
+                )
+                expect(row.locator(".pilot-detection-counts")).to_have_text("— / —")
+                expect(row.locator("td").nth(7)).to_have_text("—")
         finally:
             browser.close()
 

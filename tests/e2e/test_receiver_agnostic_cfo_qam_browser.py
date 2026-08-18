@@ -19,7 +19,8 @@ from leo_flow.dashboard.api import (
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
 
-RECORDING = "rec_cfo_qam_browser"
+RECORDING = "rec_01M09J1R6E59GCC8ANJVYVRN1B"
+SEGMENT = "seg_plan_focused_loop_00000001_18cccbd3289eb706_b_ch4_lower"
 
 
 class _Previous:
@@ -54,7 +55,13 @@ class _Previous:
                         "lnb_id": "physical-b",
                     },
                 ],
-                "segments": [],
+                "segments": [
+                    {
+                        "recording_id": RECORDING,
+                        "segment_id": SEGMENT,
+                        "receiver_chain_ids": ["rx_a", "rx_b"],
+                    }
+                ],
                 "candidate_only": True,
                 "calibrated_detection_count": None,
                 "limitations": [],
@@ -104,8 +111,9 @@ class _Port:
             "radio_id": "radio_a",
             "receiver_chain_id": receiver,
             "edge": "lower",
-            "start_sample": 0,
-            "stop_sample": 7500,
+            "segment_id": SEGMENT,
+            "start_sample": 149500000,
+            "stop_sample": 149525000,
             "sample_rate_hz": 2500000.0,
             "cfo_min_hz": -700000.0,
             "cfo_max_hz": 700000.0,
@@ -165,7 +173,7 @@ def _environment() -> dict[str, str | float | bool]:
     return environment
 
 
-def test_v06_diagnostic_renders_declared_domain_without_hardware_center_labels() -> (
+def test_j1_strong_qam_v30_renders_declared_domain_without_hardware_center_labels() -> (
     None
 ):
     port = _Port()
@@ -193,6 +201,12 @@ def test_v06_diagnostic_renders_declared_domain_without_hardware_center_labels()
             expect(
                 page.locator("#evidence-receiver-agnostic-cfo-body")
             ).to_contain_text("350000 Hz / 63")
+            expect(
+                page.locator("#evidence-receiver-agnostic-cfo-body")
+            ).to_contain_text("90.00% / 0.100")
+            expect(
+                page.locator("#evidence-receiver-agnostic-cfo-body")
+            ).to_contain_text("149500000–149525000")
             card = page.locator("#evidence-receiver-agnostic-cfo")
             expect(card).to_contain_text(
                 "not the complete current wide production search"
