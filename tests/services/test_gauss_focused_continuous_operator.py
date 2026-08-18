@@ -138,6 +138,9 @@ def test_user_service_is_one_continuous_loop_without_timer_or_shell_engine() -> 
     assert "--analysis-nice 15" in unit
     assert "--duration-seconds 60" in unit
     assert "--lead-seconds 57" in unit
+    assert (
+        "--heavy-work-guard-status %t/leo-flow-optional-heavy/guard.json" in unit
+    )
     assert "Restart=no" in unit
     assert "KillMode=process" in unit
     assert "--shutdown-protocol graceful-drain-v1" in unit

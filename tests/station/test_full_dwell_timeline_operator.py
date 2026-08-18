@@ -108,6 +108,12 @@ def test_unit_has_resource_and_cancellation_bounds() -> None:
         "TimeoutStopSec=30s",
         "NoNewPrivileges=yes",
         "ProtectSystem=strict",
+        "--capture-guard-status %t/leo-flow-optional-heavy/guard.json",
+        "--maximum-focused-backlog 0",
+        "--host-cpu-cores 24",
+        "--reserved-cpu-cores 8",
+        "--estimated-claim-cpu-cores 3",
+        "--maximum-optional-concurrency 1",
     ):
         assert required in unit
     assert "DeviceAllow" not in unit

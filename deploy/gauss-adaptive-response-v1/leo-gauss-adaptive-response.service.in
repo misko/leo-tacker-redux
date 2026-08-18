@@ -13,7 +13,7 @@ Environment="PYTHONPATH=@RELEASE_ROOT@/native/lib/python3.11/site-packages:@RELE
 Environment="OPENBLAS_NUM_THREADS=1"
 Environment="OMP_NUM_THREADS=1"
 ExecStartPre=@RELEASE_ROOT@/venv/bin/leo-verify-release --manifest @RELEASE_ROOT@/release.manifest.json --receipt @RELEASE_ROOT@/validation.receipt.json --expected-manifest-sha256 @RELEASE_MANIFEST_SHA256@ --expected-receipt-sha256 @RELEASE_RECEIPT_SHA256@
-ExecStart=@RELEASE_ROOT@/venv/bin/leo-gauss-adaptive-response --credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis --worker-id gauss-adaptive-response-1 --lease-ttl-seconds 7200 --poll-seconds 5
+ExecStart=@RELEASE_ROOT@/venv/bin/leo-gauss-adaptive-response --credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis --worker-id gauss-adaptive-response-1 --lease-ttl-seconds 7200 --poll-seconds 5 --capture-guard-status %t/leo-flow-optional-heavy/guard.json --maximum-focused-backlog 0 --host-cpu-cores 24 --reserved-cpu-cores 8 --estimated-claim-cpu-cores 3 --minimum-memory-available-bytes 8589934592 --maximum-io-pressure-avg10 5 --maximum-optional-concurrency 1
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
