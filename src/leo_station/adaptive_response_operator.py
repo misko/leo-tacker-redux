@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Protocol, TextIO
 
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
+from leo_flow.contracts.optional_heavy_work_admission import (
+    OptionalHeavyWorkAdmissionPortV0_1,
+)
+
+from .optional_heavy_work_admission import build_optional_heavy_work_admission
 
 
 class AdaptiveCycle(Protocol):
@@ -94,6 +99,9 @@ def main(
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
     service_builder: Callable[..., AdaptiveCycle] = build_service,
+    admission_builder: Callable[..., OptionalHeavyWorkAdmissionPortV0_1 | None] = (
+        build_optional_heavy_work_admission
+    ),
     sleeper: Callable[[float], None] = time.sleep,
 ) -> int:
     parser = argparse.ArgumentParser()
@@ -102,6 +110,16 @@ def main(
     parser.add_argument("--lease-ttl-seconds", type=float, default=7200.0)
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--capture-guard-status", type=Path)
+    parser.add_argument("--maximum-focused-backlog", type=int, default=0)
+    parser.add_argument("--host-cpu-cores", type=int, default=0)
+    parser.add_argument("--reserved-cpu-cores", type=int, default=8)
+    parser.add_argument("--estimated-claim-cpu-cores", type=int, default=1)
+    parser.add_argument(
+        "--minimum-memory-available-bytes", type=int, default=8 * 1024**3
+    )
+    parser.add_argument("--maximum-io-pressure-avg10", type=float, default=5.0)
+    parser.add_argument("--maximum-optional-concurrency", type=int, default=1)
     args = parser.parse_args(argv)
     if not 0.1 <= args.poll_seconds <= 300:
         parser.error("--poll-seconds must lie in [0.1,300]")
@@ -113,8 +131,42 @@ def main(
             worker_id=args.worker_id,
             lease_ttl_s=args.lease_ttl_seconds,
         )
+        admission_gate = admission_builder(
+            args.capture_guard_status,
+            maximum_focused_backlog=args.maximum_focused_backlog,
+            host_cpu_cores=args.host_cpu_cores,
+            reserved_cpu_cores=args.reserved_cpu_cores,
+            estimated_claim_cpu_cores=args.estimated_claim_cpu_cores,
+            minimum_memory_available_bytes=args.minimum_memory_available_bytes,
+            maximum_io_pressure_avg10=args.maximum_io_pressure_avg10,
+            maximum_optional_concurrency=args.maximum_optional_concurrency,
+        )
         while True:
-            progressed = service.run_once()
+            if admission_gate is not None:
+                decision, permit = admission_gate.acquire()
+                if not decision.admitted:
+                    stdout.write(
+                        json.dumps(
+                            {
+                                "event": "adaptive_response_cycle_paused",
+                                "reason": decision.reason,
+                            },
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    )
+                    stdout.flush()
+                    if args.once:
+                        return 0
+                    sleeper(args.poll_seconds)
+                    continue
+            else:
+                permit = None
+            try:
+                progressed = service.run_once()
+            finally:
+                if permit is not None:
+                    permit.release()
             stdout.write(
                 json.dumps(
                     {

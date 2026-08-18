@@ -20,12 +20,16 @@ from leo_flow.adapters.focused_continuous_sqlite import (
     FocusedContinuousRecordV0_1,
     SQLiteFocusedContinuousJournalV0_1,
 )
+from leo_flow.adapters.optional_heavy_work_admission import (
+    AtomicFocusedCaptureGuardPublisherV0_1,
+)
 from leo_flow.capture.v5_station import load_v5_capture_station
 from leo_flow.contracts.capture_batch import CaptureAttemptState
 from leo_flow.contracts.core import CaptureBatchId, UtcNs, canonical_digest
 from leo_flow.contracts.focused_analysis_completion import (
     decode_focused_analysis_completion,
 )
+from leo_flow.contracts.optional_heavy_work_admission import FocusedCaptureGuardV0_1
 from leo_flow.deployments.gauss_focused_capture_operator import (
     MINIMUM_LEAD_NS,
     FocusedCaptureDefinition,
@@ -126,6 +130,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--arm", action="store_true")
     parser.add_argument(
+        "--heavy-work-guard-status",
+        type=Path,
+        help="optional local-runtime status port; publication failure never blocks capture",
+    )
+    parser.add_argument(
         "--shutdown-protocol",
         choices=("graceful-drain-v1",),
         default="graceful-drain-v1",
@@ -161,11 +170,21 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     children: dict[int, _AnalysisChild] = {}
+    publisher = _guard_publisher(args.heavy_work_guard_status)
     try:
         if not _recover(args, journal, children):
             _write_failure_latch(failure_latch, "recovery-failed")
             return 4
         completed_capture_count = journal.next_sequence()
+        _publish_guard(
+            publisher,
+            journal,
+            children,
+            active=True,
+            guard_from_utc_ns=time.time_ns(),
+            guard_until_utc_ns=time.time_ns()
+            + (args.lead_seconds + args.duration_seconds + 5) * 1_000_000_000,
+        )
         while not stopping and (
             args.maximum_dwells == 0 or completed_capture_count < args.maximum_dwells
         ):
@@ -177,6 +196,17 @@ def main(argv: list[str] | None = None) -> int:
                 _write_failure_latch(failure_latch, "capacity-gate-failed")
                 return 4
             record = _plan(args, journal)
+            _publish_guard(
+                publisher,
+                journal,
+                children,
+                active=True,
+                guard_from_utc_ns=record.requested_start_utc_ns,
+                guard_until_utc_ns=(
+                    record.requested_start_utc_ns
+                    + (args.duration_seconds + 5) * 1_000_000_000
+                ),
+            )
             print(
                 json.dumps(
                     {
@@ -223,6 +253,56 @@ def main(argv: list[str] | None = None) -> int:
             except subprocess.TimeoutExpired:
                 child.process.kill()
                 child.process.wait()
+        _publish_guard(
+            publisher,
+            journal,
+            {},
+            active=False,
+            guard_from_utc_ns=time.time_ns(),
+            guard_until_utc_ns=time.time_ns(),
+        )
+
+
+def _guard_publisher(
+    path: Path | None,
+) -> AtomicFocusedCaptureGuardPublisherV0_1 | None:
+    if path is None:
+        return None
+    try:
+        return AtomicFocusedCaptureGuardPublisherV0_1(path)
+    except ValueError:
+        print('{"event":"focused_heavy_work_guard_unavailable"}', flush=True)
+        return None
+
+
+def _publish_guard(
+    publisher: AtomicFocusedCaptureGuardPublisherV0_1 | None,
+    journal: SQLiteFocusedContinuousJournalV0_1,
+    children: dict[int, _AnalysisChild],
+    *,
+    active: bool,
+    guard_from_utc_ns: int,
+    guard_until_utc_ns: int,
+) -> None:
+    if publisher is None:
+        return
+    observed = time.time_ns()
+    try:
+        publisher.publish(
+            FocusedCaptureGuardV0_1(
+                observed,
+                max(observed + 180_000_000_000, guard_until_utc_ns),
+                guard_from_utc_ns,
+                guard_until_utc_ns,
+                len(_captured_work(journal)),
+                len(children),
+                active,
+            )
+        )
+    except (OSError, ValueError):
+        # Optional analysis fails closed on a stale/missing guard. Capture must
+        # never depend on observability for optional work.
+        print('{"event":"focused_heavy_work_guard_publish_failed"}', flush=True)
 
 
 def _valid_args(args: argparse.Namespace) -> bool:
