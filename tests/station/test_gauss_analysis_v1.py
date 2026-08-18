@@ -288,6 +288,32 @@ def test_acquired_qam_search_is_wide_and_independent_of_mutable_lnb_labels() -> 
     )
 
 
+def test_async_detector_windows_use_the_same_label_independent_cfo_domain() -> None:
+    profiles = analysis_v1.starlink_full_dwell_profiles_v0_1()
+    source_refs = {
+        profile.config_ref
+        for profile in analysis_v1.STARLINK_SUITE_PROFILES
+        if profile.eligible
+    }
+
+    assert {profile.source_config_ref for profile in profiles} == source_refs
+    assert all(
+        profile.config.coarse_cfo_hypotheses_hz[0] == -1_040_000.0
+        and profile.config.coarse_cfo_hypotheses_hz[-1] == 1_040_000.0
+        for profile in profiles
+    )
+    manifest = analysis_v1.science_manifest()["starlink_full_dwell_response_v0_1"]
+    assert manifest["prescreen"] == "complete-iq-pattern-blind-power"
+    assert manifest["maximum_exact_windows_per_stream"] == 32
+    assert {
+        (item["cfo_min_hz"], item["cfo_max_hz"]) for item in manifest["profiles"]
+    } == {(-1_040_000.0, 1_040_000.0)}
+    assert all(
+        item["source_suite_config_ref"] != item["exact_search_config_ref"]
+        for item in manifest["profiles"]
+    )
+
+
 def test_acquired_qam_production_window_budget_is_bounded_for_live_cadence() -> None:
     assert analysis_v1.ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM == 32
     acquired = analysis_v1.science_manifest()["starlink_acquired_qam_v0_3"]

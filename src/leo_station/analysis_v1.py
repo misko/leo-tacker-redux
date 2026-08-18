@@ -607,15 +607,47 @@ def starlink_temporal_pilot_preparers_v0_1() -> tuple[
 
 
 def starlink_full_dwell_profiles_v0_1() -> tuple[FullDwellAnalysisProfileV0_1, ...]:
-    """Return the exact approved configs and immutable execution identity."""
+    """Return source-bound profiles with label-independent wide exact search.
+
+    The source suite remains immutable v0.2 evidence.  The asynchronous V15
+    overlay records its own search-grid identity and therefore uses the same
+    physical wide CFO domain as current QAM acquisition, without borrowing an
+    offset from a historical LNB letter.
+    """
     from leo_flow.services.starlink_full_dwell_pipeline import (
         FullDwellAnalysisProfileV0_1,
     )
 
     return tuple(
-        FullDwellAnalysisProfileV0_1(profile.config, _starlink_full_dwell_execution())
+        FullDwellAnalysisProfileV0_1(
+            profile.config_ref,
+            current_hardware_wide_detector_config_v0_2(
+                profile.config, profile.sample_rate_hz
+            ),
+            _starlink_full_dwell_execution(),
+        )
         for profile in STARLINK_SUITE_PROFILES
         if profile.eligible
+    )
+
+
+def current_hardware_wide_detector_config_v0_2(
+    source: StarlinkDetectorSuiteConfigV0_2,
+    sample_rate_hz: float,
+) -> StarlinkDetectorSuiteConfigV0_2:
+    """Expand only the physical CFO axis for asynchronous detector windows."""
+
+    acquisition = current_hardware_wide_acquisition_config_v0_3(sample_rate_hz)
+    return StarlinkDetectorSuiteConfigV0_2(
+        epoch_hypotheses_samples=source.epoch_hypotheses_samples,
+        coarse_cfo_hypotheses_hz=acquisition.coarse_cfo_hypotheses_hz,
+        glrt_residual_cfo_hypotheses_hz=source.glrt_residual_cfo_hypotheses_hz,
+        acquire_symbols=source.acquire_symbols,
+        verify_symbols=source.verify_symbols,
+        maximum_probe_samples=source.maximum_probe_samples,
+        maximum_outer_search_cells=source.maximum_outer_search_cells,
+        maximum_effective_search_cells=source.maximum_effective_search_cells,
+        maximum_frame_summaries=source.maximum_frame_summaries,
     )
 
 
@@ -898,9 +930,7 @@ def science_manifest() -> dict[str, object]:
                 for sample_rate_hz in (2_500_000.0, 5_000_000.0)
             ],
             "window_duration_ms": 20,
-            "maximum_windows_per_stream": (
-                ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM
-            ),
+            "maximum_windows_per_stream": (ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM),
             "sampling_plan": "bounded-evenly-spaced-endpoint-preserving-windows",
             "overall_derivation": (
                 "support-weighted-window-summary;display=max-held-out-margin-window"
@@ -912,6 +942,32 @@ def science_manifest() -> dict[str, object]:
                     "org.leo-flow.starlink-acquired-constellation-recording-bundle"
                 ),
                 "version": "0.3",
+            },
+        },
+        "starlink_full_dwell_response_v0_1": {
+            "profiles": [
+                {
+                    "source_suite_config_ref": _artifact_document(
+                        profile.source_config_ref
+                    ),
+                    "exact_search_config_ref": _artifact_document(
+                        starlink_detector_suite_config_ref_v0_2(profile.config)
+                    ),
+                    "cfo_min_hz": profile.config.coarse_cfo_hypotheses_hz[0],
+                    "cfo_max_hz": profile.config.coarse_cfo_hypotheses_hz[-1],
+                    "calibration": "current-hardware-label-independent",
+                }
+                for profile in starlink_full_dwell_profiles_v0_1()
+            ],
+            "prescreen": "complete-iq-pattern-blind-power",
+            "exact_selection": "top-power-then-start;pattern-blind-per-stream",
+            "maximum_exact_windows_per_stream": 32,
+            "surrogate_count": 4,
+            "coverage_semantics": ("complete-prescreen-sparse-exact-window-refinement"),
+            "decision_semantics": "candidate-evidence-not-calibrated-detection",
+            "requested_output_schema": {
+                "schema_id": "org.leo-flow.starlink-full-dwell-response-bundle",
+                "version": "0.1",
             },
         },
         "model": {

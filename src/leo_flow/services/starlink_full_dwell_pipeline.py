@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from leo_flow.analysis.recording.api import AnalysisExecutionContext
 from leo_flow.analysis.recording.starlink_detector_suite import (
     StarlinkDetectorSuiteConfigV0_2,
-    starlink_detector_suite_config_ref_v0_2,
 )
 from leo_flow.analysis.recording.starlink_full_dwell_response import (
     ExactStarlinkFullDwellResponseAnalyzerV0_1,
@@ -42,6 +41,7 @@ from .starlink_full_dwell_producer import FullDwellWorkLeaseV0_1
 
 @dataclass(frozen=True)
 class FullDwellAnalysisProfileV0_1:
+    source_config_ref: ArtifactRef
     config: StarlinkDetectorSuiteConfigV0_2
     execution: AnalysisExecutionContext
 
@@ -55,9 +55,7 @@ class DurableFullDwellLeaseProducerV0_1:
         products: DurableStarlinkFullDwellStoreV0_1,
         profiles: tuple[FullDwellAnalysisProfileV0_1, ...],
     ) -> None:
-        refs = tuple(
-            starlink_detector_suite_config_ref_v0_2(p.config) for p in profiles
-        )
+        refs = tuple(p.source_config_ref for p in profiles)
         if not profiles or len(refs) != len(set(refs)):
             raise ValueError("full-dwell profiles must be nonempty and unique")
         self._recordings = recordings
@@ -99,13 +97,13 @@ class DurableFullDwellLeaseProducerV0_1:
     ) -> FullDwellAnalysisProfileV0_1:
         if not bundle.suites:
             raise ValueError("full-dwell source suite has no eligible streams")
-        refs = {
+        source_refs = {
             method.config_ref for suite in bundle.suites for method in suite.methods
         }
         matches = tuple(
             profile
             for profile in self._profiles
-            if refs == {starlink_detector_suite_config_ref_v0_2(profile.config)}
+            if source_refs == {profile.source_config_ref}
         )
         if len(matches) != 1:
             raise ValueError("full-dwell source has no unique approved profile")
