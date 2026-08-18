@@ -21,7 +21,7 @@ from leo_flow.analysis.recording.api import AnalysisExecutionContext
 from leo_flow.analysis.recording.starlink_full_dwell_timeline_persistence import (
     DurableFullDwellTimelineStoreV0_1,
 )
-from leo_flow.contracts.core import UtcNs, canonical_digest
+from leo_flow.contracts.core import RecordingId, UtcNs, canonical_digest
 from leo_flow.contracts.starlink import StarlinkEdge
 from leo_flow.contracts.starlink_full_dwell_timeline_product import (
     FullDwellTimelinePlanV0_1,
@@ -54,6 +54,7 @@ class BoundedTimelineCycleV0_1:
         maximum_admissions: int,
         tile_sample_count: int,
         maximum_refinements_per_stream: int,
+        recording_ids: tuple[RecordingId, ...] = (),
     ) -> None:
         if not 1 <= maximum_admissions <= 64:
             raise ValueError("timeline admission bound is invalid")
@@ -64,6 +65,9 @@ class BoundedTimelineCycleV0_1:
             service,
         )
         self._maximum_admissions = maximum_admissions
+        if len(recording_ids) > 64 or len(recording_ids) != len(set(recording_ids)):
+            raise ValueError("timeline recording targets are duplicate or unbounded")
+        self._recording_ids = recording_ids
         self._plan = FullDwellTimelinePlanV0_1(
             tile_sample_count,
             maximum_refinements_per_stream=maximum_refinements_per_stream,
@@ -71,7 +75,12 @@ class BoundedTimelineCycleV0_1:
 
     def run_cycle(self) -> tuple[int, bool]:
         admitted = 0
-        for recording_id in self._work.newest_candidate_ids(self._maximum_admissions):
+        candidates = (
+            self._recording_ids
+            if self._recording_ids
+            else self._work.newest_candidate_ids(self._maximum_admissions)
+        )
+        for recording_id in candidates[: self._maximum_admissions]:
             published = self._recordings.get(recording_id)
             if published is None:
                 continue
@@ -184,6 +193,7 @@ def build_cycle(
     maximum_admissions: int,
     tile_sample_count: int,
     maximum_refinements_per_stream: int,
+    recording_ids: tuple[RecordingId, ...] = (),
 ) -> BoundedTimelineCycleV0_1:
     from leo_flow.deployments.recording_submission_v1 import analysis_connection_factory
     from leo_station.analysis_v1 import (
@@ -227,6 +237,7 @@ def build_cycle(
         maximum_admissions=maximum_admissions,
         tile_sample_count=tile_sample_count,
         maximum_refinements_per_stream=maximum_refinements_per_stream,
+        recording_ids=recording_ids,
     )
 
 
@@ -244,11 +255,16 @@ def main(
     parser.add_argument("--maximum-admissions", type=int, default=2)
     parser.add_argument("--tile-sample-count", type=int, default=20_000)
     parser.add_argument("--maximum-refinements-per-stream", type=int, default=32)
+    parser.add_argument("--recording-id", action="append", default=[])
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args(argv)
     if not 0.1 <= args.poll_seconds <= 300:
         parser.error("--poll-seconds must lie in [0.1,300]")
+    if len(args.recording_id) > 64 or len(args.recording_id) != len(
+        set(args.recording_id)
+    ):
+        parser.error("--recording-id targets are duplicate or unbounded")
     try:
         cycle = cycle_builder(
             args.credential_directory,
@@ -256,6 +272,7 @@ def main(
             maximum_admissions=args.maximum_admissions,
             tile_sample_count=args.tile_sample_count,
             maximum_refinements_per_stream=args.maximum_refinements_per_stream,
+            recording_ids=tuple(RecordingId(value) for value in args.recording_id),
         )
         while True:
             admitted, processed = cycle.run_cycle()

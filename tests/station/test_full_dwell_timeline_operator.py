@@ -45,8 +45,10 @@ def test_work_identity_is_exact_replay_deterministic() -> None:
 def test_once_is_one_bounded_admission_and_processing_cycle(tmp_path) -> None:
     cycle = _Cycle([(2, True)])
     output = io.StringIO()
+    seen: list[dict[str, object]] = []
 
-    def build(*_args, **_kwargs):
+    def build(*_args, **kwargs):
+        seen.append(kwargs)
         return cycle
 
     assert (
@@ -56,6 +58,10 @@ def test_once_is_one_bounded_admission_and_processing_cycle(tmp_path) -> None:
                 str(tmp_path),
                 "--maximum-admissions",
                 "2",
+                "--recording-id",
+                "rec_priority_a",
+                "--recording-id",
+                "rec_priority_b",
                 "--once",
             ],
             stdout=output,
@@ -64,6 +70,10 @@ def test_once_is_one_bounded_admission_and_processing_cycle(tmp_path) -> None:
         == 0
     )
     assert cycle.calls == 1
+    assert tuple(map(str, seen[0]["recording_ids"])) == (
+        "rec_priority_a",
+        "rec_priority_b",
+    )
     assert output.getvalue() == (
         '{"admitted": 2, "event": '
         '"prompt_full_dwell_timeline_cycle_complete", "processed": true}\n'
