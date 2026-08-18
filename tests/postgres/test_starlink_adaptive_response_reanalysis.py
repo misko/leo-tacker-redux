@@ -87,7 +87,7 @@ def test_completed_adaptive_work_requeues_by_exact_result_without_deleting_histo
         ).fetchone()
         connection.execute("RESET ROLE")
         state = connection.execute(
-            "SELECT state,attempt,result_analysis_id,result_bundle_digest_value,last_error FROM public.starlink_adaptive_response_work_v0_1 WHERE timeline_analysis_id=%s",
+            "SELECT state,priority,attempt,result_analysis_id,result_bundle_digest_value,last_error FROM public.starlink_adaptive_response_work_v0_1 WHERE timeline_analysis_id=%s",
             (timeline_id,),
         ).fetchone()
         retained = connection.execute(
@@ -97,5 +97,5 @@ def test_completed_adaptive_work_requeues_by_exact_result_without_deleting_histo
 
     assert changed == (True,)
     assert unchanged == (False,)
-    assert state == ("ready", 0, None, None, "analysis-plan-cadence-v2")
+    assert state == ("ready", 100, 0, None, None, "analysis-plan-cadence-v2")
     assert retained == (1,)

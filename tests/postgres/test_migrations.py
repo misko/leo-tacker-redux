@@ -66,6 +66,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0048_starlink_pilot_prescreen_v0_1.sql",),
         ("0049_starlink_pilot_refinement_v0_1.sql",),
         ("0050_starlink_adaptive_response_reanalysis.sql",),
+        ("0051_starlink_adaptive_response_priority.sql",),
     ]
 
 
@@ -127,7 +128,7 @@ def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
     assert not analysis_insert
     assert not capture_select
     assert not dashboard_select
-    assert receipts[-1] == ("0050_starlink_adaptive_response_reanalysis.sql",)
+    assert receipts[-1] == ("0051_starlink_adaptive_response_priority.sql",)
 
 
 @pytest.mark.integration
