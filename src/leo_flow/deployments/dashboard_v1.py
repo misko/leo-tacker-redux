@@ -33,6 +33,9 @@ from leo_flow.contracts.dashboard_full_dwell_timeline import (
     RecordingFullDwellTimelineQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
+from leo_flow.contracts.dashboard_pilot_doppler import (
+    RecordingPilotDopplerAssociationQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
@@ -109,6 +112,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV23,
     DashboardJsonApplicationV24,
     DashboardJsonApplicationV25,
+    DashboardJsonApplicationV26,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -298,6 +302,14 @@ class DashboardV25QueryPort(
     """Add adaptively selected acquired-QAM windows."""
 
 
+class DashboardV26QueryPort(
+    DashboardV25QueryPort,
+    RecordingPilotDopplerAssociationQueryPortV0_1,
+    Protocol,
+):
+    """Add pilot-frequency association for blind Doppler paths."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -327,7 +339,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV25QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV26QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -587,7 +599,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV25QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV26QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -627,10 +639,11 @@ def _build_dashboard(
     v23 = DashboardJsonApplicationV23(v22, queries)
     v24 = DashboardJsonApplicationV24(v23, queries)
     v25 = DashboardJsonApplicationV25(v24, queries)
+    v26 = DashboardJsonApplicationV26(v25, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v25),
+        DashboardUiApplication(v26),
         diagnostics=diagnostics,
     )
 

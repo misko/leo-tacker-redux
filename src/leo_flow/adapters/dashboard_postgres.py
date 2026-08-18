@@ -66,6 +66,10 @@ from leo_flow.contracts.dashboard_full_dwell_timeline import (
     RecordingFullDwellTimelineViewV0_1,
 )
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
+from leo_flow.contracts.dashboard_pilot_doppler import (
+    PilotDopplerAssociationQueryV0_1,
+    RecordingPilotDopplerAssociationViewV0_1,
+)
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
 from leo_flow.contracts.dashboard_recording_analysis_approach import (
     RecordingAnalysisApproachQueryPortV0_1,
@@ -132,6 +136,9 @@ from leo_flow.services.capture_doppler_summary import (
     CaptureDopplerSummaryQueryServiceV0_1,
 )
 from leo_flow.services.capture_qam_summary import CaptureQamSummaryQueryServiceV0_1
+from leo_flow.services.pilot_doppler_association import (
+    RecordingPilotDopplerAssociationServiceV0_1,
+)
 from leo_flow.services.recording_evidence import (
     RecordingEvidenceAdvancedDopplerQueryServiceV0_1,
     RecordingEvidenceDopplerQueryServiceV0_1,
@@ -234,6 +241,15 @@ class PostgresDashboardRepository:
         self._capture_qam_summaries = CaptureQamSummaryQueryServiceV0_1(
             PostgresCaptureDopplerScopeRepositoryV0_1(connect), self, adaptive_qam
         )
+        self._pilot_doppler = (
+            None
+            if adaptive_qam is None
+            else RecordingPilotDopplerAssociationServiceV0_1(
+                self._recording_pages,
+                adaptive_qam,
+                self._recording_evidence_advanced_doppler,
+            )
+        )
 
     def capture_doppler_summaries(
         self, query: CaptureDopplerSummaryQueryV0_1
@@ -299,6 +315,20 @@ class PostgresDashboardRepository:
         except LookupError as error:
             raise DashboardNotFound(
                 f"adaptive-QAM evidence for recording {query.recording_id} was not found"
+            ) from error
+
+    def recording_pilot_doppler_association(
+        self, query: PilotDopplerAssociationQueryV0_1
+    ) -> RecordingPilotDopplerAssociationViewV0_1:
+        if self._pilot_doppler is None:
+            raise DashboardNotFound(
+                f"pilot Doppler association for recording {query.recording_id} is unavailable"
+            )
+        try:
+            return self._pilot_doppler.recording_pilot_doppler_association(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"pilot Doppler association for recording {query.recording_id} was not found"
             ) from error
 
     def recording_evidence_context(

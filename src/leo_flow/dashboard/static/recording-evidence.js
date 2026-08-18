@@ -483,14 +483,23 @@
 
   async function loadDoppler(current) {
     state("doppler", "pending", "Loading published total fits and bounded server-derived window slopes…");
+    node("evidence-pilot-doppler-state").dataset.state = "pending";
+    node("evidence-pilot-doppler-state").textContent = "Loading acquired-pilot frequency association…";
     try {
       if (!selectedRecordings().length || !checked("lnb").length || !checked("receiver").length) {
         node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren(); state("doppler", "missing", "Select at least one radio, LNB, and receiver."); return;
       }
       const parameters = new URLSearchParams({maximum_windows: "4096"}); queryFilters(parameters); parameters.delete("edges");
-      const [payload, advancedPayload] = await Promise.all([
+      const associationPaths = checked("edge").length ? selectedRecordings().map((recording) => {
+        const associationParameters = new URLSearchParams({maximum_windows_per_stream: "32"});
+        queryFilters(associationParameters);
+        associationParameters.set("radio_ids", recording.radio_id);
+        return `/api/v26/recordings/${encodeURIComponent(recording.recording_id)}/pilot-doppler-association?${associationParameters}`;
+      }) : [];
+      const [payload, advancedPayload, associationPayloads] = await Promise.all([
         json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-doppler?${parameters}`),
         json(`/api/v19/recordings/${encodeURIComponent(recordingId)}/evidence-advanced-doppler?${parameters}`),
+        availablePayloads(associationPaths),
       ]);
       if (current !== generation) return;
       if (payload.candidate_only !== true || payload.calibrated_detection_count !== null || advancedPayload.candidate_only !== true || advancedPayload.calibrated_detection_count !== null) throw new Error("unsafe Doppler semantics");
@@ -504,6 +513,25 @@
         points: mode === "windows" ? (item.windows || []).map((window) => ({x: (Number(window.point_start_utc_ns) + Number(window.point_stop_utc_ns)) / 2, y: Number(window.drift_rate_hz_s)})) : [{x: basicSeries.length + index, y: Number(item.total.drift_rate_hz_s)}],
       }));
       const series = [...basicSeries, ...advancedSeries];
+      const pilotSeries = [];
+      const associationFacts = [];
+      for (const associationPayload of associationPayloads.payloads) {
+        if (associationPayload.candidate_only !== true || associationPayload.calibrated_detection_count !== null) throw new Error("unsafe pilot Doppler association semantics");
+        for (const item of associationPayload.series || []) {
+          const base = identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, item.edge]);
+          pilotSeries.push({
+            label: `${base} · acquired pilot CFO`,
+            points: (item.qam_windows || []).map((window) => ({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: Number(window.winning_cfo_hz)})),
+          });
+          for (const comparison of item.comparisons || []) {
+            pilotSeries.push({
+              label: `${base} · blind path · ${comparison.association_state}`,
+              points: (comparison.points || []).map((point) => ({x: Number(point.midpoint_utc_ns), y: Number(point.blind_path_frequency_hz) - Number(item.center_frequency_hz)})),
+            });
+            associationFacts.push(`${base}: ${comparison.association_state}; median Δf ${Number(comparison.median_frequency_distance_hz).toFixed(1)} Hz; pilot ${Number(comparison.pilot_drift_rate_hz_s).toFixed(1)} Hz/s vs blind ${Number(comparison.blind_path_drift_rate_hz_s).toFixed(1)} Hz/s`);
+          }
+        }
+      }
       const approach = [
         ...(payload.series || []).map((item) => ({
           kind: "doppler", key: identity([item.recording_id, item.radio_id, item.receiver_chain_id, item.segment_id, "basic", item.candidate_rank]), approach: "Basic blind Doppler track", scope: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, `candidate ${item.candidate_rank}`]),
@@ -513,15 +541,25 @@
           kind: "doppler", key: identity([item.recording_id, item.radio_id, item.receiver_chain_id, item.segment_id, "advanced", item.path_digest]), approach: "Advanced-path-only Doppler", scope: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, item.association_state]),
           window: `${(item.windows || []).length} adjacent immutable path-point intervals`, coverage: "path-support intervals only; not raw-IQ coverage", search: "physical-rate bank with held-out/stationary/opposite/time-shuffle controls", response: "published total path rate and local slopes [Hz/s]", status: "candidate-only; no calibrated count",
         })),
+        ...associationPayloads.payloads.flatMap((associationPayload) => (associationPayload.series || []).map((item) => ({
+          kind: "doppler", key: identity([item.recording_id, item.radio_id, item.receiver_chain_id, item.segment_id, "pilot-association"]), approach: "Acquired-pilot frequency association", scope: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, item.edge]),
+          window: `${(item.qam_windows || []).length} adaptive QAM windows with exact UTC/sample scope`, coverage: "selected QAM windows compared only inside blind-path time support", search: `absolute pilot frequency = segment center + acquired CFO; interpolate blind path; diagnostic gate ${Number(associationPayload.frequency_gate_hz).toFixed(0)} Hz`, response: "pilot CFO and blind-path frequency offset vs UTC; Δfrequency and drift-rate comparison", status: (item.comparisons || []).map((value) => value.association_state).join(", ") || "no blind path",
+        }))),
       ];
       setApproachRows("doppler", approach);
       drawChart("evidence-doppler-canvas", series, "drift rate [Hz/s]", mode, "published total path rate");
       seriesLegend("evidence-doppler-legend", series);
       const combinedState = series.length ? "ready" : payload.state === "pending" || advancedPayload.state === "pending" ? "pending" : payload.state === "error" || advancedPayload.state === "error" ? "error" : "missing";
       state("doppler", combinedState, series.length ? `${series.length} unpooled series (${basicSeries.length} basic candidate, ${advancedSeries.length} advanced-path-only); ${mode === "overall" ? "published total path rates" : "adjacent immutable path-point slopes with explicit UTC/sample scope"}. Candidate evidence only; no calibrated detection is implied.` : `Doppler evidence is ${combinedState}.`);
+      drawChart("evidence-pilot-doppler-canvas", pilotSeries, "frequency offset from segment center [Hz]", "windows", "selected QAM windows");
+      seriesLegend("evidence-pilot-doppler-legend", pilotSeries);
+      const pilotState = node("evidence-pilot-doppler-state");
+      pilotState.dataset.state = pilotSeries.length ? "ready" : associationPayloads.missingCount ? "pending" : "missing";
+      pilotState.textContent = associationFacts.length ? associationFacts.join(" | ") : associationPayloads.missingCount ? "Pilot-frequency association is pending with adaptive QAM." : "No pilot-frequency association is available for the selected scope.";
     } catch (error) {
       if (current !== generation) return;
       node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren();
+      node("evidence-pilot-doppler-canvas").hidden = true; node("evidence-pilot-doppler-legend").replaceChildren(); node("evidence-pilot-doppler-state").dataset.state = "error"; node("evidence-pilot-doppler-state").textContent = `Pilot-frequency association failed: ${error.message}`;
       state("doppler", error.status === 404 ? "missing" : "error", error.status === 404 ? "Doppler evidence is unavailable." : `Doppler evidence failed: ${error.message}`);
       setApproachRows("doppler", [{kind: "doppler", key: "missing", approach: "Doppler tracking", scope: "selected recording(s)", window: "unavailable", coverage: "unavailable", search: "blind physical-rate paths", response: "drift rate vs UTC", status: error.status === 404 ? "not published" : error.message}]);
     }

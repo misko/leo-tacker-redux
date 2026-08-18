@@ -22,6 +22,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV23,
     DashboardJsonApplicationV24,
     DashboardJsonApplicationV25,
+    DashboardJsonApplicationV26,
     JsonRequest,
     JsonResponse,
 )
@@ -64,6 +65,7 @@ class EvidencePorts:
         self.basic_doppler_queries: list[Any] = []
         self.advanced_doppler_queries: list[Any] = []
         self.timeline_queries: list[Any] = []
+        self.pilot_doppler_queries: list[Any] = []
         self.approach_queries: list[str] = []
 
     def recording_evidence_context(self, recording_id: RecordingId) -> dict[str, Any]:
@@ -464,6 +466,85 @@ class EvidencePorts:
         self.advanced_doppler_queries.append(query)
         return self._doppler(query, self.advanced_doppler_state, advanced=True)
 
+    def recording_pilot_doppler_association(self, query: Any) -> dict[str, Any]:
+        self.pilot_doppler_queries.append(query)
+        if str(query.recording_id) in self.missing_qam_recordings:
+            raise DashboardNotFound("pilot association is pending")
+        self._raise_for_state(self.qam_state, "Pilot association")
+        identity = _identity(str(query.recording_id))
+        if identity is None:
+            raise DashboardNotFound("association is absent")
+        radio, receiver, lnb, segment = identity
+        center = 10_754_600_000.0
+        qam_windows = [
+            {
+                "window_index": index,
+                "start_sample": index * 50_000,
+                "stop_sample": (index + 1) * 50_000,
+                "interval_start_utc_ns": 1_000_000_000 + index * 10_000_000,
+                "interval_stop_utc_ns": 1_008_000_000 + index * 10_000_000,
+                "winning_cfo_hz": 450_000.0 - index * 4_000.0,
+                "absolute_frequency_hz": center + 450_000.0 - index * 4_000.0,
+                "qam_goodness": 0.9,
+                "hard_symbol_accuracy": 0.92,
+                "rms_evm": 0.58,
+            }
+            for index in range(2)
+        ]
+        compatible = radio == "radio_a"
+        distance = 5_000.0 if compatible else 300_000.0
+        return {
+            "recording_id": str(query.recording_id),
+            "state": "complete",
+            "frequency_gate_hz": 50_000.0,
+            "candidate_only": True,
+            "calibrated_detection_count": None,
+            "warnings": ["candidate-only-no-calibrated-detection"],
+            "series": [
+                {
+                    "recording_id": str(query.recording_id),
+                    "radio_id": radio,
+                    "lnb_id": lnb,
+                    "receiver_chain_id": receiver,
+                    "segment_id": segment,
+                    "edge": "lower",
+                    "center_frequency_hz": center,
+                    "qam_windows": qam_windows,
+                    "pilot_fit": {"drift_rate_hz_s": -4_000.0},
+                    "comparisons": [
+                        {
+                            "path_digest": "a" * 64,
+                            "association_state": "frequency-compatible-candidate"
+                            if compatible
+                            else "frequency-mismatch",
+                            "blind_path_drift_rate_hz_s": -3_900.0,
+                            "pilot_drift_rate_hz_s": -4_000.0,
+                            "drift_rate_difference_hz_s": 100.0,
+                            "minimum_frequency_distance_hz": distance,
+                            "median_frequency_distance_hz": distance,
+                            "frequency_gate_hz": 50_000.0,
+                            "points": [
+                                {
+                                    "window_index": index,
+                                    "midpoint_utc_ns": 1_004_000_000
+                                    + index * 10_000_000,
+                                    "pilot_frequency_hz": window[
+                                        "absolute_frequency_hz"
+                                    ],
+                                    "blind_path_frequency_hz": window[
+                                        "absolute_frequency_hz"
+                                    ]
+                                    - distance,
+                                    "absolute_distance_hz": distance,
+                                }
+                                for index, window in enumerate(qam_windows)
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+
     def _doppler(
         self, query: Any, product_state: str, *, advanced: bool
     ) -> dict[str, Any]:
@@ -567,7 +648,8 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
     v20 = DashboardJsonApplicationV20(v19, fixture_port)
     v23 = DashboardJsonApplicationV23(v20, fixture_port)
     v24 = DashboardJsonApplicationV24(v23, fixture_port)
-    return DashboardUiApplication(DashboardJsonApplicationV25(v24, fixture_port))
+    v25 = DashboardJsonApplicationV25(v24, fixture_port)
+    return DashboardUiApplication(DashboardJsonApplicationV26(v25, fixture_port))
 
 
 @contextmanager
@@ -646,7 +728,7 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
                 "data-state", "ready"
             )
             approach_rows = page.locator("#evidence-approaches-body tr")
-            expect(approach_rows).to_have_count(10)
+            expect(approach_rows).to_have_count(12)
             expect(
                 page.locator('#evidence-approaches-body tr[data-approach="qam"]')
             ).to_have_count(2)
@@ -668,6 +750,8 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             )
             expect(approaches).to_contain_text("Basic blind Doppler track")
             expect(approaches).to_contain_text("Advanced-path-only Doppler")
+            expect(approaches).to_contain_text("Acquired-pilot frequency association")
+            expect(approaches).to_contain_text("diagnostic gate 50000 Hz")
             expect(approaches).to_contain_text("-1040.0…1040.0 kHz physical CFO")
             expect(approaches).to_contain_text("label-independent-wide-physical-search")
             expect(approaches).to_contain_text("1.0667%")
@@ -719,6 +803,27 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             )
             expect(page.locator("#evidence-doppler-state")).to_contain_text(
                 "4 unpooled series (2 basic candidate, 2 advanced-path-only)"
+            )
+            expect(page.locator("#evidence-pilot-doppler-state")).to_contain_text(
+                "frequency-compatible-candidate"
+            )
+            expect(page.locator("#evidence-pilot-doppler-state")).to_contain_text(
+                "frequency-mismatch"
+            )
+            expect(page.locator("#evidence-pilot-doppler-canvas")).to_be_visible()
+            expect(page.locator("#evidence-pilot-doppler-canvas")).to_have_attribute(
+                "data-series-count", "4"
+            )
+            expect(page.locator("#evidence-pilot-doppler-legend")).to_contain_text(
+                "acquired pilot CFO"
+            )
+            expect(page.locator("#evidence-pilot-doppler-legend")).to_contain_text(
+                "blind path"
+            )
+            assert len(ports.pilot_doppler_queries) == 2
+            assert all(
+                query.maximum_windows_per_stream == 32
+                for query in ports.pilot_doppler_queries
             )
 
             page.locator("#evidence-mode").select_option("windows")
@@ -860,9 +965,13 @@ def test_detail_page_distinguishes_pending_error_and_missing_real_api_states() -
             expect(page.locator("#evidence-doppler-state")).to_contain_text(
                 "Doppler evidence is missing"
             )
+            expect(page.locator("#evidence-pilot-doppler-state")).to_have_attribute(
+                "data-state", "pending"
+            )
             for product in ("qam", "detector", "doppler"):
                 expect(page.locator(f"#evidence-{product}-canvas")).to_be_hidden()
             expect(page.locator("#evidence-qam-time-canvas")).to_be_hidden()
+            expect(page.locator("#evidence-pilot-doppler-canvas")).to_be_hidden()
         finally:
             browser.close()
 

@@ -136,6 +136,11 @@
           <div id="evidence-doppler-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
           <canvas id="evidence-doppler-canvas" class="evidence-chart" width="900" height="440" role="img" aria-label="Selected Doppler estimates by window" hidden></canvas>
           <div id="evidence-doppler-legend" class="evidence-series-legend"></div>
+          <h4>Pilot-frequency association</h4>
+          <div id="evidence-pilot-doppler-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for adaptive QAM…</div>
+          <canvas id="evidence-pilot-doppler-canvas" class="evidence-chart" width="900" height="440" role="img" aria-label="Acquired pilot CFO and blind Doppler path frequency offset by time" hidden></canvas>
+          <div id="evidence-pilot-doppler-legend" class="evidence-series-legend"></div>
+          <p class="availability-note">A plausible drift rate is not enough: a blind ridge is marked frequency-compatible only when it overlaps the acquired pilot in time and remains within the displayed 50 kHz diagnostic gate. This is candidate evidence, not a calibrated detection.</p>
         </article>
       </div>
       <p id="evidence-limitations" class="availability-note"></p>
