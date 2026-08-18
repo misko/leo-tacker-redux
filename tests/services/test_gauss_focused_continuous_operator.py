@@ -238,6 +238,156 @@ def test_main_dispatches_analysis_then_captures_next_dwell_without_waiting(
     assert journal.incomplete() == ()
 
 
+def test_capture_continues_while_analysis_capacity_is_full(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    for path in (args.station_a, args.station_b, args.analysis_config):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    events: list[str] = []
+    capture_count = 0
+    next_pid = 1200
+
+    class FakeProcess:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+        def poll(self):  # type: ignore[no-untyped-def]
+            events.append(f"poll-{self.pid}")
+            return 0 if capture_count == 3 else None
+
+        def terminate(self) -> None:
+            events.append(f"terminate-{self.pid}")
+
+        def wait(self, timeout=None):  # type: ignore[no-untyped-def]
+            return 0
+
+        def kill(self) -> None:
+            raise AssertionError("healthy analysis child must not be killed")
+
+    def capture(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal capture_count
+        capture_count += 1
+        events.append(f"capture-{capture_count}")
+        return subprocess.CompletedProcess([], 0)
+
+    def dispatch(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal next_pid
+        next_pid += 1
+        events.append(f"dispatch-{next_pid}")
+        return FakeProcess(next_pid)
+
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator.load_v5_capture_station",
+        lambda _path: SimpleNamespace(specification_digest=Digest.sha256(b"station")),
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._capture_closed",
+        lambda _record: True,
+    )
+    monkeypatch.setattr(subprocess, "run", capture)
+    monkeypatch.setattr(subprocess, "Popen", dispatch)
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator.time.sleep",
+        lambda _seconds: None,
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._pid_start_ticks",
+        lambda pid: pid + 100,
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._completion_matches",
+        lambda _record: True,
+    )
+
+    argv = [
+        "--station-a",
+        str(args.station_a),
+        "--station-b",
+        str(args.station_b),
+        "--state-root",
+        str(args.state_root),
+        "--capture-credential-directory",
+        str(args.capture_credential_directory),
+        "--analysis-config",
+        str(args.analysis_config),
+        "--analysis-credential-directory",
+        str(args.analysis_credential_directory),
+        "--dashboard-credential-directory",
+        str(args.dashboard_credential_directory),
+        "--maximum-in-flight-analyses",
+        "1",
+        "--maximum-dwells",
+        "3",
+        "--minimum-free-bytes",
+        "1",
+        "--arm",
+    ]
+    assert main(argv) == 0
+    assert events.index("capture-2") < events.index("dispatch-1202")
+    assert events.index("capture-3") < events.index("dispatch-1202")
+    assert capture_count == 3
+    journal = SQLiteFocusedContinuousJournalV0_1(args.state_root / "continuous.sqlite3")
+    assert journal.incomplete() == ()
+
+
+def test_recovery_dispatches_captured_backlog_only_up_to_capacity(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    args.maximum_in_flight_analyses = 1
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    template = _record(tmp_path)
+    for sequence in range(3):
+        record = replace(
+            template,
+            sequence=sequence,
+            monitor_id=f"focused_loop_{sequence:08d}_abc",
+            state_root=tmp_path / "state" / f"focused_loop_{sequence:08d}_abc",
+            batch_id=f"cbatch_focused_loop_{sequence:08d}_abc_u000",
+            state="planned",
+        )
+        journal.insert_planned(record)
+        journal.transition(sequence, "planned", "captured")
+
+    class LiveProcess:
+        pid = 4321
+
+        def poll(self):  # type: ignore[no-untyped-def]
+            return None
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout=None):  # type: ignore[no-untyped-def]
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+    dispatches: list[list[str]] = []
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda command, **_kwargs: dispatches.append(command) or LiveProcess(),
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._pid_start_ticks",
+        lambda _pid: 99,
+    )
+
+    children = {}
+    assert _recover(args, journal, children) is True
+    assert tuple(children) == (0,)
+    assert len(dispatches) == 1
+    assert [record.state for record in journal.incomplete()] == [
+        "analysis_running",
+        "captured",
+        "captured",
+    ]
+
+
 def test_recovery_adopts_only_the_exact_live_analysis_process(
     tmp_path: Path, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]

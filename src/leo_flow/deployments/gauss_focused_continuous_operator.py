@@ -156,13 +156,7 @@ def main(argv: list[str] | None = None) -> int:
             if not _reap(children, journal):
                 _write_failure_latch(failure_latch, "analysis-failed")
                 return 4
-            while len(children) >= args.maximum_in_flight_analyses:
-                if stopping:
-                    break
-                time.sleep(DEFAULT_POLL_INTERVAL_S)
-                if not _reap(children, journal):
-                    _write_failure_latch(failure_latch, "analysis-failed")
-                    return 4
+            _dispatch_captured_available(args, journal, children)
             if stopping:
                 break
             if shutil.disk_usage(args.state_root).free < args.minimum_free_bytes:
@@ -197,12 +191,13 @@ def main(argv: list[str] | None = None) -> int:
             journal.transition(record.sequence, "planned", "captured")
             captured = journal.get(record.sequence)
             assert captured is not None
-            _dispatch(args, captured, journal, children)
+            _dispatch_captured_available(args, journal, children)
             completed_capture_count += 1
-        while children:
+        while children or _captured_work(journal):
             if not _reap(children, journal):
                 _write_failure_latch(failure_latch, "analysis-failed")
                 return 4
+            _dispatch_captured_available(args, journal, children)
             if children:
                 time.sleep(DEFAULT_POLL_INTERVAL_S)
         return 0
@@ -420,6 +415,24 @@ def _dispatch(
     )
 
 
+def _captured_work(
+    journal: SQLiteFocusedContinuousJournalV0_1,
+) -> tuple[FocusedContinuousRecordV0_1, ...]:
+    return tuple(record for record in journal.incomplete() if record.state == "captured")
+
+
+def _dispatch_captured_available(
+    args: argparse.Namespace,
+    journal: SQLiteFocusedContinuousJournalV0_1,
+    children: dict[int, _AnalysisChild],
+) -> None:
+    available = args.maximum_in_flight_analyses - len(children)
+    if available <= 0:
+        return
+    for record in _captured_work(journal)[:available]:
+        _dispatch(args, record, journal, children)
+
+
 def _reap(
     children: dict[int, _AnalysisChild],
     journal: SQLiteFocusedContinuousJournalV0_1,
@@ -505,11 +518,8 @@ def _recover(
                 )
                 return False
             journal.transition(record.sequence, "planned", "captured")
-            recovered = journal.get(record.sequence)
-            assert recovered is not None
-            _dispatch(args, recovered, journal, children)
         elif record.state == "captured":
-            _dispatch(args, record, journal, children)
+            pass
         elif record.state in {"analysis_running", "failed"}:
             expected_command = str(
                 canonical_digest(tuple(_analysis_command(args, record)))
@@ -582,11 +592,9 @@ def _recover(
                 expected_process_start_ticks=record.analysis_process_start_ticks,
                 expected_command_digest=record.analysis_command_digest,
             )
-            captured = journal.get(record.sequence)
-            assert captured is not None
-            _dispatch(args, captured, journal, children)
         else:
             return False
+    _dispatch_captured_available(args, journal, children)
     return True
 
 
