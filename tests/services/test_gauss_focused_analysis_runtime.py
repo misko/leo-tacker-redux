@@ -52,19 +52,33 @@ def test_focused_compute_policy_rejects_out_of_bounds(workers: int) -> None:
 
 def test_focused_suite_compute_composes_temporal_pilot_preparers() -> None:
     tree = ast.parse(inspect.getsource(_suite_compute))
-    calls = [
+    legacy_calls = [
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "CombinedStarlinkSuiteAnalysisJobPreparerV0_2"
     ]
-    assert len(calls) == 1
-    assert len(calls[0].args) == 5
-    temporal = calls[0].args[-1]
+    assert len(legacy_calls) == 1
+    assert len(legacy_calls[0].args) == 5
+    temporal = legacy_calls[0].args[-1]
     assert isinstance(temporal, ast.Call)
     assert isinstance(temporal.func, ast.Name)
     assert temporal.func.id == "starlink_temporal_pilot_preparers_v0_1"
+
+    dwell_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3"
+    ]
+    assert len(dwell_calls) == 1
+    assert legacy_calls[0] in dwell_calls[0].args
+    profiles = dwell_calls[0].args[-1]
+    assert isinstance(profiles, ast.Call)
+    assert isinstance(profiles.func, ast.Name)
+    assert profiles.func.id == "starlink_acquired_dwell_profiles_v0_3"
 
 
 def test_focused_preparation_links_both_recordings_before_job_submission() -> None:

@@ -133,6 +133,23 @@ class PostgresStarlinkSuiteCatalogV0_2:
         result = _cataloged(row)
         return result if result.bundle_ref == ref.bundle_ref else None
 
+    def latest_starlink_suite(
+        self, recording_id: RecordingId
+    ) -> CatalogedStarlinkSuiteV0_2 | None:
+        """Return the newest immutable suite source for an explicit recording."""
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(
+                _SELECT
+                + " AND s.recording_id=%s ORDER BY s.published_at_utc DESC,s.analysis_id DESC LIMIT 1",
+                (str(recording_id),),
+            )
+            row = cursor.fetchone()
+        return None if row is None else _cataloged(row)
+
 
 def publish_starlink_suite_with_cursor(
     cursor: psycopg.Cursor[dict[str, object]],

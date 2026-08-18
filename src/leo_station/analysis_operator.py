@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections.abc import Callable, Sequence
 from enum import IntEnum
 from pathlib import Path
@@ -17,7 +18,13 @@ from leo_flow.application.capture_batch_dashboard import (
 )
 from leo_flow.contracts.capture_batch import CaptureBatchSnapshot
 from leo_flow.contracts.capture_batch_codec import decode_capture_batch_snapshot
-from leo_flow.contracts.core import RecordingId, SchemaRef
+from leo_flow.contracts.core import (
+    JobId,
+    RecordingId,
+    SchemaRef,
+    UtcNs,
+    canonical_digest,
+)
 from leo_flow.contracts.features import FeatureSetBundle
 from leo_flow.deployments.offline_analysis_v1 import (
     DATABASE_SECRET,
@@ -82,6 +89,7 @@ from .analysis_v1 import (
     GaussRuntimeApprovalError,
     require_approved_runtime,
     science_manifest,
+    starlink_acquired_dwell_profiles_v0_3,
     starlink_search_profile_v0_1,
     starlink_suite_profile_v0_2,
     starlink_surrogate_null_preparers_v0_1,
@@ -173,6 +181,12 @@ class StarlinkSuiteProcessor(Protocol):
 
 class StarlinkSuiteProjector(Protocol):
     def __call__(self, credentials: SecretProvider) -> bool: ...
+
+
+class AcquiredQamBackfiller(Protocol):
+    def __call__(
+        self, recording_id: RecordingId, credentials: SecretProvider
+    ) -> object: ...
 
 
 class _ModeLock(Protocol):
@@ -539,9 +553,12 @@ def _submit_starlink_suite(
 
 def _process_starlink_suite_one(credentials: SecretProvider) -> bool:
     from leo_flow.adapters.starlink_suite_postgres import (
-        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2,
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_3,
     )
     from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
+    from leo_flow.services.starlink_acquired_constellation_analysis import (
+        CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3,
+    )
     from leo_flow.services.starlink_suite_analysis import (
         FencedStarlinkSuiteAnalysisWorkerV0_2,
     )
@@ -556,17 +573,129 @@ def _process_starlink_suite_one(credentials: SecretProvider) -> bool:
     reader = SigMFRecordingObjectReader(blobs)
     return FencedStarlinkSuiteAnalysisWorkerV0_2(
         PostgresJobLeaseRepository(connect),
-        CombinedStarlinkSuiteAnalysisJobPreparerV0_2(
+        CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3(
             reader,
-            STARLINK_SUITE_ANALYZER,
-            starlink_surrogate_null_preparers_v0_1(reader),
-            STARLINK_PILOT_CONSTELLATION_ANALYZER,
-            starlink_temporal_pilot_preparers_v0_1(),
+            CombinedStarlinkSuiteAnalysisJobPreparerV0_2(
+                reader,
+                STARLINK_SUITE_ANALYZER,
+                starlink_surrogate_null_preparers_v0_1(reader),
+                STARLINK_PILOT_CONSTELLATION_ANALYZER,
+                starlink_temporal_pilot_preparers_v0_1(),
+            ),
+            starlink_acquired_dwell_profiles_v0_3(),
         ),
-        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2(blobs, connect),
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_3(blobs, connect),
         worker_id="gauss-starlink-suite-analysis-1",
         lease_ttl_s=900.0,
     ).process_one_job()
+
+
+def _backfill_starlink_acquired_qam_v0_3(
+    recording_id: RecordingId, credentials: SecretProvider
+):
+    """Publish only additive V17 evidence from an existing immutable suite."""
+    from leo_flow.adapters.starlink_acquired_constellation_postgres import (
+        PostgresStarlinkAcquiredConstellationCatalogV0_3,
+    )
+    from leo_flow.adapters.starlink_suite_postgres import (
+        PostgresStarlinkSuiteCatalogV0_2,
+    )
+    from leo_flow.analysis.recording.starlink_acquired_constellation_persistence import (
+        DurableStarlinkAcquiredConstellationStoreV0_3,
+    )
+    from leo_flow.analysis.recording.starlink_suite_persistence import (
+        DurableStarlinkSuiteStoreV0_2,
+    )
+    from leo_flow.jobs.contracts import JobLease, JobType
+    from leo_flow.services.starlink_acquired_constellation_analysis import (
+        CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3,
+    )
+    from leo_flow.services.starlink_suite_submission import (
+        StarlinkSuiteAnalysisSubmissionServiceV0_2,
+        StarlinkSuiteAnalysisSubmissionV0_2,
+    )
+    from leo_flow.services.starlink_suite_surrogate_analysis import (
+        PreparedCombinedStarlinkSuiteAnalysisV0_2,
+    )
+    from leo_flow.storage.filesystem import FileSystemBlobStore
+    from leo_flow.storage.postgres_catalog import PostgresRecordingCatalog
+    from leo_flow.storage.recording_codec import SigMFRecordingObjectReader
+
+    connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
+    blobs = FileSystemBlobStore(CAS_ROOT)
+    recording = PostgresRecordingCatalog(connect).get(recording_id)
+    if recording is None:
+        raise GaussAnalysisOperatorError(
+            "acquired-QAM backfill recording was not found"
+        )
+    reader = SigMFRecordingObjectReader(blobs)
+    with reader.open(recording.recording_object) as view:
+        rates = {segment.actual_sample_rate_hz for segment in view.manifest.segments}
+        if len(rates) != 1:
+            raise GaussAnalysisOperatorError("acquired-QAM recording mixes rates")
+        profile = starlink_suite_profile_v0_2(next(iter(rates)))
+        manifest = view.manifest
+
+    class _NoEnqueue:
+        def enqueue(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+    submitted = StarlinkSuiteAnalysisSubmissionServiceV0_2(
+        cast(Any, _NoEnqueue())
+    ).submit(
+        StarlinkSuiteAnalysisSubmissionV0_2(
+            recording,
+            manifest,
+            STARLINK_SUITE_ALGORITHM_REF,
+            profile.config_ref,
+            profile.probe_sample_count,
+        )
+    )
+    suite_catalog = PostgresStarlinkSuiteCatalogV0_2(connect)
+    source = suite_catalog.latest_starlink_suite(recording_id)
+    if source is None or source.projection.request_digest != canonical_digest(
+        submitted.request
+    ):
+        raise GaussAnalysisOperatorError(
+            "acquired-QAM backfill has no exact source suite"
+        )
+    acquired_catalog = PostgresStarlinkAcquiredConstellationCatalogV0_3(connect)
+    already = acquired_catalog.latest_starlink_acquired_constellation(recording_id)
+    if already is not None:
+        return already
+    with DurableStarlinkSuiteStoreV0_2(blobs, suite_catalog).open(source.ref) as bundle:
+
+        class _ExistingSuite:
+            def prepare(self, lease: JobLease):
+                del lease
+                return PreparedCombinedStarlinkSuiteAnalysisV0_2(
+                    submitted.request, bundle, cast(Any, None), None, None
+                )
+
+        preparer = CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3(
+            reader,
+            cast(Any, _ExistingSuite()),
+            starlink_acquired_dwell_profiles_v0_3(),
+        )
+        lease = JobLease(
+            JobId(f"job_v03_backfill_{canonical_digest(submitted.request).value}"),
+            JobType.STARLINK_SUITE_ANALYSIS,
+            submitted.payload,
+            1,
+            "v03-backfill",
+            1,
+            UtcNs(time.time_ns() + 3_600_000_000_000),
+        )
+        acquired = preparer.prepare(lease).acquired_constellation_v0_3
+    if acquired is None:
+        raise GaussAnalysisOperatorError("source suite is not acquired-QAM eligible")
+    return DurableStarlinkAcquiredConstellationStoreV0_3(
+        blobs, acquired_catalog
+    ).publish(
+        acquired.request,
+        acquired.bundle,
+        idempotency_key=f"acquired-qam-v0.3-backfill:{recording_id}",
+    )
 
 
 def _project_starlink_suite_one(credentials: SecretProvider) -> bool:
@@ -705,6 +834,24 @@ def _parser() -> argparse.ArgumentParser:
     submit_starlink.add_argument("--recording-id", required=True)
     submit_starlink.add_argument("--science-manifest", type=Path, required=True)
     submit_starlink.add_argument("--credential-directory", type=Path, required=True)
+    submit_starlink_suite = subparsers.add_parser(
+        "submit-starlink-suite",
+        help="enqueue the detector suite and additive acquired-QAM dwell product",
+    )
+    submit_starlink_suite.add_argument("--recording-id", required=True)
+    submit_starlink_suite.add_argument("--science-manifest", type=Path, required=True)
+    submit_starlink_suite.add_argument(
+        "--credential-directory", type=Path, required=True
+    )
+    backfill_acquired_qam = subparsers.add_parser(
+        "backfill-acquired-qam-v0-3",
+        help="publish only additive V17 QAM evidence from an existing source suite",
+    )
+    backfill_acquired_qam.add_argument("--recording-id", required=True)
+    backfill_acquired_qam.add_argument("--science-manifest", type=Path, required=True)
+    backfill_acquired_qam.add_argument(
+        "--credential-directory", type=Path, required=True
+    )
 
     submit_batch = subparsers.add_parser(
         "submit-batch",
@@ -744,6 +891,22 @@ def _parser() -> argparse.ArgumentParser:
     )
     project_starlink.add_argument("--science-manifest", type=Path, required=True)
     project_starlink.add_argument("--credential-directory", type=Path, required=True)
+    process_starlink_suite = subparsers.add_parser(
+        "process-starlink-suite-one",
+        help="claim and process at most one detector-suite/acquired-QAM job",
+    )
+    process_starlink_suite.add_argument("--science-manifest", type=Path, required=True)
+    process_starlink_suite.add_argument(
+        "--credential-directory", type=Path, required=True
+    )
+    project_starlink_suite = subparsers.add_parser(
+        "project-starlink-suite-one",
+        help="project at most one durable detector-suite result to the dashboard",
+    )
+    project_starlink_suite.add_argument("--science-manifest", type=Path, required=True)
+    project_starlink_suite.add_argument(
+        "--credential-directory", type=Path, required=True
+    )
     project = subparsers.add_parser(
         "project-one",
         help="project at most one durable FeatureSet work item to the dashboard",
@@ -779,6 +942,12 @@ def main(
     starlink_submitter: StarlinkSubmitter = _submit_starlink,
     starlink_processor: StarlinkProcessor = _process_starlink_one,
     starlink_projector: StarlinkProjector = _project_starlink_one,
+    starlink_suite_submitter: StarlinkSuiteSubmitter = _submit_starlink_suite,
+    starlink_suite_processor: StarlinkSuiteProcessor = _process_starlink_suite_one,
+    starlink_suite_projector: StarlinkSuiteProjector = _project_starlink_suite_one,
+    acquired_qam_backfiller: AcquiredQamBackfiller = (
+        _backfill_starlink_acquired_qam_v0_3
+    ),
     mode_lock_factory: ModeLockFactory = ExclusiveModeLock,
     credential_factory: CredentialFactory = SystemdCredentialProvider,
 ) -> int:
@@ -802,6 +971,10 @@ def main(
             "submit-starlink",
             "process-starlink-one",
             "project-starlink-one",
+            "submit-starlink-suite",
+            "process-starlink-suite-one",
+            "project-starlink-suite-one",
+            "backfill-acquired-qam-v0-3",
             "drain-batch",
         }:
             require_approved_runtime()
@@ -901,6 +1074,51 @@ def main(
                 "job_id": str(submitted_starlink.job_id),
                 "recording_id": str(submitted_starlink.request.recording_id),
                 "candidate_semantics": "uncalibrated-search-only",
+                "science_manifest_digest": str(SCIENCE_MANIFEST_DIGEST),
+            },
+        )
+        return ExitCode.OK
+
+    if arguments.command == "submit-starlink-suite":
+        try:
+            submitted_suite = _under_mode_lock(
+                mode_lock_factory,
+                lambda: starlink_suite_submitter(
+                    RecordingId(arguments.recording_id),
+                    credential_factory(arguments.credential_directory),
+                ),
+            )
+        except Exception:  # noqa: BLE001 - sanitize the process boundary
+            _emit(stderr, {"event": "gauss_starlink_suite_submission_failed"})
+            return ExitCode.SUBMISSION_FAILED
+        _emit(
+            stdout,
+            {
+                "event": "gauss_starlink_suite_submitted",
+                "job_id": str(submitted_suite.job_id),
+                "recording_id": str(submitted_suite.request.recording_id),
+                "science_manifest_digest": str(SCIENCE_MANIFEST_DIGEST),
+            },
+        )
+        return ExitCode.OK
+
+    if arguments.command == "backfill-acquired-qam-v0-3":
+        try:
+            _under_mode_lock(
+                mode_lock_factory,
+                lambda: acquired_qam_backfiller(
+                    RecordingId(arguments.recording_id),
+                    credential_factory(arguments.credential_directory),
+                ),
+            )
+        except Exception:  # noqa: BLE001 - sanitize the process boundary
+            _emit(stderr, {"event": "gauss_acquired_qam_v0_3_backfill_failed"})
+            return ExitCode.ANALYSIS_FAILED
+        _emit(
+            stdout,
+            {
+                "event": "gauss_acquired_qam_v0_3_backfill_complete",
+                "recording_id": arguments.recording_id,
                 "science_manifest_digest": str(SCIENCE_MANIFEST_DIGEST),
             },
         )
@@ -1008,6 +1226,27 @@ def main(
         )
         return ExitCode.OK
 
+    if arguments.command == "process-starlink-suite-one":
+        try:
+            suite_progress = _under_mode_lock(
+                mode_lock_factory,
+                lambda: starlink_suite_processor(
+                    credential_factory(arguments.credential_directory)
+                ),
+            )
+        except Exception:  # noqa: BLE001 - sanitize the process boundary
+            _emit(stderr, {"event": "gauss_starlink_suite_analysis_failed"})
+            return ExitCode.ANALYSIS_FAILED
+        _emit(
+            stdout,
+            {
+                "event": "gauss_starlink_suite_analysis_cycle_complete",
+                "forward_progress": suite_progress,
+                "science_manifest_digest": str(SCIENCE_MANIFEST_DIGEST),
+            },
+        )
+        return ExitCode.OK
+
     if arguments.command == "project-starlink-one":
         try:
             starlink_projection_progress = _under_mode_lock(
@@ -1025,6 +1264,27 @@ def main(
                 "event": "gauss_starlink_projection_cycle_complete",
                 "forward_progress": starlink_projection_progress,
                 "candidate_semantics": "uncalibrated-search-only",
+                "science_manifest_digest": str(SCIENCE_MANIFEST_DIGEST),
+            },
+        )
+        return ExitCode.OK
+
+    if arguments.command == "project-starlink-suite-one":
+        try:
+            suite_projection_progress = _under_mode_lock(
+                mode_lock_factory,
+                lambda: starlink_suite_projector(
+                    credential_factory(arguments.credential_directory)
+                ),
+            )
+        except Exception:  # noqa: BLE001 - sanitize the process boundary
+            _emit(stderr, {"event": "gauss_starlink_suite_projection_failed"})
+            return ExitCode.ANALYSIS_FAILED
+        _emit(
+            stdout,
+            {
+                "event": "gauss_starlink_suite_projection_cycle_complete",
+                "forward_progress": suite_projection_progress,
                 "science_manifest_digest": str(SCIENCE_MANIFEST_DIGEST),
             },
         )

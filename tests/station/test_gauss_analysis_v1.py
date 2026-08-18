@@ -244,6 +244,21 @@ def test_science_manifest_pins_stratified_temporal_search_resources() -> None:
     }
 
 
+def test_acquired_qam_profiles_cover_every_eligible_gauss_receiver() -> None:
+    profiles = analysis_v1.starlink_acquired_dwell_profiles_v0_3()
+
+    assert len(profiles) == 8
+    assert {str(profile.receiver_chain_id) for profile in profiles} == {
+        "rx_lnb_a",
+        "rx_lnb_b",
+        "rx_lnb_c",
+        "rx_lnb_d",
+    }
+    assert len(
+        {(profile.suite_config_ref, profile.receiver_chain_id) for profile in profiles}
+    ) == len(profiles)
+
+
 def test_plugin_imports_no_capture_radio_or_private_storage_paths() -> None:
     source = inspect.getsource(analysis_v1) + inspect.getsource(analysis_operator)
     forbidden = (
@@ -404,6 +419,76 @@ def test_submit_starlink_reports_candidate_semantics_under_mode_lock(
         "candidate_semantics": "uncalibrated-search-only",
         "science_manifest_digest": str(analysis_v1.SCIENCE_MANIFEST_DIGEST),
     }
+    assert stderr.getvalue() == ""
+    assert lock_calls == ["acquire", "release"]
+
+
+def test_submit_starlink_suite_exposes_exact_recording_backfill_command(
+    tmp_path: Path,
+) -> None:
+    lock_calls: list[str] = []
+
+    def submitter(recording_id, credentials):
+        del credentials
+        return SimpleNamespace(
+            job_id=JobId("job_starlink_suite_backfill"),
+            request=SimpleNamespace(recording_id=recording_id),
+        )
+
+    stdout, stderr = StringIO(), StringIO()
+    result = analysis_operator.main(
+        [
+            "submit-starlink-suite",
+            "--recording-id",
+            "rec_60s_backfill",
+            "--science-manifest",
+            str(DEPLOYMENT / "science.json"),
+            "--credential-directory",
+            str(tmp_path),
+        ],
+        stdout=stdout,
+        stderr=stderr,
+        starlink_suite_submitter=submitter,
+        mode_lock_factory=lambda path: _ModeLock(lock_calls),
+    )
+
+    assert result == analysis_operator.ExitCode.OK
+    assert json.loads(stdout.getvalue())["event"] == "gauss_starlink_suite_submitted"
+    assert stderr.getvalue() == ""
+    assert lock_calls == ["acquire", "release"]
+
+
+def test_acquired_qam_backfill_command_is_narrow_and_bounded(tmp_path: Path) -> None:
+    lock_calls: list[str] = []
+    seen: list[RecordingId] = []
+
+    def backfill(recording_id, credentials):
+        del credentials
+        seen.append(recording_id)
+        return object()
+
+    stdout, stderr = StringIO(), StringIO()
+    result = analysis_operator.main(
+        [
+            "backfill-acquired-qam-v0-3",
+            "--recording-id",
+            "rec_existing_suite",
+            "--science-manifest",
+            str(DEPLOYMENT / "science.json"),
+            "--credential-directory",
+            str(tmp_path),
+        ],
+        stdout=stdout,
+        stderr=stderr,
+        acquired_qam_backfiller=backfill,
+        mode_lock_factory=lambda path: _ModeLock(lock_calls),
+    )
+
+    assert result == analysis_operator.ExitCode.OK
+    assert seen == [RecordingId("rec_existing_suite")]
+    assert json.loads(stdout.getvalue())["event"] == (
+        "gauss_acquired_qam_v0_3_backfill_complete"
+    )
     assert stderr.getvalue() == ""
     assert lock_calls == ["acquire", "release"]
 
@@ -741,6 +826,14 @@ def test_drain_releases_mode_lock_when_processing_fails(tmp_path: Path) -> None:
         ("project-waterfall-one", "gauss_waterfall_projection_cycle_complete"),
         ("process-starlink-one", "gauss_starlink_analysis_cycle_complete"),
         ("project-starlink-one", "gauss_starlink_projection_cycle_complete"),
+        (
+            "process-starlink-suite-one",
+            "gauss_starlink_suite_analysis_cycle_complete",
+        ),
+        (
+            "project-starlink-suite-one",
+            "gauss_starlink_suite_projection_cycle_complete",
+        ),
     ],
 )
 def test_bounded_processing_commands_report_forward_progress(
@@ -767,6 +860,8 @@ def test_bounded_processing_commands_report_forward_progress(
         waterfall_projector=lambda credentials: True,
         starlink_processor=lambda credentials: True,
         starlink_projector=lambda credentials: True,
+        starlink_suite_processor=lambda credentials: True,
+        starlink_suite_projector=lambda credentials: True,
         mode_lock_factory=lambda path: (
             _ModeLock(lock_calls)
             if path == analysis_v1.MODE_LOCK_PATH
@@ -780,7 +875,7 @@ def test_bounded_processing_commands_report_forward_progress(
         "forward_progress": True,
         "science_manifest_digest": str(analysis_v1.SCIENCE_MANIFEST_DIGEST),
     }
-    if command.startswith(("process-starlink", "project-starlink")):
+    if command in {"process-starlink-one", "project-starlink-one"}:
         expected["candidate_semantics"] = "uncalibrated-search-only"
     assert json.loads(stdout.getvalue()) == expected
     assert lock_calls == ["acquire", "release"]

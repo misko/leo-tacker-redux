@@ -75,6 +75,7 @@ from leo_station.analysis_v1 import (
     WATERFALL_CONFIG_REF,
     WATERFALL_DEPENDENCY_REFS,
     WATERFALL_DOPPLER_PIPELINE,
+    starlink_acquired_dwell_profiles_v0_3,
     starlink_suite_profile_v0_2,
     starlink_surrogate_null_preparers_v0_1,
     starlink_temporal_pilot_preparers_v0_1,
@@ -463,7 +464,10 @@ def _suite_compute(
     worker_id: str,
 ) -> bool:
     from leo_flow.adapters.starlink_suite_postgres import (
-        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2,
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_3,
+    )
+    from leo_flow.services.starlink_acquired_constellation_analysis import (
+        CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3,
     )
     from leo_flow.services.starlink_suite_analysis import (
         FencedStarlinkSuiteAnalysisWorkerV0_2,
@@ -485,14 +489,18 @@ def _suite_compute(
     reader = SigMFRecordingObjectReader(blobs)
     FencedStarlinkSuiteAnalysisWorkerV0_2(
         PostgresJobLeaseRepository(connect),
-        CombinedStarlinkSuiteAnalysisJobPreparerV0_2(
+        CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3(
             reader,
-            STARLINK_SUITE_ANALYZER,
-            starlink_surrogate_null_preparers_v0_1(reader),
-            STARLINK_PILOT_CONSTELLATION_ANALYZER,
-            starlink_temporal_pilot_preparers_v0_1(),
+            CombinedStarlinkSuiteAnalysisJobPreparerV0_2(
+                reader,
+                STARLINK_SUITE_ANALYZER,
+                starlink_surrogate_null_preparers_v0_1(reader),
+                STARLINK_PILOT_CONSTELLATION_ANALYZER,
+                starlink_temporal_pilot_preparers_v0_1(),
+            ),
+            starlink_acquired_dwell_profiles_v0_3(),
         ),
-        AtomicPostgresCombinedStarlinkSuiteCommitterV0_2(blobs, connect),
+        AtomicPostgresCombinedStarlinkSuiteCommitterV0_3(blobs, connect),
         worker_id=worker_id,
         lease_ttl_s=900.0,
     ).execute(lease)

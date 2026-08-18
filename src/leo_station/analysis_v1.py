@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
+    from leo_flow.services.starlink_acquired_constellation_analysis import (
+        StarlinkAcquiredDwellCompositionProfileV0_3,
+    )
     from leo_flow.services.starlink_full_dwell_pipeline import (
         FullDwellAnalysisProfileV0_1,
     )
@@ -50,6 +53,13 @@ from leo_flow.analysis.recording import (
     waterfall_config_ref_v0_1,
     waterfall_config_ref_v0_2,
 )
+from leo_flow.analysis.recording.starlink_acquired_constellation import (
+    StarlinkAcquiredPilotConstellationAnalyzerV0_3,
+)
+from leo_flow.analysis.recording.starlink_acquisition import (
+    StarlinkAcquisitionConfigV0_3,
+    StarlinkAcquisitionV0_3,
+)
 from leo_flow.analysis.recording.starlink_pilot_constellation import (
     StarlinkPilotConstellationAnalyzerV0_1,
     StarlinkPilotConstellationConfigV0_1,
@@ -78,6 +88,7 @@ from leo_flow.contracts.core import (
     ArtifactRef,
     Digest,
     DigestAlgorithm,
+    ReceiverChainId,
     SchemaRef,
     UtcNs,
     canonical_digest,
@@ -597,6 +608,43 @@ def starlink_full_dwell_profiles_v0_1() -> tuple[FullDwellAnalysisProfileV0_1, .
         FullDwellAnalysisProfileV0_1(profile.config, _starlink_full_dwell_execution())
         for profile in STARLINK_SUITE_PROFILES
         if profile.eligible
+    )
+
+
+def starlink_acquired_dwell_profiles_v0_3() -> tuple[
+    StarlinkAcquiredDwellCompositionProfileV0_3, ...
+]:
+    """Bind Gauss receiver identities to the additive bounded QAM analysis."""
+    from leo_flow.services.starlink_acquired_constellation_analysis import (
+        StarlinkAcquiredDwellCompositionProfileV0_3,
+    )
+
+    receiver_ids = tuple(
+        ReceiverChainId(value)
+        for value in ("rx_lnb_a", "rx_lnb_b", "rx_lnb_c", "rx_lnb_d")
+    )
+    return tuple(
+        StarlinkAcquiredDwellCompositionProfileV0_3(
+            profile.config_ref,
+            receiver_id,
+            StarlinkDetectorSuiteV0_2(profile.config, _starlink_suite_execution()),
+            StarlinkAcquisitionV0_3(
+                StarlinkAcquisitionConfigV0_3(
+                    f"gauss-{receiver_id}-edge-pilot-cfo-v0.3"
+                ),
+                _starlink_suite_execution(),
+            ),
+            StarlinkAcquiredPilotConstellationAnalyzerV0_3(
+                StarlinkAcquisitionConfigV0_3(
+                    f"gauss-{receiver_id}-edge-pilot-cfo-v0.3"
+                ),
+                STARLINK_PILOT_CONSTELLATION_CONFIG,
+                _starlink_pilot_constellation_execution(),
+            ),
+        )
+        for profile in STARLINK_SUITE_PROFILES
+        if profile.eligible
+        for receiver_id in receiver_ids
     )
 
 

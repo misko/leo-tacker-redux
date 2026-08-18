@@ -11,6 +11,7 @@ from leo_flow.adapters.starlink_acquired_constellation_postgres import (
 )
 from leo_flow.adapters.starlink_suite_postgres import (
     AtomicPostgresCombinedStarlinkSuiteCommitterV0_3,
+    PostgresStarlinkSuiteCatalogV0_2,
 )
 from leo_flow.analysis.recording.starlink_acquired_constellation import (
     StarlinkAcquiredPilotConstellationAnalyzerV0_3,
@@ -139,6 +140,11 @@ def test_v0_3_qam_is_published_in_same_fenced_suite_transaction(
         FileSystemBlobStore(tmp_path / "cas"), connect
     ).commit_starlink_suite(lease, prepared)
     assert jobs.snapshot(job_id).result_ref == result
+    source = PostgresStarlinkSuiteCatalogV0_2(connect).latest_starlink_suite(
+        recording.recording_id
+    )
+    assert source is not None
+    assert source.projection.request_digest == prepared.request.digest
     latest = PostgresStarlinkAcquiredConstellationCatalogV0_3(
         connect
     ).latest_starlink_acquired_constellation(recording.recording_id)
