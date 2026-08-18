@@ -120,6 +120,13 @@ def test_four_sources_remain_distinct_and_visibility_toggles_do_not_refetch() ->
             "data-state", "complete"
         )
         expect(page.locator("#series-legend p")).to_have_count(4)
+        expect(page.locator("#drift-heading")).to_have_text(
+            "Doppler drift-rate density"
+        )
+        density = page.evaluate("normalizedDensity([0, 1, 2, 3], 2, 0, 4)")
+        assert density["binWidth"] == 2
+        assert density["densities"] == [0.25, 0.25]
+        assert sum(density["densities"]) * density["binWidth"] == 1
         for label in (
             "radio_a / rx_lnb_a",
             "radio_a / rx_lnb_b",

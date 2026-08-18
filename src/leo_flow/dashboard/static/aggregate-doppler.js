@@ -89,19 +89,31 @@ function drawTimeSeries(series) {
   }
   ctx.globalAlpha = 1; ctx.fillStyle = "#b8c7c0"; ctx.fillText(`${ymin.toFixed(1)} to ${ymax.toFixed(1)} Hz`, 80, 45); ctx.fillText(mode === "utc" ? `${new Date(xmin * 1000).toISOString()} to ${new Date(xmax * 1000).toISOString()}` : `${xmin.toFixed(2)} to ${xmax.toFixed(2)} s`, mode === "utc" ? canvas.width - 520 : canvas.width - 190, canvas.height - 62);
 }
+function normalizedDensity(values, bins, min, max) {
+  const binWidth = (max - min) / bins;
+  const counts = Array.from({length: bins}, () => 0);
+  for (const value of values) counts[Math.min(bins - 1, Math.max(0, Math.floor((value - min) / binWidth)))]++;
+  return {binWidth, densities: counts.map((count) => count / (values.length * binWidth))};
+}
 function drawHistogram(id, groups, valueOf, xLabel) {
-  const [canvas, ctx] = setupCanvas(id); axes(ctx, canvas.width, canvas.height, xLabel, "Count");
+  const [canvas, ctx] = setupCanvas(id); axes(ctx, canvas.width, canvas.height, xLabel, "Probability density");
   const values = groups.flatMap((group) => group.items.map(valueOf));
   if (!values.length) { ctx.fillStyle = "#b8c7c0"; ctx.fillText("No visible evidence", 90, 70); return; }
-  const min = Math.min(...values), max = Math.max(...values), bins = 24, width = Math.max(max - min, 1e-9);
-  const groupedCounts = groups.map((group) => ({...group, counts: Array.from({length: bins}, () => 0)}));
-  for (const group of groupedCounts) for (const item of group.items) group.counts[Math.min(bins - 1, Math.floor((valueOf(item) - min) / width * bins))]++;
-  const peak = Math.max(1, ...groupedCounts.flatMap((group) => group.counts)); const plotWidth = canvas.width - 90;
-  groupedCounts.forEach((group, groupIndex) => group.counts.forEach((count, index) => {
+  const bins = 24;
+  const rawMin = Math.min(...values), rawMax = Math.max(...values);
+  const padding = rawMin === rawMax ? Math.max(Math.abs(rawMin) * 0.05, 1) : 0;
+  const min = rawMin - padding, max = rawMax + padding;
+  const groupedDensities = groups.map((group) => {
+    const density = normalizedDensity(group.items.map(valueOf), bins, min, max);
+    return {...group, densities: density.densities};
+  });
+  const binWidth = (max - min) / bins;
+  const peak = Math.max(...groupedDensities.flatMap((group) => group.densities)); const plotWidth = canvas.width - 90;
+  groupedDensities.forEach((group, groupIndex) => group.densities.forEach((density, index) => {
     ctx.fillStyle = group.color; ctx.globalAlpha = 0.28 + Math.min(groupIndex, 3) * 0.12;
-    const barWidth = plotWidth / bins; const barHeight = count / peak * (canvas.height - 90);
+    const barWidth = plotWidth / bins; const barHeight = density / peak * (canvas.height - 90);
     ctx.fillRect(70 + index * barWidth, canvas.height - 55 - barHeight, Math.max(1, barWidth - 1), barHeight);
-  })); ctx.globalAlpha = 1; ctx.fillStyle = "#b8c7c0"; ctx.fillText(`${min.toFixed(2)} to ${max.toFixed(2)}`, 80, 45);
+  })); ctx.globalAlpha = 1; ctx.fillStyle = "#b8c7c0"; ctx.fillText(`${min.toFixed(2)} to ${max.toFixed(2)} · bin ${binWidth.toFixed(2)}`, 80, 45);
 }
 function replaceFacts(element, pairs) { element.replaceChildren(); for (const [term, value] of pairs) { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = term; dd.textContent = value; element.append(dt, dd); } }
 function render() {

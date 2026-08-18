@@ -51,8 +51,9 @@
     </section>
     <section id="distributions" class="doppler-summary-grid">
       <article class="detail-card" aria-labelledby="drift-heading">
-        <h2 id="drift-heading">Drift-rate distribution</h2>
-        <canvas id="drift-canvas" width="720" height="480" role="img" aria-label="Physical Doppler drift rate histogram by radio and receiver"></canvas>
+        <h2 id="drift-heading">Doppler drift-rate density</h2>
+        <p class="muted">X: physical drift rate in Hz/s. Y: per-series probability density; each enabled radio/receiver distribution integrates to one.</p>
+        <canvas id="drift-canvas" width="720" height="480" role="img" aria-label="Normalized physical Doppler drift-rate density histogram by radio and receiver"></canvas>
         <div id="drift-summary"></div>
       </article>
       <article class="detail-card" aria-labelledby="control-heading">
