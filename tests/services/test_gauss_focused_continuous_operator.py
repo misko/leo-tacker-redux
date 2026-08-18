@@ -242,6 +242,92 @@ def test_main_dispatches_analysis_then_captures_next_dwell_without_waiting(
     assert journal.incomplete() == ()
 
 
+def test_main_keeps_capturing_after_analysis_is_dead_lettered(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    for path in (args.station_a, args.station_b, args.analysis_config):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    capture_count = 0
+    next_pid = 2000
+
+    class FailedProcess:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+        def poll(self) -> int:
+            return 9
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout=None) -> int:  # type: ignore[no-untyped-def]
+            return 9
+
+        def kill(self) -> None:
+            pass
+
+    def capture(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal capture_count
+        capture_count += 1
+        return subprocess.CompletedProcess([], 0)
+
+    def spawn(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal next_pid
+        next_pid += 1
+        return FailedProcess(next_pid)
+
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator.load_v5_capture_station",
+        lambda _path: SimpleNamespace(specification_digest=Digest.sha256(b"station")),
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._capture_closed",
+        lambda _record: True,
+    )
+    monkeypatch.setattr(subprocess, "run", capture)
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._pid_start_ticks",
+        lambda _pid: 99,
+    )
+
+    argv = [
+        "--station-a",
+        str(args.station_a),
+        "--station-b",
+        str(args.station_b),
+        "--state-root",
+        str(args.state_root),
+        "--capture-credential-directory",
+        str(args.capture_credential_directory),
+        "--analysis-config",
+        str(args.analysis_config),
+        "--analysis-credential-directory",
+        str(args.analysis_credential_directory),
+        "--dashboard-credential-directory",
+        str(args.dashboard_credential_directory),
+        "--maximum-analysis-attempts",
+        "1",
+        "--maximum-dwells",
+        "2",
+        "--minimum-free-bytes",
+        "1",
+        "--arm",
+    ]
+    assert main(argv) == 0
+    assert capture_count == 2
+    assert not (args.state_root / "failure-latch.json").exists()
+    journal = SQLiteFocusedContinuousJournalV0_1(
+        args.state_root / "continuous.sqlite3"
+    )
+    assert [journal.get(index).state for index in range(2)] == [  # type: ignore[union-attr]
+        "failed",
+        "failed",
+    ]
+
+
 def test_capture_continues_while_analysis_capacity_is_full(
     tmp_path: Path, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
