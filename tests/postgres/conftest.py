@@ -63,6 +63,7 @@ _EXPECTED_MIGRATIONS = (
     "0044_prompt_full_dwell_timeline.sql",
     "0045_prompt_timeline_source_acl.sql",
     "0046_starlink_adaptive_response_v0_1.sql",
+    "0047_starlink_adaptive_qam_v0_4.sql",
 )
 
 
@@ -191,7 +192,8 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE starlink_adaptive_response_work_v0_1,
+            TRUNCATE recording_starlink_adaptive_qam_v0_4,
+                     starlink_adaptive_response_work_v0_1,
                      recording_starlink_adaptive_response_v0_1,
                      full_dwell_refinement_work_v0_1,
                      full_dwell_timeline_work_v0_1,

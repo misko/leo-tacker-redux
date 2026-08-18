@@ -26,6 +26,7 @@ from leo_flow.contracts.starlink_adaptive_response import (
     V0_1,
     StarlinkAdaptivePowerSeedV0_1,
     StarlinkAdaptiveResponseBundleV0_1,
+    StarlinkAdaptiveResponseProductRefV0_1,
     StarlinkAdaptiveResponseRequestV0_1,
     StarlinkAdaptiveStreamSelectionV0_1,
 )
@@ -37,6 +38,7 @@ from leo_flow.contracts.starlink_suite_pipeline import (
     StarlinkDetectorSuiteProductRefV0_2,
     StarlinkDetectorSuiteRecordingBundleV0_2,
 )
+from leo_flow.contracts.storage import RecordingObjectRef
 from leo_flow.services.capture_batch_analysis import PublishedRecordingCatalog
 from leo_flow.services.starlink_full_dwell_pipeline import (
     FullDwellAnalysisProfileV0_1,
@@ -72,6 +74,18 @@ class AdaptiveResponseWorkRepositoryV0_1(Protocol):
 
 class AdaptiveResponseLeaseProducerV0_1(Protocol):
     def produce(self, lease: AdaptiveResponseWorkLeaseV0_1) -> ArtifactRef: ...
+
+
+class AdaptiveQamPublisherPortV0_4(Protocol):
+    def publish(
+        self,
+        recording_ref: RecordingObjectRef,
+        source_suite_ref: StarlinkDetectorSuiteProductRefV0_2,
+        source_suite_request_digest: Digest,
+        source_suite: StarlinkDetectorSuiteRecordingBundleV0_2,
+        source_response_ref: StarlinkAdaptiveResponseProductRefV0_1,
+        source_response: StarlinkAdaptiveResponseBundleV0_1,
+    ) -> object: ...
 
 
 class BoundedAdaptiveResponseServiceV0_1:
@@ -126,12 +140,14 @@ class DurableAdaptiveResponseLeaseProducerV0_1:
         suites: DurableStarlinkSuiteStoreV0_2,
         products: DurableStarlinkAdaptiveResponseStoreV0_1,
         profiles: tuple[FullDwellAnalysisProfileV0_1, ...],
+        adaptive_qam: AdaptiveQamPublisherPortV0_4 | None = None,
     ) -> None:
         refs = tuple(item.source_config_ref for item in profiles)
         if not profiles or len(refs) != len(set(refs)):
             raise ValueError("adaptive response profiles are invalid")
         self._recordings, self._reader = recordings, reader
         self._suites, self._products, self._profiles = suites, products, profiles
+        self._adaptive_qam = adaptive_qam
 
     def produce(self, lease: AdaptiveResponseWorkLeaseV0_1) -> ArtifactRef:
         refinement = lease.refinement_request
@@ -162,6 +178,15 @@ class DurableAdaptiveResponseLeaseProducerV0_1:
             bundle,
             idempotency_key=f"adaptive:{refinement.timeline_ref.artifact_id}:{request.digest.value}",
         )
+        if self._adaptive_qam is not None:
+            self._adaptive_qam.publish(
+                refinement.recording_object_ref,
+                lease.source_suite_ref,
+                lease.source_suite_request_digest,
+                suite,
+                result,
+                bundle,
+            )
         return result.artifact_ref
 
     def _profile(

@@ -21,6 +21,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV20,
     DashboardJsonApplicationV23,
     DashboardJsonApplicationV24,
+    DashboardJsonApplicationV25,
     JsonRequest,
     JsonResponse,
 )
@@ -176,6 +177,45 @@ class EvidencePorts:
             "mode": query.mode.value,
             "candidate_only": True,
             "calibration_required": True,
+            "streams": streams,
+        }
+
+    def recording_starlink_adaptive_qam(self, query: Any) -> dict[str, Any]:
+        legacy = self.recording_starlink_acquired_constellation(query)
+        streams = []
+        for stream in legacy["streams"]:
+            streams.append(
+                {
+                    **stream,
+                    "windows": [
+                        {
+                            "selection": {
+                                "source_window_index": index,
+                                "source_start_sample": window["start_sample"],
+                                "source_stop_sample": window["stop_sample"],
+                                "qam_start_sample": window["start_sample"],
+                                "qam_stop_sample": window["stop_sample"],
+                                "reasons": [
+                                    "top-qin-score",
+                                    "top-qin-minus-surrogate-margin",
+                                ],
+                                "source_qin_score": 0.82 - index * 0.02,
+                                "source_max_surrogate_score": 0.31,
+                                "source_qin_minus_max_surrogate": 0.51 - index * 0.02,
+                            },
+                            "qam": window,
+                        }
+                        for index, window in enumerate(stream["windows"])
+                    ],
+                }
+            )
+        return {
+            **legacy,
+            "source_adaptive_response_ref": {
+                "artifact_id": "sladapt_fixture",
+                "digest": {"algorithm": "sha256", "value": "a" * 64},
+                "schema": None,
+            },
             "streams": streams,
         }
 
@@ -526,7 +566,8 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
     v19 = DashboardJsonApplicationV19(v17, fixture_port)
     v20 = DashboardJsonApplicationV20(v19, fixture_port)
     v23 = DashboardJsonApplicationV23(v20, fixture_port)
-    return DashboardUiApplication(DashboardJsonApplicationV24(v23, fixture_port))
+    v24 = DashboardJsonApplicationV24(v23, fixture_port)
+    return DashboardUiApplication(DashboardJsonApplicationV25(v24, fixture_port))
 
 
 @contextmanager
@@ -630,6 +671,15 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             assert sorted(ports.approach_queries) == sorted([REQUESTED, COMPANION])
 
             expect(page.locator("#evidence-qam-heading")).to_have_text("Pilot QAM")
+            expect(page.locator("#evidence-qam-state")).to_contain_text(
+                "adaptive target/control window selection"
+            )
+            expect(page.locator("#evidence-qam-goodness")).to_contain_text(
+                "top-qin-score"
+            )
+            expect(page.locator("#evidence-qam-goodness")).to_contain_text(
+                "source Qin 0.8200, control 0.3100, margin 0.5100"
+            )
             expect(page.locator("#evidence-detector-heading")).to_have_text(
                 "Starlink algorithm scores"
             )

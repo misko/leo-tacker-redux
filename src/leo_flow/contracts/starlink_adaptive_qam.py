@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Protocol
 
 from ._validation import require_token
 from .core import (
@@ -19,9 +20,15 @@ from .core import (
 )
 from .starlink import StarlinkEdge
 from .starlink_acquired_constellation_pipeline import (
+    MAX_ACQUIRED_QAM_QUERY_STREAMS,
+    MAX_ACQUIRED_QAM_QUERY_WINDOWS,
+    StarlinkAcquiredConstellationOverallV0_3,
+    StarlinkAcquiredConstellationPresentationWindowV0_3,
+    StarlinkAcquiredConstellationQueryV0_3,
     StarlinkAcquiredConstellationRecordingBundleV0_3,
+    StarlinkAcquiredConstellationViewMode,
 )
-from .storage import RecordingObjectRef
+from .storage import ObjectRef, RecordingObjectRef
 
 V0_4 = SchemaVersion(0, 4)
 MAXIMUM_ADAPTIVE_QAM_STREAMS = 16
@@ -215,3 +222,103 @@ class StarlinkAdaptiveQamBundleV0_4:
     @property
     def digest(self) -> Digest:
         return canonical_digest(self)
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveQamProductRefV0_4:
+    analysis_id: str
+    recording_id: RecordingId
+    bundle_ref: ObjectRef
+
+    @property
+    def artifact_ref(self) -> ArtifactRef:
+        return ArtifactRef(
+            self.analysis_id,
+            self.bundle_ref.digest,
+            SchemaRef(StarlinkAdaptiveQamBundleV0_4.SCHEMA_ID, V0_4),
+        )
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveQamCatalogProjectionV0_4:
+    analysis_id: str
+    recording_id: RecordingId
+    recording_identity_digest: Digest
+    source_adaptive_response_ref: ArtifactRef
+    source_suite_ref: ArtifactRef
+    request_digest: Digest
+    stream_count: int
+    window_count: int
+    point_count: int
+
+    def __post_init__(self) -> None:
+        require_token(self.analysis_id, "analysis_id")
+        if (
+            not 1 <= self.stream_count <= MAXIMUM_ADAPTIVE_QAM_STREAMS
+            or not self.stream_count
+            <= self.window_count
+            <= self.stream_count * MAXIMUM_ADAPTIVE_QAM_WINDOWS_PER_STREAM
+            or self.point_count != self.window_count * 2400
+        ):
+            raise ValueError("adaptive QAM projection counts are invalid")
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveQamPresentationWindowV0_4:
+    selection: StarlinkAdaptiveQamWindowSelectionV0_4
+    qam: StarlinkAcquiredConstellationPresentationWindowV0_3
+
+
+@dataclass(frozen=True)
+class StarlinkAdaptiveQamPresentationStreamV0_4:
+    radio_id: RadioId
+    lnb_id: str
+    segment_id: SegmentId
+    receiver_chain_id: ReceiverChainId
+    channel_number: int
+    edge: StarlinkEdge
+    sample_rate_hz: float
+    segment_sample_count: int
+    overall: StarlinkAcquiredConstellationOverallV0_3
+    windows: tuple[StarlinkAdaptiveQamPresentationWindowV0_4, ...]
+    original_window_count: int
+
+    def __post_init__(self) -> None:
+        require_token(self.lnb_id, "lnb_id")
+        if (
+            not self.windows
+            or len(self.windows) > MAX_ACQUIRED_QAM_QUERY_WINDOWS
+            or self.original_window_count < len(self.windows)
+        ):
+            raise ValueError("adaptive QAM presentation is invalid")
+
+
+@dataclass(frozen=True)
+class RecordingStarlinkAdaptiveQamViewV0_4:
+    schema: SchemaRef
+    recording_id: RecordingId
+    analysis_ref: ArtifactRef
+    source_adaptive_response_ref: ArtifactRef
+    mode: StarlinkAcquiredConstellationViewMode
+    streams: tuple[StarlinkAdaptiveQamPresentationStreamV0_4, ...]
+    truncated: bool
+    candidate_only: bool
+    calibration_required: bool
+    warnings: tuple[str, ...]
+
+    SCHEMA_ID = "org.leo-flow.dashboard.recording-starlink-adaptive-qam"
+
+    def __post_init__(self) -> None:
+        if (
+            self.schema != SchemaRef(self.SCHEMA_ID, V0_4)
+            or len(self.streams) > MAX_ACQUIRED_QAM_QUERY_STREAMS
+            or not self.candidate_only
+            or not self.calibration_required
+        ):
+            raise ValueError("adaptive QAM dashboard view is invalid")
+
+
+class RecordingStarlinkAdaptiveQamQueryPortV0_4(Protocol):
+    def recording_starlink_adaptive_qam(
+        self, query: StarlinkAcquiredConstellationQueryV0_3
+    ) -> RecordingStarlinkAdaptiveQamViewV0_4: ...

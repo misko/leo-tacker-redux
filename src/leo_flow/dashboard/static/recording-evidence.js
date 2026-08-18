@@ -53,6 +53,16 @@
     };
   }
 
+  async function preferredPayload(paths) {
+    for (const path of paths) {
+      try { return {payload: await json(path), path}; }
+      catch (error) {
+        if (error.status !== 404) throw error;
+      }
+    }
+    return {payload: null, path: null};
+  }
+
   function checked(name) {
     return [...document.querySelectorAll(`#evidence-controls input[name="${name}"]:checked`)].map((item) => item.value);
   }
@@ -257,7 +267,7 @@
       value.className = "metric-value";
       value.textContent = entry.goodness.toFixed(3);
       const detail = document.createElement("small");
-      detail.textContent = `${qamGoodnessBand(entry.goodness)} · accuracy ${(entry.accuracy * 100).toFixed(2)}% · RMS EVM ${entry.rmsEvm.toFixed(3)}`;
+      detail.textContent = `${qamGoodnessBand(entry.goodness)} · accuracy ${(entry.accuracy * 100).toFixed(2)}% · RMS EVM ${entry.rmsEvm.toFixed(3)}${entry.selection ? ` · ${entry.selection}` : ""}`;
       card.append(label, value, detail);
       target.append(card);
     }
@@ -339,11 +349,19 @@
         node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
       }
       const mode = node("evidence-mode").value;
-      const fetched = await availablePayloads(selectedRecordings().map((recording) => {
+      const fetchedResults = await Promise.all(selectedRecordings().map((recording) => {
         const parameters = new URLSearchParams({mode, maximum_streams: "4", maximum_windows_per_stream: "32", maximum_points_per_constellation: "128"});
         queryFilters(parameters);
-        return `/api/v17/recordings/${encodeURIComponent(recording.recording_id)}/starlink-acquired-constellation?${parameters}`;
+        const encoded = encodeURIComponent(recording.recording_id);
+        return preferredPayload([
+          `/api/v25/recordings/${encoded}/starlink-adaptive-qam?${parameters}`,
+          `/api/v17/recordings/${encoded}/starlink-acquired-constellation?${parameters}`,
+        ]);
       }));
+      const fetched = {
+        payloads: fetchedResults.flatMap((item) => item.payload ? [item.payload] : []),
+        missingCount: fetchedResults.filter((item) => !item.payload).length,
+      };
       if (current !== generation) return;
       if (!fetched.payloads.length) {
         node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
@@ -358,19 +376,23 @@
           const windows = stream.windows || [];
           const timePoints = [];
           windows.forEach((window, index) => {
-            const points = window.display_points || window.points || [];
+            const qam = window.qam || window;
+            const selection = window.selection || null;
+            const points = qam.display_points || qam.points || [];
             if (!points.length) return;
-            const label = identity([stream.recording_id || payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, mode === "windows" ? `window ${window.window_index ?? index}` : "overall"]);
+            const reasons = (selection?.reasons || []).join(", ");
+            const label = identity([stream.recording_id || payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, mode === "windows" ? `window ${qam.window_index ?? index}` : "overall", reasons]);
             series.push({
               label,
               points,
             });
-            const accuracy = mode === "windows" ? window.hard_symbol_accuracy : stream.overall?.support_weighted_hard_symbol_accuracy;
-            const rmsEvm = mode === "windows" ? window.rms_evm : stream.overall?.support_weighted_rms_evm;
+            const accuracy = mode === "windows" ? qam.hard_symbol_accuracy : stream.overall?.support_weighted_hard_symbol_accuracy;
+            const rmsEvm = mode === "windows" ? qam.rms_evm : stream.overall?.support_weighted_rms_evm;
             const goodness = qamGoodness(accuracy, rmsEvm);
             if (goodness !== null) {
-              goodnessEntries.push({label, goodness, accuracy: Number(accuracy), rmsEvm: Number(rmsEvm)});
-              timePoints.push({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: goodness});
+              const selectionDetail = selection ? `${reasons}; source Qin ${Number(selection.source_qin_score).toFixed(4)}, control ${Number(selection.source_max_surrogate_score).toFixed(4)}, margin ${Number(selection.source_qin_minus_max_surrogate).toFixed(4)}` : "legacy dwell-stratified selection";
+              goodnessEntries.push({label, goodness, accuracy: Number(accuracy), rmsEvm: Number(rmsEvm), selection: selectionDetail});
+              timePoints.push({x: (Number(qam.interval_start_utc_ns) + Number(qam.interval_stop_utc_ns)) / 2, y: goodness});
             }
           });
           if (timePoints.length) goodnessSeries.push({label: identity([payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, "QAM goodness"]), points: timePoints});
@@ -378,7 +400,8 @@
       }
       drawChart("evidence-qam-time-canvas", goodnessSeries, "QAM goodness [0,1]", mode, "selected overall window"); drawQam(series); seriesLegend("evidence-qam-legend", series); renderQamGoodness(goodnessEntries);
       const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
-      state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series.${partial}` : "No acquired-QAM series match the selected hardware scope.");
+      const adaptive = fetched.payloads.some((payload) => payload.source_adaptive_response_ref);
+      state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series; ${adaptive ? "adaptive target/control window selection" : "legacy stratified-window fallback"}.${partial}` : "No acquired-QAM series match the selected hardware scope.");
     } catch (error) {
       if (current !== generation) return;
       node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);

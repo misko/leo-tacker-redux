@@ -108,6 +108,26 @@ def test_reference_inventory_matches_every_current_object_blob_fk(
             ("bundle_digest_algorithm", "bundle_digest_value"),
         ),
         (
+            "recording_starlink_full_dwell_v0_1",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_starlink_acquired_constellation_v0_3",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_full_dwell_timeline_v0_1",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_starlink_adaptive_response_v0_1",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
+            "recording_starlink_adaptive_qam_v0_4",
+            ("bundle_digest_algorithm", "bundle_digest_value"),
+        ),
+        (
             "recording_waterfall_v0_2",
             ("bundle_digest_algorithm", "bundle_digest_value"),
         ),

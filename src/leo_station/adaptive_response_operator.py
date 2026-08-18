@@ -23,12 +23,18 @@ def build_service(
     worker_id: str,
     lease_ttl_s: float,
 ) -> AdaptiveCycle:
+    from leo_flow.adapters.starlink_adaptive_qam_postgres import (
+        PostgresStarlinkAdaptiveQamCatalogV0_4,
+    )
     from leo_flow.adapters.starlink_adaptive_response_postgres import (
         PostgresAdaptiveResponseWorkRepositoryV0_1,
         PostgresStarlinkAdaptiveResponseCatalogV0_1,
     )
     from leo_flow.adapters.starlink_suite_postgres import (
         PostgresStarlinkSuiteCatalogV0_2,
+    )
+    from leo_flow.analysis.recording.starlink_adaptive_qam_persistence import (
+        DurableStarlinkAdaptiveQamStoreV0_4,
     )
     from leo_flow.analysis.recording.starlink_adaptive_response_persistence import (
         DurableStarlinkAdaptiveResponseStoreV0_1,
@@ -37,6 +43,9 @@ def build_service(
         DurableStarlinkSuiteStoreV0_2,
     )
     from leo_flow.deployments.recording_submission_v1 import analysis_connection_factory
+    from leo_flow.services.starlink_adaptive_qam_analysis import (
+        DurableAdaptiveQamProducerV0_4,
+    )
     from leo_flow.services.starlink_adaptive_response import (
         BoundedAdaptiveResponseServiceV0_1,
         DurableAdaptiveResponseLeaseProducerV0_1,
@@ -45,7 +54,11 @@ def build_service(
     from leo_flow.storage.postgres_catalog import PostgresRecordingCatalog
     from leo_flow.storage.recording_codec import SigMFRecordingObjectReader
 
-    from .analysis_v1 import CAS_ROOT, starlink_full_dwell_profiles_v0_1
+    from .analysis_v1 import (
+        CAS_ROOT,
+        starlink_acquired_dwell_profiles_v0_3,
+        starlink_full_dwell_profiles_v0_1,
+    )
 
     credentials = SystemdCredentialProvider(credential_directory)
     connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
@@ -62,6 +75,13 @@ def build_service(
                 blobs, PostgresStarlinkAdaptiveResponseCatalogV0_1(connect)
             ),
             starlink_full_dwell_profiles_v0_1(),
+            DurableAdaptiveQamProducerV0_4(
+                SigMFRecordingObjectReader(blobs),
+                DurableStarlinkAdaptiveQamStoreV0_4(
+                    blobs, PostgresStarlinkAdaptiveQamCatalogV0_4(connect)
+                ),
+                starlink_acquired_dwell_profiles_v0_3(),
+            ),
         ),
         worker_id=worker_id,
         lease_ttl_s=lease_ttl_s,

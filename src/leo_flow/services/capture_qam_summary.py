@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from leo_flow.analysis.qam_goodness import qam_goodness_v0_2
+from leo_flow.contracts.core import RadioId, ReceiverChainId, SegmentId
 from leo_flow.contracts.dashboard_capture_doppler import (
     CaptureDopplerScopeQueryPortV0_1,
     CaptureDopplerSummaryQueryV0_1,
@@ -15,11 +18,18 @@ from leo_flow.contracts.dashboard_capture_qam import (
     CaptureQamSummaryQueryV0_1,
     CaptureQamSummaryViewV0_1,
 )
+from leo_flow.contracts.starlink import StarlinkEdge
 from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     MAX_ACQUIRED_QAM_QUERY_STREAMS,
     RecordingStarlinkAcquiredConstellationQueryPortV0_3,
+    RecordingStarlinkAcquiredConstellationViewV0_3,
+    StarlinkAcquiredConstellationPresentationWindowV0_3,
     StarlinkAcquiredConstellationQueryV0_3,
     StarlinkAcquiredConstellationViewMode,
+)
+from leo_flow.contracts.starlink_adaptive_qam import (
+    RecordingStarlinkAdaptiveQamQueryPortV0_4,
+    RecordingStarlinkAdaptiveQamViewV0_4,
 )
 
 
@@ -28,8 +38,10 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
         self,
         scopes: CaptureDopplerScopeQueryPortV0_1,
         acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3,
+        adaptive_qam: RecordingStarlinkAdaptiveQamQueryPortV0_4 | None = None,
     ) -> None:
         self._scopes, self._acquired_qam = scopes, acquired_qam
+        self._adaptive_qam = adaptive_qam
 
     def capture_qam_summaries(
         self, query: CaptureQamSummaryQueryV0_1
@@ -43,16 +55,15 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
         for scoped in scope.recordings:
             candidates: tuple[CaptureQamCandidateSummaryV0_1, ...] = ()
             reasons: tuple[str, ...] = ()
+            qam_query = StarlinkAcquiredConstellationQueryV0_3(
+                scoped.recording_id,
+                StarlinkAcquiredConstellationViewMode.WINDOWS,
+                maximum_streams=MAX_ACQUIRED_QAM_QUERY_STREAMS,
+                maximum_windows_per_stream=32,
+                maximum_points_per_constellation=1,
+            )
             try:
-                view = self._acquired_qam.recording_starlink_acquired_constellation(
-                    StarlinkAcquiredConstellationQueryV0_3(
-                        scoped.recording_id,
-                        StarlinkAcquiredConstellationViewMode.WINDOWS,
-                        maximum_streams=MAX_ACQUIRED_QAM_QUERY_STREAMS,
-                        maximum_windows_per_stream=32,
-                        maximum_points_per_constellation=1,
-                    )
-                )
+                view = self._qam_view(qam_query)
             except LookupError:
                 state, reasons = _missing_state(
                     scoped.analysis_state, bool(scoped.assignments)
@@ -62,7 +73,7 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
                     item.receiver_chain_id: item.lnb_id for item in scoped.assignments
                 }
                 selected: dict[tuple[str, str], CaptureQamCandidateSummaryV0_1] = {}
-                for stream in view.streams:
+                for stream in _summary_streams(view):
                     expected_lnb = assignments.get(stream.receiver_chain_id)
                     if (
                         stream.radio_id != scoped.radio_id
@@ -70,10 +81,11 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
                         or stream.lnb_id != expected_lnb
                     ):
                         raise RuntimeError("acquired-QAM stream scope is inconsistent")
-                    if not stream.windows:
+                    windows = stream.windows
+                    if not windows:
                         continue
                     best = max(
-                        stream.windows,
+                        windows,
                         key=lambda window: (
                             qam_goodness_v0_2(
                                 window.hard_symbol_accuracy, window.rms_evm
@@ -95,7 +107,7 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
                         goodness,
                         best.hard_symbol_accuracy,
                         best.rms_evm,
-                        stream.overall.window_count,
+                        stream.window_count,
                         view.analysis_ref.artifact_id,
                     )
                     key = (stream.lnb_id, str(stream.receiver_chain_id))
@@ -148,6 +160,19 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
             ),
         )
 
+    def _qam_view(
+        self, query: StarlinkAcquiredConstellationQueryV0_3
+    ) -> (
+        RecordingStarlinkAdaptiveQamViewV0_4
+        | RecordingStarlinkAcquiredConstellationViewV0_3
+    ):
+        if self._adaptive_qam is not None:
+            try:
+                return self._adaptive_qam.recording_starlink_adaptive_qam(query)
+            except LookupError:
+                pass
+        return self._acquired_qam.recording_starlink_acquired_constellation(query)
+
 
 def _missing_state(
     analysis_state: str, has_assignments: bool
@@ -159,3 +184,47 @@ def _missing_state(
     if analysis_state in {"failed", "error"}:
         return CaptureQamState.ERROR, ("analysis-failed",)
     return CaptureQamState.UNAVAILABLE, ("published-acquired-qam-unavailable",)
+
+
+@dataclass(frozen=True)
+class _SummaryStream:
+    radio_id: RadioId
+    lnb_id: str
+    receiver_chain_id: ReceiverChainId
+    segment_id: SegmentId
+    edge: StarlinkEdge
+    windows: tuple[StarlinkAcquiredConstellationPresentationWindowV0_3, ...]
+    window_count: int
+
+
+def _summary_streams(
+    view: (
+        RecordingStarlinkAdaptiveQamViewV0_4
+        | RecordingStarlinkAcquiredConstellationViewV0_3
+    ),
+) -> tuple[_SummaryStream, ...]:
+    if isinstance(view, RecordingStarlinkAdaptiveQamViewV0_4):
+        return tuple(
+            _SummaryStream(
+                stream.radio_id,
+                stream.lnb_id,
+                stream.receiver_chain_id,
+                stream.segment_id,
+                stream.edge,
+                tuple(item.qam for item in stream.windows),
+                stream.overall.window_count,
+            )
+            for stream in view.streams
+        )
+    return tuple(
+        _SummaryStream(
+            stream.radio_id,
+            stream.lnb_id,
+            stream.receiver_chain_id,
+            stream.segment_id,
+            stream.edge,
+            stream.windows,
+            stream.overall.window_count,
+        )
+        for stream in view.streams
+    )

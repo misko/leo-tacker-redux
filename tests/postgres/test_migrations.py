@@ -62,6 +62,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0044_prompt_full_dwell_timeline.sql",),
         ("0045_prompt_timeline_source_acl.sql",),
         ("0046_starlink_adaptive_response_v0_1.sql",),
+        ("0047_starlink_adaptive_qam_v0_4.sql",),
     ]
 
 
@@ -123,7 +124,7 @@ def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
     assert not analysis_insert
     assert not capture_select
     assert not dashboard_select
-    assert receipts[-1] == ("0046_starlink_adaptive_response_v0_1.sql",)
+    assert receipts[-1] == ("0047_starlink_adaptive_qam_v0_4.sql",)
 
 
 @pytest.mark.integration
@@ -155,6 +156,31 @@ def test_prompt_timeline_capabilities_are_narrow(postgres_dsn: str) -> None:
     assert table_acl == (False, False, False, False)
     assert function_acl == (True, False, False, True)
     assert routine_source_acl == (True, True, False)
+
+
+@pytest.mark.integration
+def test_adaptive_qam_catalog_capabilities_are_directional(
+    postgres_dsn: str,
+) -> None:
+    with psycopg.connect(postgres_dsn) as connection:
+        table_acl = connection.execute(
+            """
+            SELECT has_table_privilege('leo_analysis','recording_starlink_adaptive_qam_v0_4','SELECT'),
+                   has_table_privilege('leo_dashboard','recording_starlink_adaptive_qam_v0_4','SELECT'),
+                   has_table_privilege('leo_capture','recording_starlink_adaptive_qam_v0_4','SELECT')
+            """
+        ).fetchone()
+        function_acl = connection.execute(
+            """
+            SELECT has_function_privilege('leo_analysis','publish_recording_starlink_adaptive_qam_v0_4(jsonb)','EXECUTE'),
+                   has_function_privilege('leo_dashboard','publish_recording_starlink_adaptive_qam_v0_4(jsonb)','EXECUTE'),
+                   has_function_privilege('leo_capture','publish_recording_starlink_adaptive_qam_v0_4(jsonb)','EXECUTE'),
+                   has_function_privilege('leo_dashboard','read_latest_recording_starlink_adaptive_qam_v0_4(text)','EXECUTE'),
+                   has_function_privilege('leo_analysis','read_latest_recording_starlink_adaptive_qam_v0_4(text)','EXECUTE')
+            """
+        ).fetchone()
+    assert table_acl == (False, False, False)
+    assert function_acl == (True, False, False, True, True)
 
 
 @pytest.mark.integration

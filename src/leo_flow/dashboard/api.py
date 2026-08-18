@@ -85,6 +85,9 @@ from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     StarlinkAcquiredConstellationQueryV0_3,
     StarlinkAcquiredConstellationViewMode,
 )
+from leo_flow.contracts.starlink_adaptive_qam import (
+    RecordingStarlinkAdaptiveQamQueryPortV0_4,
+)
 from leo_flow.contracts.starlink_adaptive_response import (
     RecordingStarlinkAdaptiveResponseQueryPortV0_1,
     StarlinkAdaptiveResponseQueryV0_1,
@@ -1195,6 +1198,54 @@ class DashboardJsonApplicationV24:
         except DashboardNotFound as error:
             return _error(404, "not_found", str(error))
         except LookupError as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+class DashboardJsonApplicationV25:
+    """Expose adaptively selected acquired-QAM windows without changing V17."""
+
+    _PREFIX = "/api/v25/recordings/"
+    _MAX_QUERY_BYTES = 16_384
+    _MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        adaptive_qam: RecordingStarlinkAdaptiveQamQueryPortV0_4,
+    ) -> None:
+        self._previous, self._adaptive_qam = previous, adaptive_qam
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-adaptive-qam":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._adaptive_qam.recording_starlink_adaptive_qam(
+                _starlink_acquired_constellation_query(
+                    RecordingId(unquote(parts[0])),
+                    request.query,
+                    self._MAX_QUERY_BYTES,
+                )
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("adaptive-QAM response exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except (DashboardNotFound, LookupError) as error:
             return _error(404, "not_found", str(error))
         except Exception:  # noqa: BLE001 - fixed external error contract
             return _error(500, "internal_error", "dashboard query failed")
