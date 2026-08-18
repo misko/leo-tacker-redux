@@ -602,40 +602,54 @@
   }
 
   async function loadDetectors(current) {
-    state("detector", "pending", "Loading symmetric adaptive detector evidence…");
+    state("detector", "pending", "Loading selected detector windowing approaches…");
     try {
       const methods = checked("method"); const edges = checked("edge"); const channels = new Set(checked("channel").map(Number));
-      const radios = new Set(selectedRecordings().map((item) => item.radio_id)); const receivers = new Set(checked("receiver")); const lnbs = new Set(checked("lnb")); const patterns = checked("pattern");
-      if (!radios.size || !receivers.size || !lnbs.size || !channels.size || !edges.length || !methods.length || !patterns.length) {
-        node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren(); state("detector", "missing", "Select at least one value in every detector scope."); return;
+      const radios = new Set(selectedRecordings().map((item) => item.radio_id)); const receivers = new Set(checked("receiver")); const lnbs = new Set(checked("lnb")); const patterns = checked("pattern"); const selectedApproaches = checked("detector-approach");
+      if (!radios.size || !receivers.size || !lnbs.size || !channels.size || !edges.length || !methods.length || !patterns.length || !selectedApproaches.length) {
+        node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren(); state("detector", "missing", "Select at least one value in every detector scope, including a windowing approach."); return;
       }
-      const refinementPaths = selectedRecordings().map((recording) => {
-        const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, lnb_ids: [...lnbs].join(","), receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
-        return `/api/v28/recordings/${encodeURIComponent(recording.recording_id)}/starlink-pilot-refinement?${parameters}`;
-      });
-      let fetched = await availablePayloads(refinementPaths);
-      let product = "prescreen-selected";
-      if (!fetched.payloads.length) {
-        product = "adaptive";
-        fetched = await availablePayloads(selectedRecordings().map((recording) => {
+      const definitions = {
+        "adaptive-time-diverse": {
+          product: "adaptive",
+          label: "time-diverse adaptive",
+          paths: selectedRecordings().map((recording) => {
           const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, lnb_ids: [...lnbs].join(","), receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
           return `/api/v24/recordings/${encodeURIComponent(recording.recording_id)}/starlink-adaptive-response?${parameters}`;
-        }));
-      }
-      if (!fetched.payloads.length) {
-        product = "legacy";
-        fetched = await availablePayloads(selectedRecordings().map((recording) => {
+          }),
+        },
+        "prescreen-global": {
+          product: "prescreen-selected",
+          label: "global OFDM / power refinement",
+          paths: selectedRecordings().map((recording) => {
+            const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, lnb_ids: [...lnbs].join(","), receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
+            return `/api/v28/recordings/${encodeURIComponent(recording.recording_id)}/starlink-pilot-refinement?${parameters}`;
+          }),
+        },
+        "legacy-sparse": {
+          product: "legacy",
+          label: "legacy sparse fallback",
+          paths: selectedRecordings().map((recording) => {
           const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
           return `/api/v15/recordings/${encodeURIComponent(recording.recording_id)}/starlink-full-dwell?${parameters}`;
-        }));
-      }
+          }),
+        },
+      };
+      const fetchedApproaches = await Promise.all(selectedApproaches.map(async (name) => {
+        const definition = definitions[name];
+        if (!definition) throw new Error(`unknown detector windowing approach: ${name}`);
+        return {...definition, fetched: await availablePayloads(definition.paths)};
+      }));
       if (current !== generation) return;
-      if (!fetched.payloads.length) {
+      const available = fetchedApproaches.flatMap((item) => item.fetched.payloads.map((payload) => ({...item, payload})));
+      if (!available.length) {
         node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
-        state("detector", "pending", "Adaptive detector evidence is queued; no legacy fallback product is available yet."); return;
+        state("detector", "pending", "The selected detector windowing products are queued or unavailable."); return;
       }
       const grouped = new Map(); const approach = []; const mode = node("evidence-mode").value;
-      for (const payload of fetched.payloads) for (const stream of payload.streams || []) {
+      for (const availableProduct of available) {
+        const {payload, product, label: productLabel} = availableProduct;
+        for (const stream of payload.streams || []) {
         const selection = stream.selection || stream;
         const radio = stream.radio_id || selection.radio_id;
         const receiver = stream.receiver_chain_id || selection.receiver_chain_id;
@@ -644,25 +658,26 @@
         const lnb = stream.lnb_id || selection.lnb_id || assignment(payload.recording_id, receiver)?.lnb_id;
         if (!radios.has(radio) || !receivers.has(receiver) || !lnbs.has(lnb) || !channels.has(channel) || !edges.includes(edge)) continue;
         const base = identity([payload.recording_id, radio, lnb, receiver, `CH${channel}`, edge]);
+        const productBase = identity([base, productLabel]);
         const exactWindows = stream.selection?.seeds || stream.selection?.exact_windows || [];
         const stages = [...new Set(exactWindows.flatMap((item) => item.stage ? [item.stage] : [item.periodicity_rank !== null && item.periodicity_rank !== undefined ? "top-ofdm-periodicity" : null, item.power_rank !== null && item.power_rank !== undefined ? "top-power" : null].filter(Boolean)))];
         const sampleRate = Number(stream.sample_rate_hz || stream.selection?.sample_rate_hz);
         approach.push(product === "prescreen-selected" ? {
-          kind: "detector", key: base, approach: "Complete-IQ prescreen-selected exact Qin + surrogate search", scope: base,
+          kind: "detector", key: productBase, approach: "Complete-IQ prescreen-selected exact Qin + surrogate search", scope: base,
           window: `${exactWindows.length} exact seeds (${stages.join(" + ")}); ${duration(exactWindows[0] ? Number(exactWindows[0].stop_sample) - Number(exactWindows[0].start_sample) : 0, sampleRate)} probes`,
           coverage: `${percent(stream.exact_coverage_fraction)} exact after 100% contiguous OFDM/power prescreen`,
           search: `same selected windows and full epoch/CFO grid for Qin and all four precommitted surrogates; methods ${methods.join(", ")}`,
           response: "Qin and surrogate algorithm scores vs exact-window UTC; finite paired rank and Qin-minus-max-surrogate margin",
           status: "complete-IQ selection; time/epoch/CFO look-elsewhere calibration required; candidate-only",
         } : product === "adaptive" ? {
-          kind: "detector", key: base, approach: "Symmetric adaptive Qin + surrogate search", scope: base,
+          kind: "detector", key: productBase, approach: "Time-diverse symmetric adaptive Qin + surrogate search", scope: base,
           window: `${exactWindows.length} exact windows; stages ${stages.join(", ")}; ${duration(payload.plan.probe_sample_count, sampleRate)} probes`,
           coverage: `${percent(stream.exact_coverage_fraction)} exact; fixed sentinels span the dwell and local windows remain sparse`,
           search: `same union of sentinel, power-seed, Qin-selected, surrogate-selected, and local windows for every pattern; each Qin/surrogate pattern independently searches one full-frame epoch/CFO winner; methods ${methods.join(", ")} are conditioned at that pattern winner`,
           response: "conditioned algorithm score vs exact-window UTC; pattern acquisition winner, selection stage, finite paired rank, Qin-minus-max-surrogate margin",
           status: "time look-elsewhere calibration required; candidate-only; maximum is descriptive",
         } : {
-          kind: "detector", key: base, approach: "Legacy sparse Qin + paired-surrogate fallback", scope: base,
+          kind: "detector", key: productBase, approach: "Legacy sparse Qin + paired-surrogate fallback", scope: base,
           window: `${stream.exact_window_count} exact selected windows from ${stream.prescreen_window_count} complete prescreen tiles`,
           coverage: `${percent(stream.exact_coverage_fraction)} exact; ${percent(stream.prescreen_coverage_fraction)} pattern-blind prescreen`,
           search: `identical epoch/CFO grid for Qin and every precommitted surrogate; methods ${methods.join(", ")}`,
@@ -675,18 +690,20 @@
           if (pattern === "qin") score = point.qin?.score;
           else score = point.surrogates?.[Number(pattern.split("-")[1])]?.winner?.score;
           if (!Number.isFinite(Number(score))) continue;
-          const label = identity([payload.recording_id, radio, lnb, receiver, `CH${channel}`, edge, point.method, pattern]);
+          const label = identity([payload.recording_id, radio, lnb, receiver, `CH${channel}`, edge, productLabel, point.method, pattern]);
           if (!grouped.has(label)) grouped.set(label, []);
           grouped.get(label).push({x: (Number(point.interval_start_utc_ns) + Number(point.interval_stop_utc_ns)) / 2, y: Number(score)});
+        }
         }
       }
       setApproachRows("detector", approach);
       const series = [...grouped].map(([label, points], index) => ({label, points: mode === "windows" ? points : [{x: index, y: Math.max(...points.map((item) => item.y))}]}));
       drawChart("evidence-detector-canvas", series, "score [0,1]", mode, "series (maximum over returned exact windows)");
       seriesLegend("evidence-detector-legend", series);
-      const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
-      const productLabel = product === "prescreen-selected" ? "complete-IQ prescreen-selected exact" : product === "adaptive" ? "pattern-symmetric adaptive" : "legacy sparse fallback";
-      state("detector", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled series from the ${productLabel} product; ${mode === "overall" ? "overall is the maximum over returned exact windows" : "each point is one exact analyzed window"}.${partial}` : "No detector points match the selected scope.");
+      const missingCount = fetchedApproaches.reduce((total, item) => total + item.fetched.missingCount, 0);
+      const partial = missingCount ? ` ${missingCount} selected recording/product combination(s) remain pending.` : "";
+      const productLabels = fetchedApproaches.filter((item) => item.fetched.payloads.length).map((item) => item.label).join(", ");
+      state("detector", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled series from: ${productLabels}; ${mode === "overall" ? "overall is the maximum over returned exact windows" : "each point is one exact analyzed window"}.${partial}` : "No detector points match the selected scope.");
     } catch (error) {
       if (current !== generation) return;
       node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();

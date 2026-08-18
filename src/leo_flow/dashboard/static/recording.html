@@ -78,6 +78,12 @@
           <label><input type="checkbox" name="edge" value="lower" checked> Lower</label>
           <label><input type="checkbox" name="edge" value="upper" checked> Upper</label>
         </fieldset>
+        <fieldset id="evidence-detector-approaches">
+          <legend>Detector windowing approach</legend>
+          <label><input type="checkbox" name="detector-approach" value="adaptive-time-diverse" checked> Time-diverse adaptive (1 s sentinels + 100 ms follow-up)</label>
+          <label><input type="checkbox" name="detector-approach" value="prescreen-global"> Global OFDM / power refinement</label>
+          <label><input type="checkbox" name="detector-approach" value="legacy-sparse"> Legacy sparse fallback</label>
+        </fieldset>
         <fieldset id="evidence-methods">
           <legend>Detector algorithm</legend>
           <label><input type="checkbox" name="method" value="anchor-8" checked> Anchor-8</label>

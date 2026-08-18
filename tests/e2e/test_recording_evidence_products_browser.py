@@ -1032,15 +1032,17 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             )
             expect(approaches).to_contain_text("Complete IQ power timeline")
             expect(approaches).to_contain_text(
-                "Complete-IQ prescreen-selected exact Qin + surrogate search"
+                "Time-diverse symmetric adaptive Qin + surrogate search"
             )
-            expect(approaches).to_contain_text("top-ofdm-periodicity + top-power")
+            expect(approaches).to_contain_text("sentinel, local")
             expect(approaches).to_contain_text(
-                "same selected windows and full epoch/CFO grid for Qin and all four precommitted surrogates"
+                "same union of sentinel, power-seed, Qin-selected, surrogate-selected, and local windows for every pattern"
             )
-            expect(approaches).to_contain_text("complete-IQ selection")
             expect(approaches).to_contain_text(
-                "Qin and surrogate algorithm scores vs exact-window UTC"
+                "time look-elsewhere calibration required"
+            )
+            expect(approaches).to_contain_text(
+                "conditioned algorithm score vs exact-window UTC"
             )
             expect(approaches).to_contain_text("Basic blind Doppler track")
             expect(approaches).to_contain_text("Advanced-path-only Doppler")
@@ -1087,7 +1089,7 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
                 f"{REQUESTED} · radio_a · lnb_authoritative_a · rx_a · lower · overall"
             )
             expect(page.locator("#evidence-detector-legend")).to_contain_text(
-                f"{COMPANION} · radio_b · lnb_authoritative_b · rx_b · CH4 · lower · glrt-32 · qin"
+                f"{COMPANION} · radio_b · lnb_authoritative_b · rx_b · CH4 · lower · time-diverse adaptive · glrt-32 · qin"
             )
             expect(page.locator("#evidence-doppler-legend")).to_contain_text(
                 "basic candidate 1"
@@ -1123,9 +1125,38 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             assert all(
                 query.maximum_points == 8192 for query in ports.pilot_prescreen_queries
             )
+            expect(
+                page.locator(
+                    '#evidence-detector-approaches input[value="adaptive-time-diverse"]'
+                )
+            ).to_be_checked()
+            expect(
+                page.locator(
+                    '#evidence-detector-approaches input[value="prescreen-global"]'
+                )
+            ).not_to_be_checked()
+            assert len(ports.pilot_refinement_queries) == 0
+            page.locator(
+                '#evidence-detector-approaches input[value="prescreen-global"]'
+            ).check()
+            expect(page.locator("#evidence-detector-canvas")).to_have_attribute(
+                "data-series-count", "24"
+            )
+            expect(page.locator("#evidence-detector-legend")).to_contain_text(
+                "global OFDM / power refinement"
+            )
+            expect(approaches).to_contain_text(
+                "Complete-IQ prescreen-selected exact Qin + surrogate search"
+            )
             assert len(ports.pilot_refinement_queries) == 2
             assert all(
                 query.maximum_points == 4096 for query in ports.pilot_refinement_queries
+            )
+            page.locator(
+                '#evidence-detector-approaches input[value="prescreen-global"]'
+            ).uncheck()
+            expect(page.locator("#evidence-detector-canvas")).to_have_attribute(
+                "data-series-count", "12"
             )
 
             page.locator("#evidence-mode").select_option("windows")
@@ -1165,7 +1196,7 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             )
             assert all(
                 method.value != "anchor-8"
-                for method in ports.pilot_refinement_queries[-1].methods
+                for method in ports.detector_queries[-1].methods
             )
             page.locator('#evidence-methods input[value="anchor-8"]').check()
 
@@ -1322,10 +1353,13 @@ def test_detail_page_renders_available_recording_when_companion_is_pending() -> 
                 expect(page.locator(f"#evidence-{product}-state")).to_have_attribute(
                     "data-state", "ready"
                 )
-                expect(page.locator(f"#evidence-{product}-state")).to_contain_text(
-                    "1 selected recording(s) remain pending"
-                )
                 expect(page.locator(f"#evidence-{product}-canvas")).to_be_visible()
+            expect(page.locator("#evidence-qam-state")).to_contain_text(
+                "1 selected recording(s) remain pending"
+            )
+            expect(page.locator("#evidence-detector-state")).to_contain_text(
+                "1 selected recording/product combination(s) remain pending"
+            )
             expect(page.locator("#evidence-qam-legend")).to_contain_text(REQUESTED)
             expect(page.locator("#evidence-qam-legend")).not_to_contain_text(COMPANION)
             expect(page.locator("#evidence-detector-legend")).to_contain_text(REQUESTED)

@@ -113,6 +113,34 @@ def _full_dwell() -> dict[str, object]:
     }
 
 
+def _adaptive_response() -> dict[str, object]:
+    payload = _full_dwell()
+    stream = dict(payload["streams"][0])  # type: ignore[index]
+    stream.update(
+        {
+            "lnb_id": "lnb_authoritative",
+            "sample_rate_hz": 2_500_000.0,
+            "selection": {
+                "exact_windows": [
+                    {
+                        "start_sample": 0,
+                        "stop_sample": 20_000,
+                        "stage": "sentinel",
+                    }
+                ]
+            },
+            "exact_coverage_fraction": 1.0,
+        }
+    )
+    return {
+        "recording_id": RECORDING,
+        "candidate_only": True,
+        "calibration_required": True,
+        "plan": {"probe_sample_count": 20_000},
+        "streams": [stream],
+    }
+
+
 def _prompt_timeline() -> dict[str, object]:
     return {
         "recording_id": RECORDING,
@@ -270,6 +298,14 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
                 ),
             )
             page.route(
+                f"**/api/v24/recordings/{RECORDING}/starlink-adaptive-response?*",
+                lambda route: route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps(_adaptive_response()),
+                ),
+            )
+            page.route(
                 f"**/api/v20/recordings/{RECORDING}/full-dwell-timeline?*",
                 lambda route: route.fulfill(
                     status=200,
@@ -414,6 +450,14 @@ def test_unified_workspace_distinguishes_pending_missing_and_error() -> None:
             )
             page.route(
                 f"**/api/v15/recordings/{RECORDING}/starlink-full-dwell?*",
+                lambda route: route.fulfill(
+                    status=500,
+                    content_type="application/json",
+                    body='{"error":{"message":"failed"}}',
+                ),
+            )
+            page.route(
+                f"**/api/v24/recordings/{RECORDING}/starlink-adaptive-response?*",
                 lambda route: route.fulfill(
                     status=500,
                     content_type="application/json",
