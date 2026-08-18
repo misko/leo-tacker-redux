@@ -6,7 +6,7 @@ radio pairs.  As soon as a pair closes terminally, the supervisor dispatches
 its six exact FeatureSet, waterfall/Doppler, and Starlink suite/null/QAM jobs in
 a child process and immediately begins preparing the next capture.
 
-Up to four pair analyses may be in flight, each at lowered CPU scheduling
+Up to six pair analyses may be in flight, each at lowered CPU scheduling
 priority so the capture path retains headroom. Captured pairs beyond that limit
 remain in the durable journal and are dispatched FIFO as slots open; capture
 does not wait for analysis capacity. PostgreSQL migration 0037 records
