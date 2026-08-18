@@ -561,8 +561,12 @@
               label,
               points,
             });
-            const accuracy = mode === "windows" ? qam.hard_symbol_accuracy : stream.overall?.support_weighted_hard_symbol_accuracy;
-            const rmsEvm = mode === "windows" ? qam.rms_evm : stream.overall?.support_weighted_rms_evm;
+            // The constellation and its label identify one concrete display
+            // window.  Rate that same window; support-weighted dwell metrics
+            // describe another aggregation and must not be presented as the
+            // selected constellation's goodness.
+            const accuracy = qam.hard_symbol_accuracy;
+            const rmsEvm = qam.rms_evm;
             const goodness = qamGoodness(accuracy, rmsEvm);
             if (goodness !== null) {
               const selectionDetail = selection ? `${reasons}; source Qin ${Number(selection.source_qin_score).toFixed(4)}, control ${Number(selection.source_max_surrogate_score).toFixed(4)}, margin ${Number(selection.source_qin_minus_max_surrogate).toFixed(4)}` : "legacy dwell-stratified selection";
@@ -592,7 +596,7 @@
       state("qam-combined", paired.length ? "ready" : "missing", paired.length ? `${paired.length} exact-time paired candidate series; weights use measured per-window EVM and no label-derived frequency correction.` : "No two selected receiver streams share an exact analyzed QAM window and known-pilot point identity.");
       const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
       const adaptive = fetched.payloads.some((payload) => payload.source_adaptive_response_ref);
-      state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series; ${adaptive ? "adaptive target/control window selection" : "legacy stratified-window fallback"}.${partial}` : "No acquired-QAM series match the selected hardware scope.");
+      state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "selected display-window"} QAM series; goodness always rates the constellation shown, while support-weighted dwell summaries remain separate; ${adaptive ? "adaptive target/control window selection" : "legacy stratified-window fallback"}.${partial}` : "No acquired-QAM series match the selected hardware scope.");
     } catch (error) {
       if (current !== generation) return;
       node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);

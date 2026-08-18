@@ -78,8 +78,8 @@ def _qam(mode: str) -> dict[str, object]:
                 "edge": "lower",
                 "overall": {
                     "selected_display_window_index": 0,
-                    "support_weighted_hard_symbol_accuracy": 0.7483333333333333,
-                    "support_weighted_rms_evm": 0.942548533,
+                    "support_weighted_hard_symbol_accuracy": 0.25,
+                    "support_weighted_rms_evm": 18.0,
                 },
                 "windows": windows,
             }
