@@ -23,6 +23,7 @@ from .starlink_acquired_constellation import (
     StarlinkAcquiredPilotConstellationEvidenceV0_3,
 )
 from .starlink_acquisition import V0_3, StarlinkAcquisitionBundleV0_3
+from .starlink_detector_suite import V0_2
 from .starlink_pilot_constellation import (
     MAX_CONSTELLATION_POINTS,
     StarlinkPilotConstellationPointV0_1,
@@ -59,6 +60,10 @@ class StarlinkAcquiredConstellationRequestV0_3:
             raise ValueError("unsupported acquired-QAM request schema")
         if self.recording_id != self.recording_object_ref.recording_id:
             raise ValueError("acquired-QAM request recording identities differ")
+        if self.source_suite_ref.schema != SchemaRef(
+            "org.leo-flow.starlink-detector-suite-recording-bundle", V0_2
+        ):
+            raise ValueError("acquired-QAM request must bind suite v0.2")
         if self.requested_output_schema != SchemaRef(
             StarlinkAcquiredConstellationRecordingBundleV0_3.SCHEMA_ID, V0_3
         ):
@@ -262,6 +267,11 @@ class StarlinkAcquiredConstellationProductRefV0_3:
     recording_id: RecordingId
     bundle_ref: ObjectRef
 
+    def __post_init__(self) -> None:
+        require_token(self.analysis_id, "analysis_id")
+        if not self.analysis_id.startswith("slqam3rec_"):
+            raise ValueError("invalid acquired-QAM product identity")
+
     @property
     def artifact_ref(self) -> ArtifactRef:
         return ArtifactRef(
@@ -284,6 +294,21 @@ class StarlinkAcquiredConstellationCatalogProjectionV0_3:
     point_count: int
     calibration_required: bool
 
+    def __post_init__(self) -> None:
+        require_token(self.analysis_id, "analysis_id")
+        if not 1 <= self.stream_count <= MAX_ACQUIRED_QAM_STREAMS:
+            raise ValueError("acquired-QAM projection stream count is invalid")
+        if (
+            not self.stream_count
+            <= self.window_count
+            <= (self.stream_count * MAX_ACQUIRED_QAM_WINDOWS_PER_STREAM)
+        ):
+            raise ValueError("acquired-QAM projection window count is invalid")
+        if self.point_count != self.window_count * MAX_CONSTELLATION_POINTS:
+            raise ValueError("acquired-QAM projection point count is invalid")
+        if not self.calibration_required:
+            raise ValueError("v0.3 acquired-QAM must remain calibration-blocked")
+
 
 @dataclass(frozen=True)
 class StarlinkAcquiredConstellationQueryV0_3:
@@ -296,9 +321,9 @@ class StarlinkAcquiredConstellationQueryV0_3:
     segment_ids: tuple[SegmentId, ...] = ()
     receiver_chain_ids: tuple[ReceiverChainId, ...] = ()
     edges: tuple[StarlinkEdge, ...] = ()
-    maximum_streams: int = MAX_ACQUIRED_QAM_QUERY_STREAMS
-    maximum_windows_per_stream: int = MAX_ACQUIRED_QAM_QUERY_WINDOWS
-    maximum_points_per_constellation: int = MAX_CONSTELLATION_POINTS
+    maximum_streams: int = 4
+    maximum_windows_per_stream: int = 8
+    maximum_points_per_constellation: int = 1_200
 
     def __post_init__(self) -> None:
         for values, name in (
@@ -322,6 +347,18 @@ class StarlinkAcquiredConstellationQueryV0_3:
             <= MAX_CONSTELLATION_POINTS
         ):
             raise ValueError("acquired-QAM query bound is invalid")
+        effective_windows = (
+            1
+            if self.mode is StarlinkAcquiredConstellationViewMode.OVERALL
+            else self.maximum_windows_per_stream
+        )
+        if (
+            self.maximum_streams
+            * effective_windows
+            * self.maximum_points_per_constellation
+            > 150_000
+        ):
+            raise ValueError("acquired-QAM query response budget is exceeded")
 
 
 @dataclass(frozen=True)
@@ -360,6 +397,13 @@ class StarlinkAcquiredConstellationPresentationStreamV0_3:
     overall: StarlinkAcquiredConstellationOverallV0_3
     windows: tuple[StarlinkAcquiredConstellationPresentationWindowV0_3, ...]
     original_window_count: int
+
+    def __post_init__(self) -> None:
+        require_token(self.lnb_id, "lnb_id")
+        if not self.windows or len(self.windows) > MAX_ACQUIRED_QAM_QUERY_WINDOWS:
+            raise ValueError("acquired-QAM presentation windows are empty or unbounded")
+        if self.original_window_count < len(self.windows):
+            raise ValueError("acquired-QAM original window count is invalid")
 
 
 @dataclass(frozen=True)

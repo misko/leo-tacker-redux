@@ -38,7 +38,7 @@ from leo_flow.contracts.starlink_pilot_constellation import (
     StarlinkPilotSubcarrierSummaryV0_1,
 )
 
-MAX_STARLINK_ACQUIRED_CONSTELLATION_RECORDING_BYTES = 64 * 1024 * 1024
+MAX_STARLINK_ACQUIRED_CONSTELLATION_RECORDING_BYTES = 512 * 1024 * 1024
 STARLINK_ACQUIRED_CONSTELLATION_RECORDING_MEDIA_TYPE = "application/json"
 STARLINK_ACQUIRED_CONSTELLATION_RECORDING_FORMAT_ID = (
     "starlink-acquired-constellation-recording-v0.3"

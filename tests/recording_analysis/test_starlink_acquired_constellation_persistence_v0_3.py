@@ -41,6 +41,10 @@ from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
 from leo_flow.contracts.starlink_acquisition import V0_3
 from leo_flow.contracts.starlink_detector_suite import V0_2
 from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
+from leo_flow.services.starlink_acquired_constellation_analysis import (
+    _bounded_window_starts,
+    _overall,
+)
 from leo_flow.storage.filesystem import FileSystemBlobStore
 
 from .fakes import execution_context
@@ -224,3 +228,16 @@ def test_v0_3_projection_closes_request_streams_and_window_count() -> None:
         projection.point_count,
     ) == (1, 2, 4_800)
     assert projection.calibration_required is True
+
+
+def test_dwell_plan_spans_full_segment_and_overall_is_explicitly_derived() -> None:
+    starts = _bounded_window_starts(50_000_000, 50_000, 32)
+    assert len(starts) == 32
+    assert starts[0] == 0
+    assert starts[-1] == 49_950_000
+    _request, bundle = _prepared()
+    overall = _overall(bundle.streams[0].windows)
+    assert overall.window_count == 2
+    assert overall.derivation == (
+        "support-weighted-window-summary;display=max-held-out-margin-window"
+    )

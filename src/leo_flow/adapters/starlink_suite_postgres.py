@@ -11,6 +11,14 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from leo_flow.analysis.recording.starlink_acquired_constellation_persistence import (
+    starlink_acquired_constellation_projection_v0_3,
+)
+from leo_flow.analysis.recording.starlink_acquired_constellation_recording_codec import (
+    STARLINK_ACQUIRED_CONSTELLATION_RECORDING_FORMAT_ID,
+    STARLINK_ACQUIRED_CONSTELLATION_RECORDING_MEDIA_TYPE,
+    encode_starlink_acquired_constellation_recording,
+)
 from leo_flow.analysis.recording.starlink_pilot_constellation_persistence import (
     starlink_pilot_constellation_projection_v0_1,
 )
@@ -63,6 +71,9 @@ from leo_flow.contracts.storage import ObjectRef, RecordingObjectRef
 from leo_flow.jobs.contracts import JobLease, JobType
 from leo_flow.jobs.ports import StaleLeaseError
 from leo_flow.jobs.postgres_sql import COMPLETE_SQL, LOCK_ACTIVE_SQL
+from leo_flow.services.starlink_acquired_constellation_analysis import (
+    PreparedCombinedStarlinkSuiteDwellAnalysisV0_3,
+)
 from leo_flow.services.starlink_suite_analysis import PreparedStarlinkSuiteAnalysisV0_2
 from leo_flow.services.starlink_suite_surrogate_analysis import (
     PreparedCombinedStarlinkSuiteAnalysisV0_2,
@@ -294,6 +305,9 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
     def commit_starlink_suite(
         self, lease: JobLease, prepared: PreparedStarlinkSuiteAnalysisV0_2
     ) -> ArtifactRef:
+        from leo_flow.adapters.starlink_acquired_constellation_postgres import (
+            publish_starlink_acquired_constellation_with_cursor,
+        )
         from leo_flow.adapters.starlink_pilot_constellation_postgres import (
             publish_starlink_pilot_constellation_with_cursor,
         )
@@ -358,6 +372,22 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
                 STARLINK_TEMPORAL_PILOT_FORMAT_ID,
                 f"starlink-suite:{lease.job_id}:temporal-pilot-bundle-v0.1",
             )
+        acquired_projection = None
+        acquired_ref = None
+        if (
+            isinstance(prepared, PreparedCombinedStarlinkSuiteDwellAnalysisV0_3)
+            and prepared.acquired_constellation_v0_3 is not None
+        ):
+            acquired = prepared.acquired_constellation_v0_3
+            acquired_projection = starlink_acquired_constellation_projection_v0_3(
+                acquired.request, acquired.bundle
+            )
+            acquired_ref = self._put(
+                encode_starlink_acquired_constellation_recording(acquired.bundle),
+                STARLINK_ACQUIRED_CONSTELLATION_RECORDING_MEDIA_TYPE,
+                STARLINK_ACQUIRED_CONSTELLATION_RECORDING_FORMAT_ID,
+                f"starlink-suite:{lease.job_id}:acquired-qam-bundle-v0.3",
+            )
         result = ArtifactRef(
             prepared.bundle.analysis_id, suite_ref.digest, prepared.bundle.schema
         )
@@ -405,6 +435,14 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
                     temporal_ref,
                     prepared.request.recording_object_ref,
                     idempotency_key=f"starlink-suite:{lease.job_id}:temporal-pilot",
+                )
+            if acquired_projection is not None and acquired_ref is not None:
+                publish_starlink_acquired_constellation_with_cursor(
+                    cursor,
+                    acquired_projection,
+                    acquired_ref,
+                    prepared.request.recording_object_ref,
+                    idempotency_key=f"starlink-suite:{lease.job_id}:acquired-qam-v0.3",
                 )
             work_id = (
                 "slsuitework_"
@@ -464,6 +502,12 @@ class AtomicPostgresCombinedStarlinkSuiteCommitterV0_2:
             format_id=format_id,
             idempotency_key=key,
         )
+
+
+class AtomicPostgresCombinedStarlinkSuiteCommitterV0_3(
+    AtomicPostgresCombinedStarlinkSuiteCommitterV0_2
+):
+    """Named v0.3 capability; v0.2 inputs retain byte-for-byte behavior."""
 
 
 class PostgresStarlinkSuiteProjectionWorkRepositoryV0_2:
