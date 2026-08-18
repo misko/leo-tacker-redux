@@ -4,10 +4,16 @@ from dataclasses import replace
 from typing import cast
 
 import numpy as np
+import pytest
 
 from leo_flow.analysis.recording.starlink_pilot_prescreen import (
     CompleteIqPilotPrescreenAnalyzerV0_1,
     ofdm_periodicity_v0_1,
+)
+from leo_flow.analysis.recording.starlink_pilot_prescreen_codec import (
+    MalformedStarlinkPilotPrescreenError,
+    decode_starlink_pilot_prescreen,
+    encode_starlink_pilot_prescreen,
 )
 from leo_flow.contracts.core import V0_1, RadioId, SchemaRef
 from leo_flow.contracts.starlink import StarlinkEdge
@@ -120,3 +126,8 @@ def test_complete_prescreen_tiles_tail_and_selects_low_power_periodic_window() -
     assert result.candidate_only
     assert result.calibrated_detection_count is None
     assert len(view.calls) == 3
+
+    payload = encode_starlink_pilot_prescreen(result)
+    assert decode_starlink_pilot_prescreen(payload) == result
+    with pytest.raises(MalformedStarlinkPilotPrescreenError, match="canonical"):
+        decode_starlink_pilot_prescreen(payload + b"\n")
