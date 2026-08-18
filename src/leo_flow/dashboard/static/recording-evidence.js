@@ -38,6 +38,20 @@
     return body;
   }
 
+  async function availablePayloads(paths) {
+    const results = await Promise.all(paths.map(async (path) => {
+      try { return {payload: await json(path), missing: false}; }
+      catch (error) {
+        if (error.status === 404) return {payload: null, missing: true};
+        throw error;
+      }
+    }));
+    return {
+      payloads: results.flatMap((item) => item.payload ? [item.payload] : []),
+      missingCount: results.filter((item) => item.missing).length,
+    };
+  }
+
   function checked(name) {
     return [...document.querySelectorAll(`#evidence-controls input[name="${name}"]:checked`)].map((item) => item.value);
   }
@@ -172,15 +186,19 @@
         node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
       }
       const mode = node("evidence-mode").value;
-      const payloads = await Promise.all(selectedRecordings().map(async (recording) => {
+      const fetched = await availablePayloads(selectedRecordings().map((recording) => {
         const parameters = new URLSearchParams({mode, maximum_streams: "4", maximum_windows_per_stream: "32", maximum_points_per_constellation: "600"});
         queryFilters(parameters);
-        return json(`/api/v17/recordings/${encodeURIComponent(recording.recording_id)}/starlink-acquired-constellation?${parameters}`);
+        return `/api/v17/recordings/${encodeURIComponent(recording.recording_id)}/starlink-acquired-constellation?${parameters}`;
       }));
       if (current !== generation) return;
+      if (!fetched.payloads.length) {
+        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren();
+        state("qam", "pending", "Acquired-QAM evidence is pending for every selected recording."); return;
+      }
       const lnbSet = new Set(checked("lnb")); const receiverSet = new Set(checked("receiver")); const edgeSet = new Set(checked("edge"));
       const series = [];
-      for (const payload of payloads) {
+      for (const payload of fetched.payloads) {
         if (payload.candidate_only !== true || payload.calibration_required !== true) throw new Error("unsafe acquired-QAM semantics");
         for (const stream of payload.streams || []) {
           if (!lnbSet.has(stream.lnb_id) || !receiverSet.has(stream.receiver_chain_id) || !edgeSet.has(stream.edge)) continue;
@@ -196,7 +214,8 @@
         }
       }
       drawQam(series); seriesLegend("evidence-qam-legend", series);
-      state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series.` : "No acquired-QAM series match the selected hardware scope.");
+      const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
+      state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series.${partial}` : "No acquired-QAM series match the selected hardware scope.");
     } catch (error) {
       if (current !== generation) return;
       node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren();
@@ -212,13 +231,17 @@
       if (!radios.size || !receivers.size || !lnbs.size || !channels.size || !edges.length || !methods.length || !patterns.length) {
         node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren(); state("detector", "missing", "Select at least one value in every detector scope."); return;
       }
-      const payloads = await Promise.all(selectedRecordings().map((recording) => {
+      const fetched = await availablePayloads(selectedRecordings().map((recording) => {
         const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
-        return json(`/api/v15/recordings/${encodeURIComponent(recording.recording_id)}/starlink-full-dwell?${parameters}`);
+        return `/api/v15/recordings/${encodeURIComponent(recording.recording_id)}/starlink-full-dwell?${parameters}`;
       }));
       if (current !== generation) return;
+      if (!fetched.payloads.length) {
+        node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
+        state("detector", "pending", "Full-dwell detector evidence is pending for every selected recording."); return;
+      }
       const grouped = new Map(); const mode = node("evidence-mode").value;
-      for (const payload of payloads) for (const stream of payload.streams || []) {
+      for (const payload of fetched.payloads) for (const stream of payload.streams || []) {
         const lnb = assignment(payload.recording_id, stream.receiver_chain_id)?.lnb_id;
         if (!radios.has(stream.radio_id) || !receivers.has(stream.receiver_chain_id) || !lnbs.has(lnb) || !channels.has(Number(stream.channel_number)) || !edges.includes(stream.edge)) continue;
         for (const point of stream.points || []) for (const pattern of patterns) {
@@ -235,7 +258,8 @@
       const series = [...grouped].map(([label, points], index) => ({label, points: mode === "windows" ? points : [{x: index, y: Math.max(...points.map((item) => item.y))}]}));
       drawChart("evidence-detector-canvas", series, "score [0,1]", mode, "series (maximum over returned exact windows)");
       seriesLegend("evidence-detector-legend", series);
-      state("detector", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled series; ${mode === "overall" ? "overall is the maximum over returned sparse exact windows" : "each point is one exact analyzed window"}.` : "No full-dwell points match the selected scope.");
+      const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
+      state("detector", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled series; ${mode === "overall" ? "overall is the maximum over returned sparse exact windows" : "each point is one exact analyzed window"}.${partial}` : "No full-dwell points match the selected scope.");
     } catch (error) {
       if (current !== generation) return;
       node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();

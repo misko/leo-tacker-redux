@@ -46,11 +46,15 @@ class EvidencePorts:
         detector_state: str = "complete",
         basic_doppler_state: str = "complete",
         advanced_doppler_state: str = "complete",
+        missing_qam_recordings: frozenset[str] = frozenset(),
+        missing_detector_recordings: frozenset[str] = frozenset(),
     ) -> None:
         self.qam_state = qam_state
         self.detector_state = detector_state
         self.basic_doppler_state = basic_doppler_state
         self.advanced_doppler_state = advanced_doppler_state
+        self.missing_qam_recordings = missing_qam_recordings
+        self.missing_detector_recordings = missing_detector_recordings
         self.qam_queries: list[Any] = []
         self.detector_queries: list[Any] = []
         self.basic_doppler_queries: list[Any] = []
@@ -113,6 +117,8 @@ class EvidencePorts:
 
     def recording_starlink_acquired_constellation(self, query: Any) -> dict[str, Any]:
         self.qam_queries.append(query)
+        if str(query.recording_id) in self.missing_qam_recordings:
+            raise DashboardNotFound("acquired QAM recording was not found")
         self._raise_for_state(self.qam_state, "acquired QAM")
         identity = _identity(str(query.recording_id))
         if identity is None:
@@ -167,6 +173,8 @@ class EvidencePorts:
 
     def recording_starlink_full_dwell(self, query: Any) -> dict[str, Any]:
         self.detector_queries.append(query)
+        if str(query.recording_id) in self.missing_detector_recordings:
+            raise DashboardNotFound("full-dwell recording was not found")
         self._raise_for_state(self.detector_state, "full-dwell detector")
         identity = _identity(str(query.recording_id))
         if identity is None:
@@ -535,7 +543,7 @@ def test_detail_page_distinguishes_pending_error_and_missing_real_api_states() -
                 "data-state", "pending"
             )
             expect(page.locator("#evidence-qam-state")).to_contain_text(
-                "pending or unavailable"
+                "pending for every selected recording"
             )
             expect(page.locator("#evidence-detector-state")).to_have_attribute(
                 "data-state", "error"
@@ -551,5 +559,38 @@ def test_detail_page_distinguishes_pending_error_and_missing_real_api_states() -
             )
             for product in ("qam", "detector", "doppler"):
                 expect(page.locator(f"#evidence-{product}-canvas")).to_be_hidden()
+        finally:
+            browser.close()
+
+
+def test_detail_page_renders_available_recording_when_companion_is_pending() -> None:
+    ports = EvidencePorts(
+        missing_qam_recordings=frozenset({COMPANION}),
+        missing_detector_recordings=frozenset({COMPANION}),
+    )
+    with running_dashboard(ports) as base_url, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, env=browser_environment())
+        try:
+            page = browser.new_page()
+            response = page.goto(f"{base_url}/recordings/{REQUESTED}")
+            assert response is not None and response.ok
+            for product in ("qam", "detector"):
+                expect(page.locator(f"#evidence-{product}-state")).to_have_attribute(
+                    "data-state", "ready"
+                )
+                expect(page.locator(f"#evidence-{product}-state")).to_contain_text(
+                    "1 selected recording(s) remain pending"
+                )
+                expect(page.locator(f"#evidence-{product}-canvas")).to_be_visible()
+            expect(page.locator("#evidence-qam-legend")).to_contain_text(REQUESTED)
+            expect(page.locator("#evidence-qam-legend")).not_to_contain_text(
+                COMPANION
+            )
+            expect(page.locator("#evidence-detector-legend")).to_contain_text(
+                REQUESTED
+            )
+            expect(page.locator("#evidence-detector-legend")).not_to_contain_text(
+                COMPANION
+            )
         finally:
             browser.close()
