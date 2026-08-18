@@ -592,7 +592,7 @@ def _process_starlink_suite_one(credentials: SecretProvider) -> bool:
 
 def _backfill_starlink_acquired_qam_v0_3(
     recording_id: RecordingId, credentials: SecretProvider
-):
+) -> object:
     """Publish only additive V17 evidence from an existing immutable suite."""
     from leo_flow.adapters.starlink_acquired_constellation_postgres import (
         PostgresStarlinkAcquiredConstellationCatalogV0_3,
@@ -666,7 +666,9 @@ def _backfill_starlink_acquired_qam_v0_3(
     with DurableStarlinkSuiteStoreV0_2(blobs, suite_catalog).open(source.ref) as bundle:
 
         class _ExistingSuite:
-            def prepare(self, lease: JobLease):
+            def prepare(
+                self, lease: JobLease
+            ) -> PreparedCombinedStarlinkSuiteAnalysisV0_2:
                 del lease
                 return PreparedCombinedStarlinkSuiteAnalysisV0_2(
                     submitted.request, bundle, cast(Any, None), None, None
