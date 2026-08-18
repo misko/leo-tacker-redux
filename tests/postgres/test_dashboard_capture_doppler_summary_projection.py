@@ -5,6 +5,9 @@ from dataclasses import replace
 import psycopg
 import pytest
 
+from leo_flow.adapters.dashboard_capture_doppler_postgres import (
+    PostgresCaptureDopplerSnapshotRepositoryV0_1,
+)
 from leo_flow.adapters.hardware_link_postgres import (
     PostgresRecordingHardwareLinkCatalog,
 )
@@ -20,7 +23,17 @@ from leo_flow.analysis.recording.waterfall_doppler_pipeline import (
     PreparedTileDopplerV0_1,
     PreparedWaterfallDopplerV0_1,
 )
-from leo_flow.contracts.core import ArtifactRef, Digest, SchemaRef, canonical_digest
+from leo_flow.contracts.core import (
+    ArtifactRef,
+    Digest,
+    RecordingId,
+    SchemaRef,
+    UtcNs,
+    canonical_digest,
+)
+from leo_flow.contracts.dashboard_master_capture import (
+    MasterCaptureSnapshotQueryV0_1,
+)
 from leo_flow.contracts.hardware import RecordingHardwareLink
 from leo_flow.contracts.storage import RecordingObjectRef
 from leo_flow.contracts.waterfall_v0_2 import (
@@ -127,6 +140,35 @@ def test_atomic_committer_closes_complete_and_no_candidate_without_cas_reads(
         assert rows[0][4] in {"constant", "linear", "quadratic"}
     else:
         assert rows == [("no_candidate", None, None, None, None)]
+
+
+@pytest.mark.integration
+def test_master_snapshot_adapter_reads_requested_pg_receipt_closure(
+    postgres_dsn: str, tmp_path
+) -> None:
+    recording, _ = _commit_product(
+        postgres_dsn, tmp_path / "cas", with_candidate=True
+    )
+    _link_hardware(postgres_dsn, tmp_path / "hardware", recording)
+    _capture_row(postgres_dsn, str(recording.recording_id), "complete", "radio_v5")
+    repository = PostgresCaptureDopplerSnapshotRepositoryV0_1(
+        lambda: psycopg.connect(postgres_dsn, options="-c role=leo_dashboard")
+    )
+
+    result = repository.capture_doppler_snapshot(
+        MasterCaptureSnapshotQueryV0_1(UtcNs(1), UtcNs(1000), 10),
+        (RecordingId(str(recording.recording_id)),),
+    )
+
+    summary = result[RecordingId(str(recording.recording_id))]
+    assert summary.state.value == "complete"
+    assert len(summary.candidates) == 1
+    candidate = summary.candidates[0]
+    assert (candidate.radio_id, candidate.lnb_id, candidate.receiver_chain_id) == (
+        "radio_v5",
+        "lnb-b",
+        "rx_v5_0",
+    )
 
 
 def _commit_product(

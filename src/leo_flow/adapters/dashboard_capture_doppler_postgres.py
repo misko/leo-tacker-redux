@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any, cast
 
 import psycopg
 from psycopg.rows import dict_row
 
-from leo_flow.contracts.core import RadioId, ReceiverChainId, RecordingId
+from leo_flow.contracts.core import (
+    RadioId,
+    ReceiverChainId,
+    RecordingId,
+    SegmentId,
+)
 from leo_flow.contracts.dashboard_capture_doppler import (
+    CaptureDopplerCandidateSummaryV0_1,
     CaptureDopplerHardwareAssignmentV0_1,
     CaptureDopplerScopeRecordingV0_1,
     CaptureDopplerScopeViewV0_1,
     CaptureDopplerSummaryQueryV0_1,
+)
+from leo_flow.contracts.dashboard_master_capture import (
+    MasterCaptureDopplerV0_1,
+    MasterCaptureSnapshotQueryV0_1,
+    MasterCaptureSummaryState,
 )
 
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
@@ -96,6 +108,57 @@ class PostgresCaptureQamScopeRepositoryV0_1(
         return self._capture_scope(query, _QAM_SCOPE_SQL)
 
 
+class PostgresCaptureDopplerSnapshotRepositoryV0_1:
+    """Read normalized Doppler receipts without opening analysis objects."""
+
+    def __init__(self, connect: ConnectionFactory) -> None:
+        self._connect = connect
+
+    def capture_doppler_snapshot(
+        self,
+        query: MasterCaptureSnapshotQueryV0_1,
+        recording_ids: tuple[RecordingId, ...],
+    ) -> Mapping[RecordingId, MasterCaptureDopplerV0_1]:
+        requested = frozenset(recording_ids)
+        if len(requested) != len(recording_ids):
+            raise ValueError("capture Doppler requested recordings must be unique")
+        if len(requested) > query.maximum_recordings:
+            raise ValueError("capture Doppler requested recording closure exceeds bound")
+        if not recording_ids:
+            return {}
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            cursor.execute("SET TRANSACTION READ ONLY")
+            rows = cursor.execute(
+                """
+                SELECT *
+                  FROM public.read_dashboard_capture_doppler_summaries_v0_1(
+                           %s, %s, %s
+                       )
+                 WHERE recording_id = ANY(%s::text[])
+                 ORDER BY recording_id, lnb_id, receiver_chain_id
+                """,
+                (
+                    int(query.start_utc_ns),
+                    int(query.stop_utc_ns),
+                    query.maximum_recordings,
+                    [str(item) for item in recording_ids],
+                ),
+            ).fetchall()
+        grouped: dict[RecordingId, list[dict[str, object]]] = {}
+        for row in rows:
+            recording_id = RecordingId(_text(row, "recording_id"))
+            if recording_id not in requested:
+                raise RuntimeError("capture Doppler recording closure differs")
+            grouped.setdefault(recording_id, []).append(row)
+        return {
+            recording_id: _master_doppler(recording_id, items)
+            for recording_id, items in grouped.items()
+        }
+
+
 _LATEST_SUCCESSFUL = """
 WITH latest_batches AS (
     SELECT DISTINCT ON (batch_id) projection_sequence, batch_id,
@@ -176,6 +239,89 @@ SELECT bounded.recording_id, bounded.radio_id, bounded.analysis_state,
  ORDER BY bounded.recording_id, chain.chain_index
 """
 )
+
+
+_DOPPLER_STATES = {
+    "complete": MasterCaptureSummaryState.COMPLETE,
+    "pending": MasterCaptureSummaryState.PENDING,
+    "no_candidate": MasterCaptureSummaryState.NO_CANDIDATE,
+    "not_analyzed": MasterCaptureSummaryState.NOT_ANALYZED,
+    "failed": MasterCaptureSummaryState.FAILED,
+}
+
+_DOPPLER_REASONS = {
+    MasterCaptureSummaryState.PENDING: ("doppler-analysis-pending",),
+    MasterCaptureSummaryState.NO_CANDIDATE: ("no-published-doppler-candidate",),
+    MasterCaptureSummaryState.NOT_ANALYZED: ("doppler-analysis-not-analyzed",),
+    MasterCaptureSummaryState.FAILED: ("doppler-analysis-failed",),
+}
+
+
+def _master_doppler(
+    recording_id: RecordingId, rows: list[dict[str, object]]
+) -> MasterCaptureDopplerV0_1:
+    first = rows[0]
+    radio_id = RadioId(_text(first, "radio_id"))
+    summary_state = _text(first, "summary_state")
+    try:
+        state = _DOPPLER_STATES[summary_state]
+    except KeyError as error:
+        raise RuntimeError("capture Doppler summary state is unsupported") from error
+    assignment_count = _integer(first["assignment_count"], "assignment_count")
+    if assignment_count < 0:
+        raise RuntimeError("capture Doppler assignment count is negative")
+    for row in rows[1:]:
+        if (
+            _text(row, "radio_id") != str(radio_id)
+            or _text(row, "summary_state") != summary_state
+            or _integer(row["assignment_count"], "assignment_count")
+            != assignment_count
+        ):
+            raise RuntimeError("capture Doppler recording summary is inconsistent")
+    candidates = tuple(
+        _doppler_candidate(recording_id, radio_id, row)
+        for row in rows
+        if row["candidate_id"] is not None
+    )
+    if len(candidates) > assignment_count:
+        raise RuntimeError("capture Doppler candidates exceed hardware assignments")
+    reasons: tuple[str, ...]
+    if state is MasterCaptureSummaryState.COMPLETE:
+        reasons = (
+            ()
+            if len(candidates) == assignment_count
+            else ("some-authoritative-receivers-have-no-published-doppler",)
+        )
+    else:
+        reasons = _DOPPLER_REASONS[state]
+    return MasterCaptureDopplerV0_1(state, candidates, reasons)
+
+
+def _doppler_candidate(
+    recording_id: RecordingId,
+    radio_id: RadioId,
+    row: dict[str, object],
+) -> CaptureDopplerCandidateSummaryV0_1:
+    return CaptureDopplerCandidateSummaryV0_1(
+        recording_id,
+        radio_id,
+        _text(row, "lnb_id"),
+        ReceiverChainId(_text(row, "receiver_chain_id")),
+        SegmentId(_text(row, "segment_id")),
+        _text(row, "candidate_id"),
+        _text(row, "model"),
+        float(cast(Any, row["drift_rate_hz_s"])),
+        float(cast(Any, row["ranking_score"])),
+        _text(row, "doppler_id"),
+        _text(row, "algorithm_version"),
+    )
+
+
+def _text(row: dict[str, object], name: str) -> str:
+    value = row[name]
+    if not isinstance(value, str):
+        raise TypeError(f"database {name} is not text")
+    return value
 
 
 def _integer(value: object, name: str) -> int:
