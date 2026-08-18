@@ -125,6 +125,13 @@ EXPECTED_MIGRATIONS = tuple(
         (38, "dashboard_surrogate_score_distributions"),
         (39, "starlink_temporal_pilot_catalog"),
         (40, "dashboard_doppler_aggregate"),
+        (41, "starlink_full_dwell_response_v0_1"),
+        (42, "starlink_full_dwell_work"),
+        (43, "starlink_acquired_qam_v0_3"),
+        (44, "prompt_full_dwell_timeline"),
+        (45, "prompt_timeline_source_acl"),
+        (46, "starlink_adaptive_response_v0_1"),
+        (47, "starlink_adaptive_qam_v0_4"),
     )
 )
 
