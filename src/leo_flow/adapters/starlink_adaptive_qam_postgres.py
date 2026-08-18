@@ -63,6 +63,7 @@ class PostgresStarlinkAdaptiveQamCatalogV0_4(StarlinkAdaptiveQamCatalogV0_4):
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
+            _register_live_object(cursor, bundle_ref)
             row = cursor.execute(
                 "SELECT public.publish_recording_starlink_adaptive_qam_v0_4(%s) AS published",
                 (Jsonb(payload),),
@@ -113,6 +114,38 @@ class PostgresStarlinkAdaptiveQamCatalogV0_4(StarlinkAdaptiveQamCatalogV0_4):
             return cursor.execute(
                 f"SELECT * FROM public.{function}({placeholders})", values
             ).fetchall()
+
+
+def _register_live_object(
+    cursor: psycopg.Cursor[dict[str, object]], ref: ObjectRef
+) -> None:
+    values = (
+        ref.digest.algorithm.value,
+        ref.digest.value,
+        ref.byte_count,
+        ref.media_type,
+        ref.format_id,
+        ref.locator,
+    )
+    cursor.execute("SELECT public.register_live_object_blob(%s,%s,%s,%s,%s,%s)", values)
+    row = cursor.execute(
+        "SELECT byte_count,media_type,format_id,locator "
+        "FROM public.object_blob "
+        "WHERE digest_algorithm=%s AND digest_value=%s "
+        "AND lifecycle_state='live'",
+        values[:2],
+    ).fetchone()
+    if (
+        row is None
+        or (
+            _integer(row["byte_count"]),
+            str(row["media_type"]),
+            str(row["format_id"]),
+            str(row["locator"]),
+        )
+        != values[2:]
+    ):
+        raise StarlinkAdaptiveQamConflictError("adaptive QAM object metadata conflicts")
 
 
 def _cataloged(row: dict[str, object]) -> CatalogedStarlinkAdaptiveQamV0_4:

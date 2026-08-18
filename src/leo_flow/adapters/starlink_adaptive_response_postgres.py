@@ -82,6 +82,7 @@ class PostgresStarlinkAdaptiveResponseCatalogV0_1(StarlinkAdaptiveResponseCatalo
             self._connect() as connection,
             connection.cursor(row_factory=dict_row) as cursor,
         ):
+            _register_live_object(cursor, bundle_ref)
             row = cursor.execute(
                 "SELECT public.publish_recording_starlink_adaptive_response_v0_1(%s) AS published",
                 (Jsonb(payload),),
@@ -134,6 +135,40 @@ class PostgresStarlinkAdaptiveResponseCatalogV0_1(StarlinkAdaptiveResponseCatalo
         if len(rows) != 1:
             raise RuntimeError("adaptive response latest read is ambiguous")
         return _cataloged(rows[0]).ref
+
+
+def _register_live_object(
+    cursor: psycopg.Cursor[dict[str, object]], ref: ObjectRef
+) -> None:
+    values = (
+        ref.digest.algorithm.value,
+        ref.digest.value,
+        ref.byte_count,
+        ref.media_type,
+        ref.format_id,
+        ref.locator,
+    )
+    cursor.execute("SELECT public.register_live_object_blob(%s,%s,%s,%s,%s,%s)", values)
+    row = cursor.execute(
+        "SELECT byte_count,media_type,format_id,locator "
+        "FROM public.object_blob "
+        "WHERE digest_algorithm=%s AND digest_value=%s "
+        "AND lifecycle_state='live'",
+        values[:2],
+    ).fetchone()
+    if (
+        row is None
+        or (
+            _integer(row["byte_count"]),
+            str(row["media_type"]),
+            str(row["format_id"]),
+            str(row["locator"]),
+        )
+        != values[2:]
+    ):
+        raise StarlinkAdaptiveResponseConflictError(
+            "adaptive response object metadata conflicts"
+        )
 
 
 class PostgresAdaptiveResponseWorkRepositoryV0_1:
