@@ -32,7 +32,7 @@ Do not run this as a timer or service. The exact live invocation is:
   --archive-root /mnt/qnap01/mouse9911/leo-store/2026_08_17_RETRO_QAM \
   --expected-manifest-sha256 47a5c98064128cfdcebcf1350acb3b3005f2646e769d45d8c92a5f2def22ba7e \
   --staging-root /home/mouse9911/.local/state/leo-flow/retro-qam-import \
-  --cas-root /var/lib/leo-flow/objects \
+  --cas-root /home/mouse9911/.local/share/leo-flow/objects \
   --capture-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-capture \
   --analysis-credential-directory /home/mouse9911/.local/state/leo-flow/credentials/gauss-analysis \
   --dashboard-base-url http://gauss:8090
