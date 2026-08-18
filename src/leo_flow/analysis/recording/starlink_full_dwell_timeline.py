@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from leo_flow.analysis.recording.starlink_full_dwell_response_persistence import (
     DurableStarlinkFullDwellStoreV0_1,
     StarlinkFullDwellCatalogV0_1,
     StarlinkFullDwellNotFoundError,
 )
-from leo_flow.contracts.core import V0_1, ArtifactRef, SchemaRef
+from leo_flow.analysis.recording.starlink_full_dwell_timeline_persistence import (
+    DurableFullDwellTimelineStoreV0_1,
+    FullDwellTimelineCatalogV0_1,
+)
+from leo_flow.contracts.core import V0_1, ArtifactRef, RecordingId, SchemaRef
 from leo_flow.contracts.dashboard_full_dwell_timeline import (
     FullDwellTimelineQueryV0_1,
     FullDwellTimelineStreamV0_1,
@@ -17,6 +23,134 @@ from leo_flow.contracts.dashboard_full_dwell_timeline import (
 from leo_flow.contracts.starlink_full_dwell_response import (
     StarlinkFullDwellPrescreenWindowV0_1,
 )
+from leo_flow.contracts.starlink_full_dwell_timeline_product import (
+    FullDwellTimelineProductRefV0_1,
+)
+from leo_flow.contracts.starlink_full_dwell_timeline_product import (
+    FullDwellTimelineWindowV0_1 as ProductTimelineWindowV0_1,
+)
+
+
+class LatestFullDwellTimelineCatalogV0_1(FullDwellTimelineCatalogV0_1, Protocol):
+    def latest_full_dwell_timeline(
+        self, recording_id: RecordingId
+    ) -> FullDwellTimelineProductRefV0_1 | None: ...
+
+
+class _TimelineQuery(Protocol):
+    def recording_full_dwell_timeline(
+        self, query: FullDwellTimelineQueryV0_1
+    ) -> RecordingFullDwellTimelineViewV0_1: ...
+
+
+class DurableRecordingPromptFullDwellTimelineQueryV0_1:
+    """Project the independent prompt base product through immutable V20."""
+
+    def __init__(
+        self,
+        store: DurableFullDwellTimelineStoreV0_1,
+        catalog: LatestFullDwellTimelineCatalogV0_1,
+    ) -> None:
+        self._store, self._catalog = store, catalog
+
+    def recording_full_dwell_timeline(
+        self, query: FullDwellTimelineQueryV0_1
+    ) -> RecordingFullDwellTimelineViewV0_1:
+        ref = self._catalog.latest_full_dwell_timeline(query.recording_id)
+        if ref is None:
+            raise StarlinkFullDwellNotFoundError("recording has no prompt timeline")
+        with self._store.open(ref) as bundle:
+            selected = tuple(
+                stream
+                for stream in bundle.streams
+                if (not query.radio_ids or stream.radio_id in query.radio_ids)
+                and (
+                    not query.receiver_chain_ids
+                    or stream.receiver_chain_id in query.receiver_chain_ids
+                )
+                and (not query.edges or stream.edge in query.edges)
+            )
+            original = sum(len(stream.windows) for stream in selected)
+            remaining = query.maximum_windows
+            views: list[FullDwellTimelineStreamV0_1] = []
+            for index, stream in enumerate(selected):
+                budget = max(1, remaining // (len(selected) - index))
+                shown = _bounded_prompt_windows(stream.windows, budget)
+                remaining -= len(shown)
+                exact_samples = sum(
+                    item.stop_sample - item.start_sample
+                    for item in stream.windows
+                    if item.selected_for_exact_refinement
+                )
+                views.append(
+                    FullDwellTimelineStreamV0_1(
+                        stream.radio_id,
+                        stream.segment_id,
+                        stream.receiver_chain_id,
+                        stream.channel_number,
+                        stream.edge,
+                        stream.sample_rate_hz,
+                        stream.segment_sample_count,
+                        len(stream.windows),
+                        stream.coverage_fraction,
+                        exact_samples / stream.segment_sample_count,
+                        tuple(
+                            FullDwellTimelineWindowV0_1(
+                                item.window_index,
+                                item.start_sample,
+                                item.stop_sample,
+                                item.interval_start_utc_ns,
+                                item.interval_stop_utc_ns,
+                                item.mean_complex_power,
+                                item.selected_for_exact_refinement,
+                            )
+                            for item in shown
+                        ),
+                    )
+                )
+            shown_count = sum(len(stream.windows) for stream in views)
+            return RecordingFullDwellTimelineViewV0_1(
+                SchemaRef(RecordingFullDwellTimelineViewV0_1.SCHEMA_ID, V0_1),
+                bundle.recording_id,
+                ArtifactRef(bundle.analysis_id, ref.bundle_ref.digest, bundle.schema),
+                bundle.plan.tile_sample_count,
+                bundle.plan.tile_sample_count,
+                tuple(views),
+                original,
+                shown_count,
+                shown_count < original,
+                "none"
+                if shown_count == original
+                else "endpoints-global-extrema-even-time",
+                True,
+                None,
+                tuple(
+                    dict.fromkeys(
+                        (
+                            *bundle.warnings,
+                            "prescreen-window-union-covers-full-dwell",
+                            "power-prescreen-is-not-starlink-detection",
+                            "exact-detector-windows-are-selected-not-full-coverage",
+                            "prompt-base-product-independent-of-exact-overlay",
+                        )
+                    )
+                ),
+            )
+
+
+class PreferPromptFullDwellTimelineQueryV0_1:
+    """Prefer prompt V20 evidence while preserving the published V15 fallback."""
+
+    def __init__(self, prompt: _TimelineQuery, legacy: _TimelineQuery) -> None:
+        self._prompt, self._legacy = prompt, legacy
+
+    def recording_full_dwell_timeline(
+        self, query: FullDwellTimelineQueryV0_1
+    ) -> RecordingFullDwellTimelineViewV0_1:
+        try:
+            return self._prompt.recording_full_dwell_timeline(query)
+        except StarlinkFullDwellNotFoundError:
+            return self._legacy.recording_full_dwell_timeline(query)
 
 
 class DurableRecordingFullDwellTimelineQueryV0_1:
@@ -110,6 +244,45 @@ class DurableRecordingFullDwellTimelineQueryV0_1:
 def _bounded_windows(
     windows: tuple[StarlinkFullDwellPrescreenWindowV0_1, ...], maximum: int
 ) -> tuple[StarlinkFullDwellPrescreenWindowV0_1, ...]:
+    if len(windows) <= maximum:
+        return windows
+    if maximum == 1:
+        return (max(windows, key=lambda item: item.mean_complex_power),)
+    selected = {0, len(windows) - 1}
+    if maximum >= 3:
+        selected.add(
+            max(
+                range(len(windows)), key=lambda index: windows[index].mean_complex_power
+            )
+        )
+    if maximum >= 4:
+        selected.add(
+            min(
+                range(len(windows)), key=lambda index: windows[index].mean_complex_power
+            )
+        )
+    if len(selected) < maximum:
+        denominator = maximum - 1
+        selected.update(
+            round(index * (len(windows) - 1) / denominator) for index in range(maximum)
+        )
+    if len(selected) > maximum:
+        required = {0, len(windows) - 1}
+        mean_power = sum(item.mean_complex_power for item in windows) / len(windows)
+        ranked = sorted(
+            selected - required,
+            key=lambda index: (
+                -abs(windows[index].mean_complex_power - mean_power),
+                index,
+            ),
+        )
+        selected = required | set(ranked[: maximum - len(required)])
+    return tuple(windows[index] for index in sorted(selected))
+
+
+def _bounded_prompt_windows(
+    windows: tuple[ProductTimelineWindowV0_1, ...], maximum: int
+) -> tuple[ProductTimelineWindowV0_1, ...]:
     if len(windows) <= maximum:
         return windows
     if maximum == 1:

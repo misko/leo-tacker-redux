@@ -113,6 +113,42 @@ def _full_dwell() -> dict[str, object]:
     }
 
 
+def _prompt_timeline() -> dict[str, object]:
+    return {
+        "recording_id": RECORDING,
+        "candidate_only": True,
+        "calibrated_detection_count": None,
+        "prescreen_window_samples": 20_000,
+        "original_window_count": 2,
+        "returned_window_count": 2,
+        "truncated": False,
+        "streams": [
+            {
+                "radio_id": "radio_a",
+                "segment_id": "seg_a",
+                "receiver_chain_id": "rx_a",
+                "channel_number": 4,
+                "edge": "lower",
+                "sample_rate_hz": 2_500_000.0,
+                "windows": [
+                    {
+                        "interval_start_utc_ns": 1_000_000_000,
+                        "interval_stop_utc_ns": 1_008_000_000,
+                        "mean_complex_power": 12.0,
+                        "selected_for_exact_refinement": True,
+                    },
+                    {
+                        "interval_start_utc_ns": 1_008_000_000,
+                        "interval_stop_utc_ns": 1_016_000_000,
+                        "mean_complex_power": 8.0,
+                        "selected_for_exact_refinement": False,
+                    },
+                ],
+            }
+        ],
+    }
+
+
 def _doppler() -> dict[str, object]:
     return {
         "requested_recording_id": RECORDING,
@@ -234,6 +270,14 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
                 ),
             )
             page.route(
+                f"**/api/v20/recordings/{RECORDING}/full-dwell-timeline?*",
+                lambda route: route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps(_prompt_timeline()),
+                ),
+            )
+            page.route(
                 f"**/api/v16/recordings/{RECORDING}/evidence-doppler?*",
                 lambda route: route.fulfill(
                     status=200,
@@ -253,13 +297,19 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
             expect(page.locator("#evidence-context-state")).to_have_attribute(
                 "data-state", "ready"
             )
-            for product in ("qam", "detector", "doppler"):
+            for product in ("timeline", "qam", "detector", "doppler"):
                 expect(page.locator(f"#evidence-{product}-state")).to_have_attribute(
                     "data-state", "ready"
                 )
                 expect(page.locator(f"#evidence-{product}-canvas")).to_be_visible()
             expect(page.locator("#evidence-qam-canvas")).to_have_attribute(
                 "data-series-count", "1"
+            )
+            expect(page.locator("#evidence-timeline-canvas")).to_have_attribute(
+                "data-point-count", "3"
+            )
+            expect(page.locator("#evidence-timeline-state")).to_contain_text(
+                "source union coverage is 100%"
             )
             goodness = page.locator("#evidence-qam-goodness .qam-goodness-entry")
             expect(goodness).to_have_count(1)
@@ -370,6 +420,17 @@ def test_unified_workspace_distinguishes_pending_missing_and_error() -> None:
                     body='{"error":{"message":"failed"}}',
                 ),
             )
+            timeline_pattern = (
+                f"**/api/v20/recordings/{RECORDING}/full-dwell-timeline?*"
+            )
+            page.route(
+                timeline_pattern,
+                lambda route: route.fulfill(
+                    status=500,
+                    content_type="application/json",
+                    body='{"error":{"message":"timeline failed"}}',
+                ),
+            )
             missing = {
                 **_doppler(),
                 "state": "missing",
@@ -401,6 +462,20 @@ def test_unified_workspace_distinguishes_pending_missing_and_error() -> None:
             )
             expect(page.locator("#evidence-doppler-state")).to_have_attribute(
                 "data-state", "missing"
+            )
+            expect(page.locator("#evidence-timeline-state")).to_have_attribute(
+                "data-state", "error"
+            )
+            page.unroute(timeline_pattern)
+            page.route(
+                timeline_pattern,
+                lambda route: route.fulfill(
+                    status=404, content_type="application/json", body="{}"
+                ),
+            )
+            page.reload()
+            expect(page.locator("#evidence-timeline-state")).to_have_attribute(
+                "data-state", "pending"
             )
         finally:
             browser.close()

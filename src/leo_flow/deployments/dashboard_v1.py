@@ -419,6 +419,9 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV22Quer
         )
 
         temporal_aggregate = DurableDashboardTemporalPilotAggregateV0_1(connect, blobs)
+        from leo_flow.adapters.full_dwell_timeline_postgres import (
+            PostgresFullDwellTimelineCatalogV0_1,
+        )
         from leo_flow.adapters.starlink_full_dwell_postgres import (
             PostgresStarlinkFullDwellCatalogV0_1,
         )
@@ -429,6 +432,12 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV22Quer
         )
         from leo_flow.analysis.recording.starlink_full_dwell_timeline import (
             DurableRecordingFullDwellTimelineQueryV0_1,
+            DurableRecordingPromptFullDwellTimelineQueryV0_1,
+            PreferPromptFullDwellTimelineQueryV0_1,
+        )
+        from leo_flow.analysis.recording.starlink_full_dwell_timeline_persistence import (
+            DurableFullDwellTimelineStoreV0_1,
+            FullDwellTimelineBlobStore,
         )
 
         full_dwell_catalog = PostgresStarlinkFullDwellCatalogV0_1(connect)
@@ -438,8 +447,18 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV22Quer
         full_dwell = DurableRecordingStarlinkFullDwellQueryV0_1(
             full_dwell_store, full_dwell_catalog
         )
-        full_dwell_timeline = DurableRecordingFullDwellTimelineQueryV0_1(
+        legacy_full_dwell_timeline = DurableRecordingFullDwellTimelineQueryV0_1(
             full_dwell_store, full_dwell_catalog
+        )
+        prompt_timeline_catalog = PostgresFullDwellTimelineCatalogV0_1(connect)
+        prompt_full_dwell_timeline = DurableRecordingPromptFullDwellTimelineQueryV0_1(
+            DurableFullDwellTimelineStoreV0_1(
+                cast(FullDwellTimelineBlobStore, blobs), prompt_timeline_catalog
+            ),
+            prompt_timeline_catalog,
+        )
+        full_dwell_timeline = PreferPromptFullDwellTimelineQueryV0_1(
+            prompt_full_dwell_timeline, legacy_full_dwell_timeline
         )
         from leo_flow.adapters.starlink_acquired_constellation_postgres import (
             PostgresRecordingReceiverLnbResolverV0_3,
