@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from threading import Event, Thread
 from typing import Protocol
 
 from leo_flow.contracts._validation import thaw_value
@@ -86,6 +87,7 @@ class FencedStarlinkSuiteAnalysisWorkerV0_2:
         lease_ttl_s: float,
         maximum_attempts: int = 3,
         retry_delay_s: float = 5.0,
+        heartbeat_interval_s: float | None = None,
         clock_ns: ProtocolClock | None = None,
     ) -> None:
         if (
@@ -99,6 +101,13 @@ class FencedStarlinkSuiteAnalysisWorkerV0_2:
         self._worker_id, self._lease_ttl_s = worker_id, lease_ttl_s
         self._maximum_attempts = maximum_attempts
         self._retry_delay_ns = round(retry_delay_s * 1_000_000_000)
+        self._heartbeat_interval_s = (
+            min(30.0, lease_ttl_s / 3.0)
+            if heartbeat_interval_s is None
+            else heartbeat_interval_s
+        )
+        if not 0 < self._heartbeat_interval_s < lease_ttl_s:
+            raise ValueError("heartbeat interval must be positive and below lease TTL")
         self._clock_ns = clock_ns or time.time_ns
 
     def process_one_job(self) -> bool:
@@ -116,9 +125,19 @@ class FencedStarlinkSuiteAnalysisWorkerV0_2:
                 "worker accepts detector-suite jobs only"
             )
         try:
-            return self._committer.commit_starlink_suite(
-                lease, self._preparer.prepare(lease)
+            heartbeat = _LeaseHeartbeat(
+                self._jobs,
+                lease,
+                self._lease_ttl_s,
+                self._heartbeat_interval_s,
             )
+            heartbeat.start()
+            try:
+                prepared = self._preparer.prepare(lease)
+            finally:
+                heartbeat.stop()
+            heartbeat.raise_if_failed()
+            return self._committer.commit_starlink_suite(lease, prepared)
         except ValueError:
             self._park(lease, "starlink-suite-invalid-input")
         except Exception:  # noqa: BLE001
@@ -144,6 +163,54 @@ class FencedStarlinkSuiteAnalysisWorkerV0_2:
             )
         except StaleLeaseError:
             pass
+
+
+class _LeaseHeartbeat:
+    """Keep one long-running suite computation inside its fenced lease."""
+
+    def __init__(
+        self,
+        jobs: JobLeaseRepository,
+        lease: JobLease,
+        ttl_s: float,
+        interval_s: float,
+    ) -> None:
+        self._jobs = jobs
+        self._lease = lease
+        self._ttl_s = ttl_s
+        self._interval_s = interval_s
+        self._stop = Event()
+        self._failures: list[Exception] = []
+        self._thread = Thread(
+            target=self._run,
+            name=f"starlink-suite-heartbeat-{lease.job_id}",
+            daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join()
+
+    def raise_if_failed(self) -> None:
+        if self._failures:
+            raise self._failures[0]
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval_s):
+            try:
+                self._jobs.heartbeat(
+                    self._lease.job_id,
+                    self._lease.lease_token,
+                    self._lease.lease_generation,
+                    self._ttl_s,
+                )
+            except Exception as error:  # noqa: BLE001 - relayed to owner thread
+                self._failures.append(error)
+                self._stop.set()
+                return
 
 
 class ProtocolClock(Protocol):
