@@ -142,7 +142,11 @@ class PostgresStarlinkFullDwellCatalogV0_1:
         return _cataloged(exact).ref
 
 
-def _header(projection, ref, idempotency_key):
+def _header(
+    projection: StarlinkFullDwellCatalogProjectionV0_1,
+    ref: ObjectRef,
+    idempotency_key: str,
+) -> dict[str, object]:
     return {
         "analysis_id": projection.analysis_id,
         "recording_id": str(projection.recording_id),
@@ -165,8 +169,8 @@ def _header(projection, ref, idempotency_key):
     }
 
 
-def _points(bundle):
-    rows = []
+def _points(bundle: StarlinkFullDwellResponseBundleV0_1) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
     for stream in bundle.streams:
         for point in stream.points:
             rows.append(
@@ -208,7 +212,9 @@ def _points(bundle):
     return rows
 
 
-def _register_live_object(cursor, ref):
+def _register_live_object(
+    cursor: psycopg.Cursor[dict[str, object]], ref: ObjectRef
+) -> None:
     values = (
         ref.digest.algorithm.value,
         ref.digest.value,
@@ -226,7 +232,7 @@ def _register_live_object(cursor, ref):
     if (
         row is None
         or (
-            int(row["byte_count"]),
+            _integer(row["byte_count"]),
             str(row["media_type"]),
             str(row["format_id"]),
             str(row["locator"]),
@@ -236,8 +242,9 @@ def _register_live_object(cursor, ref):
         raise StarlinkFullDwellConflictError("full-dwell object metadata conflicts")
 
 
-def _cataloged(row):
-    digest = lambda value: Digest(DigestAlgorithm.SHA256, str(value))
+def _cataloged(row: dict[str, object]) -> CatalogedStarlinkFullDwellV0_1:
+    def digest(value: object) -> Digest:
+        return Digest(DigestAlgorithm.SHA256, str(value))
     projection = StarlinkFullDwellCatalogProjectionV0_1(
         str(row["analysis_id"]),
         RecordingId(str(row["recording_id"])),
@@ -252,16 +259,22 @@ def _cataloged(row):
         ),
         digest(row["source_suite_request_digest_value"]),
         digest(row["request_digest_value"]),
-        int(row["stream_count"]),
-        int(row["prescreen_window_count"]),
-        int(row["exact_window_count"]),
-        int(row["point_count"]),
+        _integer(row["stream_count"]),
+        _integer(row["prescreen_window_count"]),
+        _integer(row["exact_window_count"]),
+        _integer(row["point_count"]),
     )
     ref = ObjectRef(
         digest(row["bundle_digest_value"]),
-        int(row["bundle_byte_count"]),
+        _integer(row["bundle_byte_count"]),
         str(row["bundle_media_type"]),
         str(row["bundle_format_id"]),
         str(row["bundle_locator"]),
     )
     return CatalogedStarlinkFullDwellV0_1(projection, ref)
+
+
+def _integer(value: object) -> int:
+    if isinstance(value, bool):
+        raise TypeError("database integer cannot be boolean")
+    return int(str(value))

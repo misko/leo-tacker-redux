@@ -207,7 +207,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV14QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV15QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:

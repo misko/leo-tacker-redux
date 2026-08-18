@@ -13,6 +13,7 @@ from leo_flow.contracts.starlink_full_dwell_response import (
     V0_1,
     RecordingStarlinkFullDwellViewV0_1,
     StarlinkFullDwellCatalogProjectionV0_1,
+    StarlinkFullDwellPointV0_1,
     StarlinkFullDwellPresentationStreamV0_1,
     StarlinkFullDwellProductRefV0_1,
     StarlinkFullDwellQueryV0_1,
@@ -288,7 +289,9 @@ def _projection(
     )
 
 
-def _bounded_time_points(points: tuple, maximum: int) -> tuple:
+def _bounded_time_points(
+    points: tuple[StarlinkFullDwellPointV0_1, ...], maximum: int
+) -> tuple[StarlinkFullDwellPointV0_1, ...]:
     if len(points) <= maximum:
         return points
     if maximum == 1:

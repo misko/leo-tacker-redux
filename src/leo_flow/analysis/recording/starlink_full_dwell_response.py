@@ -7,7 +7,9 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Protocol
 
+from leo_flow.contracts.capture import SegmentManifest
 from leo_flow.contracts.core import (
+    Digest,
     Provenance,
     SchemaRef,
     SegmentId,
@@ -30,6 +32,7 @@ from leo_flow.contracts.starlink_full_dwell_response import (
 )
 from leo_flow.contracts.starlink_surrogate_null import (
     StarlinkPairedSurrogateEvidenceV0_1,
+    StarlinkPatternMethodEvidenceV0_1,
 )
 from leo_flow.storage.ports import RecordingView
 
@@ -39,6 +42,7 @@ from .starlink_detector_suite import StarlinkDetectorSuiteConfigV0_2
 from .starlink_surrogate_null import (
     ReportMethodStarlinkDetectorV0_1,
     StarlinkPairedSurrogateAnalyzerV0_1,
+    StarlinkRadioSignalV0_1,
     radio_signal_v0_1,
     starlink_search_grid_v0_1,
 )
@@ -46,7 +50,7 @@ from .starlink_surrogate_null import (
 
 class _PairedAnalyzer(Protocol):
     def analyze(
-        self, radio_signal, *, surrogate_count: int
+        self, radio_signal: StarlinkRadioSignalV0_1, *, surrogate_count: int
     ) -> StarlinkPairedSurrogateEvidenceV0_1: ...
 
 
@@ -214,14 +218,14 @@ class ExactStarlinkFullDwellResponseAnalyzerV0_1:
 
     def _stream(
         self,
-        recording,
-        request,
-        selection,
-        segment,
-        channel,
-        receiver_count,
-        receiver_index,
-        recording_digest,
+        recording: RecordingView,
+        request: StarlinkFullDwellRequestV0_1,
+        selection: StarlinkFullDwellStreamSelectionV0_1,
+        segment: SegmentManifest,
+        channel: int,
+        receiver_count: int,
+        receiver_index: int,
+        recording_digest: Digest,
     ) -> StarlinkFullDwellStreamResponseV0_1:
         plan = request.plan
         prescreen_starts = covering_window_starts_v0_1(
@@ -383,7 +387,9 @@ class ExactStarlinkFullDwellResponseAnalyzerV0_1:
         )
 
 
-def _winner(method, window_start: int) -> StarlinkFullDwellWinnerV0_1:
+def _winner(
+    method: StarlinkPatternMethodEvidenceV0_1, window_start: int
+) -> StarlinkFullDwellWinnerV0_1:
     return StarlinkFullDwellWinnerV0_1(
         method.score,
         method.winning_epoch_sample,
