@@ -1,0 +1,2701 @@
+{
+  "data_sha256": "23cceb3a5223180ff92398214125513d4c32cc541ec1ae5b7c4c28fba5bbcc8c",
+  "leo_tracker_oracle": {
+    "calibrated": {
+      "candidate_cfo": {
+        "rx_lnb_c": {
+          "count": 93,
+          "maximum_hz": 459257.6549937561,
+          "median_hz": 435945.1264721531,
+          "minimum_hz": 372716.84037548205,
+          "outside_current_400khz_count": 75,
+          "outside_current_400khz_fraction": 0.8064516129032258
+        },
+        "rx_lnb_d": {
+          "count": 93,
+          "maximum_hz": -151465.76656156647,
+          "median_hz": -175334.13431178502,
+          "minimum_hz": -238216.8389057197,
+          "outside_current_400khz_count": 0,
+          "outside_current_400khz_fraction": 0.0
+        }
+      },
+      "doppler_track": {
+        "available": true,
+        "maximum_physical_slope_hz_s": 15000,
+        "point_count": 93,
+        "qualification": {
+          "maximum_slope_difference_hz_s": 500,
+          "minimum_correlation": 0.8
+        },
+        "qualified": true,
+        "receiver_frequency_correlation": 0.9997168343695049,
+        "receiver_slopes_hz_s": [
+          -4012.0316483687934,
+          -3989.8724031578104
+        ],
+        "slope_difference_hz_s": 22.159245210983045,
+        "start_s": 38.0,
+        "stop_s": 59.9
+      },
+      "exact_candidate_count": 93,
+      "exact_check_count": 600,
+      "exact_interval_s": 0.1,
+      "exact_qualified_count": 9,
+      "exact_sampled_time_s": 5.9999999999999165,
+      "exact_temporal_coverage_fraction": 0.0999999999999986,
+      "exact_window_s": 0.01,
+      "match_margin_quantiles": [
+        {
+          "maximum": 0.31479457933227517,
+          "median": 0.008750928425414538,
+          "p95": 0.26646142427645225,
+          "receiver_chain_id": "rx_lnb_c"
+        },
+        {
+          "maximum": 0.4075004714925851,
+          "median": 0.00955865879597961,
+          "p95": 0.35937567285819305,
+          "receiver_chain_id": "rx_lnb_d"
+        }
+      ],
+      "qualified_cfo": {
+        "rx_lnb_c": {
+          "count": 9,
+          "maximum_hz": 450423.9939616095,
+          "median_hz": 445768.2638765233,
+          "minimum_hz": 373552.47880750697,
+          "outside_current_400khz_count": 7,
+          "outside_current_400khz_fraction": 0.7777777777777778
+        },
+        "rx_lnb_d": {
+          "count": 9,
+          "maximum_hz": -161334.286223267,
+          "median_hz": -166056.3561624686,
+          "minimum_hz": -237920.9309141801,
+          "outside_current_400khz_count": 0,
+          "outside_current_400khz_fraction": 0.0
+        }
+      },
+      "single_receiver_candidate_count": 243,
+      "single_receiver_qualified_count": 78
+    },
+    "repository_commit": "0bb80d14759fd8496b74e7d3219a690be18565a6",
+    "uncalibrated": {
+      "candidate_cfo": {
+        "rx_lnb_c": {
+          "count": 0,
+          "outside_current_400khz_count": 0
+        },
+        "rx_lnb_d": {
+          "count": 0,
+          "outside_current_400khz_count": 0
+        }
+      },
+      "doppler_track": {
+        "available": false,
+        "point_count": 0,
+        "qualified": false,
+        "reason": "at least three exact-pilot candidate epochs are required"
+      },
+      "exact_candidate_count": 0,
+      "exact_check_count": 600,
+      "exact_interval_s": 0.1,
+      "exact_qualified_count": 0,
+      "exact_sampled_time_s": 5.9999999999999165,
+      "exact_temporal_coverage_fraction": 0.0999999999999986,
+      "exact_window_s": 0.01,
+      "match_margin_quantiles": [
+        {
+          "maximum": 0.023333565579037728,
+          "median": 0.00794317663086367,
+          "p95": 0.014467890410135872,
+          "receiver_chain_id": "rx_lnb_c"
+        },
+        {
+          "maximum": 0.4075004714925851,
+          "median": 0.00955865879597961,
+          "p95": 0.35937567285819305,
+          "receiver_chain_id": "rx_lnb_d"
+        }
+      ],
+      "qualified_cfo": {
+        "rx_lnb_c": {
+          "count": 0,
+          "outside_current_400khz_count": 0
+        },
+        "rx_lnb_d": {
+          "count": 0,
+          "outside_current_400khz_count": 0
+        }
+      },
+      "single_receiver_candidate_count": 154,
+      "single_receiver_qualified_count": 61
+    }
+  },
+  "limitations": [
+    "candidate evidence only; no calibrated detection threshold",
+    "v0.3 windows were post-selected by the historical detector on the same dwell",
+    "roll-17 is a conditioned control, not an independent signal-absent null",
+    "QAM symbols are known edge pilots, not user payload"
+  ],
+  "metadata": {
+    "gain_db_median": [
+      44.0,
+      44.0
+    ],
+    "gain_db_range": [
+      [
+        44.0,
+        44.0
+      ],
+      [
+        43.0,
+        44.0
+      ]
+    ],
+    "gap_count": 0,
+    "maximum_time_uncertainty_ns": 1967659,
+    "raw_rssi_field_median": [
+      68.25,
+      68.5
+    ],
+    "raw_rssi_field_range": [
+      [
+        67.5,
+        69.5
+      ],
+      [
+        67.0,
+        69.5
+      ]
+    ],
+    "refill_count": 1500,
+    "stream_ids": [
+      103581514283055
+    ]
+  },
+  "metadata_sha256": "87c85ff367a29685c4e679112e13680831c51ff40d628e77348c82211eb6ad2c",
+  "power_tiling": {
+    "analyzed_sample_count_per_receiver": 150000000,
+    "coverage_fraction": 1.0,
+    "receiver_power_db": [
+      {
+        "maximum": 54.45559104820461,
+        "median": 53.89568601277076,
+        "minimum": 53.07788893777317
+      },
+      {
+        "maximum": 54.58600323152748,
+        "median": 53.48423743946178,
+        "minimum": 52.838859749779544
+      }
+    ],
+    "tile_duration_s": 0.008,
+    "tile_samples": 20000,
+    "tiles_per_receiver": 7500
+  },
+  "recording_id": "rec_01M09J1R6E59GCC8ANJVYVRN1B",
+  "recording_identity_digest": "sha256:cedc0a9083495717048254249a3fe1569c879fe8f8f624d2ac12aceaddd53c69",
+  "redux_v02_sparse_probes": {
+    "coverage_fraction": 0.0017333333333333333,
+    "probe_duration_s": 0.008,
+    "probe_samples": 20000,
+    "responses": [
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.09423190686398994,
+            "method": "anchor-8",
+            "qin_minus_control": 0.3942196296919872,
+            "qin_score": 0.4884515365559771,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 192,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.10368243199375984,
+            "method": "differential-16",
+            "qin_minus_control": 0.24491297451918922,
+            "qin_score": 0.34859540651294907,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 3136,
+            "winning_residual_cfo_hz": 111108.4097131924
+          },
+          {
+            "conditioned_control_score": 0.09188625389494794,
+            "method": "differential-32",
+            "qin_minus_control": 0.14960407637753953,
+            "qin_score": 0.24149033027248748,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 3136,
+            "winning_residual_cfo_hz": -89031.57941266631
+          },
+          {
+            "conditioned_control_score": 0.03554483410975727,
+            "method": "glrt-32",
+            "qin_minus_control": 0.11819904843401911,
+            "qin_score": 0.15374388254377638,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2816,
+            "winning_residual_cfo_hz": -42613.63636363636
+          },
+          {
+            "conditioned_control_score": 0.011857212956156065,
+            "method": "glrt-64",
+            "qin_minus_control": 0.06019093034054129,
+            "qin_score": 0.07204814329669736,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 3328,
+            "winning_residual_cfo_hz": 78125.0
+          },
+          {
+            "conditioned_control_score": 0.021697097798986903,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.01405118890703251,
+            "qin_score": 0.035748286706019414,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.0252114549599821,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.010202121498407546,
+            "qin_score": 0.015009333461574553,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.018589136737619534,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.0019152119246962779,
+            "qin_score": 0.020504348662315812,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 0.0,
+        "start_sample": 0
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.1680802313028195,
+            "method": "anchor-8",
+            "qin_minus_control": 0.23712230309188312,
+            "qin_score": 0.4052025343947026,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 960,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.10071176941536235,
+            "method": "differential-16",
+            "qin_minus_control": 0.21615742918035175,
+            "qin_score": 0.3168691985957141,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 1856,
+            "winning_residual_cfo_hz": -85784.31222841384
+          },
+          {
+            "conditioned_control_score": 0.10786932374529642,
+            "method": "differential-32",
+            "qin_minus_control": 0.11666046876731986,
+            "qin_score": 0.2245297925126163,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 3264,
+            "winning_residual_cfo_hz": -20604.18232722072
+          },
+          {
+            "conditioned_control_score": 0.03432284802274232,
+            "method": "glrt-32",
+            "qin_minus_control": 0.09490949275316657,
+            "qin_score": 0.1292323407759089,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 3328,
+            "winning_residual_cfo_hz": -28409.090909090908
+          },
+          {
+            "conditioned_control_score": 0.014910276252338131,
+            "method": "glrt-64",
+            "qin_minus_control": 0.05484358345118564,
+            "qin_score": 0.06975385970352377,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 2752,
+            "winning_residual_cfo_hz": 85227.27272727272
+          },
+          {
+            "conditioned_control_score": 0.024215863239901905,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.020195827710825776,
+            "qin_score": 0.04441169095072768,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.023279811022674353,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.009119330837032834,
+            "qin_score": 0.03239914185970719,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.013555037730359121,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.019103820390347193,
+            "qin_score": 0.03265885812070631,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 0.0,
+        "start_sample": 0
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.17387095750645915,
+            "method": "anchor-8",
+            "qin_minus_control": 0.19949414371052487,
+            "qin_score": 0.373365101216984,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.1179446080776306,
+            "method": "differential-16",
+            "qin_minus_control": 0.22139887049858445,
+            "qin_score": 0.33934347857621505,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 1280,
+            "winning_residual_cfo_hz": 80797.04920848979
+          },
+          {
+            "conditioned_control_score": 0.028010554458054112,
+            "method": "differential-32",
+            "qin_minus_control": 0.1861373437823708,
+            "qin_score": 0.2141478982404249,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 768,
+            "winning_residual_cfo_hz": 3607.7846423818332
+          },
+          {
+            "conditioned_control_score": 0.020143692894581813,
+            "method": "glrt-32",
+            "qin_minus_control": 0.12136058072194547,
+            "qin_score": 0.1415042736165273,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 1984,
+            "winning_residual_cfo_hz": -85227.27272727272
+          },
+          {
+            "conditioned_control_score": 0.027696003579649246,
+            "method": "glrt-64",
+            "qin_minus_control": 0.045592829673113955,
+            "qin_score": 0.0732888332527632,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1280,
+            "winning_residual_cfo_hz": -113636.36363636363
+          },
+          {
+            "conditioned_control_score": 0.033190941148619174,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.010232579231885766,
+            "qin_score": 0.04342352038050494,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 256,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.019563648652720596,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.00230877060275949,
+            "qin_score": 0.021872419255480086,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 256,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01574806529863209,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.005844786691835437,
+            "qin_score": 0.021592851990467527,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 256,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 5.0,
+        "start_sample": 12500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.18472469232946573,
+            "method": "anchor-8",
+            "qin_minus_control": 0.23338571525289994,
+            "qin_score": 0.4181104075823657,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 384,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.11669576335677449,
+            "method": "differential-16",
+            "qin_minus_control": 0.17531588438166207,
+            "qin_score": 0.2920116477384366,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 3328,
+            "winning_residual_cfo_hz": -106538.14261251426
+          },
+          {
+            "conditioned_control_score": 0.09777840410121744,
+            "method": "differential-32",
+            "qin_minus_control": 0.09290116293974396,
+            "qin_score": 0.1906795670409614,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 2752,
+            "winning_residual_cfo_hz": 80051.79175229561
+          },
+          {
+            "conditioned_control_score": 0.05391020054472259,
+            "method": "glrt-32",
+            "qin_minus_control": 0.08037598396912099,
+            "qin_score": 0.13428618451384358,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": -56818.181818181816
+          },
+          {
+            "conditioned_control_score": 0.010224698707253108,
+            "method": "glrt-64",
+            "qin_minus_control": 0.06150815228080686,
+            "qin_score": 0.07173285098805997,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": -28409.090909090908
+          },
+          {
+            "conditioned_control_score": 0.026460247908444683,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.011709138422026106,
+            "qin_score": 0.03816938633047079,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.03201623319791655,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.015309150045397173,
+            "qin_score": 0.016707083152519377,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016583012489139716,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.0038412685291958418,
+            "qin_score": 0.020424281018335558,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 5.0,
+        "start_sample": 12500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.14337684219303798,
+            "method": "anchor-8",
+            "qin_minus_control": 0.25693393939306525,
+            "qin_score": 0.4003107815861032,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 192,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01998928448714094,
+            "method": "differential-16",
+            "qin_minus_control": 0.2940682341303341,
+            "qin_score": 0.31405751861747505,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 2048,
+            "winning_residual_cfo_hz": -98861.15304532457
+          },
+          {
+            "conditioned_control_score": 0.05755978752044829,
+            "method": "differential-32",
+            "qin_minus_control": 0.1692422721405236,
+            "qin_score": 0.2268020596609719,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1344,
+            "winning_residual_cfo_hz": 48123.283445940004
+          },
+          {
+            "conditioned_control_score": 0.04212700329871005,
+            "method": "glrt-32",
+            "qin_minus_control": 0.11217978697868689,
+            "qin_score": 0.15430679027739694,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 0,
+            "winning_residual_cfo_hz": 56818.181818181816
+          },
+          {
+            "conditioned_control_score": 0.017257663504584762,
+            "method": "glrt-64",
+            "qin_minus_control": 0.057092282500839954,
+            "qin_score": 0.07434994600542472,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 0,
+            "winning_residual_cfo_hz": 56818.181818181816
+          },
+          {
+            "conditioned_control_score": 0.031930758109229185,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.006811855054625927,
+            "qin_score": 0.03874261316385511,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.023788631503522634,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.00417718093062984,
+            "qin_score": 0.019611450572892795,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.017421648383197208,
+            "method": "full-frame-full",
+            "qin_minus_control": -8.216650181100058e-05,
+            "qin_score": 0.017339481881386207,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 10.0,
+        "start_sample": 25000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.07369440748670499,
+            "method": "anchor-8",
+            "qin_minus_control": 0.38460186565835763,
+            "qin_score": 0.4582962731450626,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 1024,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.2511243657257462,
+            "method": "differential-16",
+            "qin_minus_control": 0.10488114722807818,
+            "qin_score": 0.3560055129538244,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 192,
+            "winning_residual_cfo_hz": 85237.0986388415
+          },
+          {
+            "conditioned_control_score": 0.019283256372713248,
+            "method": "differential-32",
+            "qin_minus_control": 0.1753472848278266,
+            "qin_score": 0.19463054120053985,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 1856,
+            "winning_residual_cfo_hz": 50785.41127845429
+          },
+          {
+            "conditioned_control_score": 0.05131728201841259,
+            "method": "glrt-32",
+            "qin_minus_control": 0.07871171264842963,
+            "qin_score": 0.13002899466684223,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 2240,
+            "winning_residual_cfo_hz": 78125.0
+          },
+          {
+            "conditioned_control_score": 0.03397783040254365,
+            "method": "glrt-64",
+            "qin_minus_control": 0.03698791158205626,
+            "qin_score": 0.07096574198459991,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 2880,
+            "winning_residual_cfo_hz": -28409.090909090908
+          },
+          {
+            "conditioned_control_score": 0.029747306170316908,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.011383465000731036,
+            "qin_score": 0.04113077117104794,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 3136,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.031569420657190025,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.016872755280361636,
+            "qin_score": 0.014696665376828389,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 3136,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01926144061005114,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.003406262570067549,
+            "qin_score": 0.022667703180118688,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 3136,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 10.0,
+        "start_sample": 25000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.16161127781120693,
+            "method": "anchor-8",
+            "qin_minus_control": 0.27169927454185316,
+            "qin_score": 0.4333105523530601,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.06052908956967536,
+            "method": "differential-16",
+            "qin_minus_control": 0.26885089957770564,
+            "qin_score": 0.329379989147381,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": 105001.69012532514
+          },
+          {
+            "conditioned_control_score": 0.04440437762686586,
+            "method": "differential-32",
+            "qin_minus_control": 0.2206273000380282,
+            "qin_score": 0.26503167766489405,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 128,
+            "winning_residual_cfo_hz": -50222.25576147117
+          },
+          {
+            "conditioned_control_score": 0.023932995614428344,
+            "method": "glrt-32",
+            "qin_minus_control": 0.10825689095104209,
+            "qin_score": 0.13218988656547043,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 1024,
+            "winning_residual_cfo_hz": 63920.454545454544
+          },
+          {
+            "conditioned_control_score": 0.02713762085753943,
+            "method": "glrt-64",
+            "qin_minus_control": 0.04719418141428185,
+            "qin_score": 0.07433180227182128,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 3264,
+            "winning_residual_cfo_hz": 7102.272727272727
+          },
+          {
+            "conditioned_control_score": 0.018692132866954893,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.023225675668033,
+            "qin_score": 0.041917808534987895,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 1408,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.015271732657226391,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.008495077111208886,
+            "qin_score": 0.023766809768435277,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 1408,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.014718086205675482,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.008032863848382962,
+            "qin_score": 0.022750950054058444,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 1408,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 15.0,
+        "start_sample": 37500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.1325475684413351,
+            "method": "anchor-8",
+            "qin_minus_control": 0.20427976573939358,
+            "qin_score": 0.3368273341807287,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 1280,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.1390737254356328,
+            "method": "differential-16",
+            "qin_minus_control": 0.18669337970916433,
+            "qin_score": 0.3257671051447971,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 2560,
+            "winning_residual_cfo_hz": -111041.54388721612
+          },
+          {
+            "conditioned_control_score": 0.1351705788728591,
+            "method": "differential-32",
+            "qin_minus_control": 0.10518736713310009,
+            "qin_score": 0.2403579460059592,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1600,
+            "winning_residual_cfo_hz": 94717.5769335879
+          },
+          {
+            "conditioned_control_score": 0.03625632917887084,
+            "method": "glrt-32",
+            "qin_minus_control": 0.10597224001683103,
+            "qin_score": 0.14222856919570187,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 2816,
+            "winning_residual_cfo_hz": -14204.545454545454
+          },
+          {
+            "conditioned_control_score": 0.04807108168673625,
+            "method": "glrt-64",
+            "qin_minus_control": 0.02494310940135913,
+            "qin_score": 0.07301419108809538,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 2688,
+            "winning_residual_cfo_hz": 78125.0
+          },
+          {
+            "conditioned_control_score": 0.022223288350601167,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.017550622814932207,
+            "qin_score": 0.039773911165533374,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016820915494318,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.009602316909506626,
+            "qin_score": 0.026423232403824624,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.015000012610767407,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.006889006770747311,
+            "qin_score": 0.02188901938151472,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 15.0,
+        "start_sample": 37500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.11085215504752448,
+            "method": "anchor-8",
+            "qin_minus_control": 0.33077587832197447,
+            "qin_score": 0.44162803336949896,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.1438588853563347,
+            "method": "differential-16",
+            "qin_minus_control": 0.15141542615056672,
+            "qin_score": 0.2952743115069014,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 320,
+            "winning_residual_cfo_hz": -28429.035162867352
+          },
+          {
+            "conditioned_control_score": 0.06766886132503394,
+            "method": "differential-32",
+            "qin_minus_control": 0.20050914525186211,
+            "qin_score": 0.26817800657689606,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 256,
+            "winning_residual_cfo_hz": -33159.087428717816
+          },
+          {
+            "conditioned_control_score": 0.04492295206507688,
+            "method": "glrt-32",
+            "qin_minus_control": 0.0854468946522022,
+            "qin_score": 0.13036984671727908,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 2816,
+            "winning_residual_cfo_hz": 78125.0
+          },
+          {
+            "conditioned_control_score": 0.012805540862008526,
+            "method": "glrt-64",
+            "qin_minus_control": 0.05402654230896456,
+            "qin_score": 0.06683208317097308,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2880,
+            "winning_residual_cfo_hz": 7102.272727272727
+          },
+          {
+            "conditioned_control_score": 0.0182930849275759,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.026660481942854447,
+            "qin_score": 0.044953566870430346,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 704,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.017000841647197427,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.004427938487531886,
+            "qin_score": 0.021428780134729312,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 704,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.00915765689123072,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.01951199997697002,
+            "qin_score": 0.02866965686820074,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 704,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 20.0,
+        "start_sample": 50000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.25982016790799206,
+            "method": "anchor-8",
+            "qin_minus_control": 0.13434924497661027,
+            "qin_score": 0.39416941288460233,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1664,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.19553465494450434,
+            "method": "differential-16",
+            "qin_minus_control": 0.11220766447536468,
+            "qin_score": 0.307742319419869,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2432,
+            "winning_residual_cfo_hz": 107124.60263289051
+          },
+          {
+            "conditioned_control_score": 0.029472742002141398,
+            "method": "differential-32",
+            "qin_minus_control": 0.23746219307901983,
+            "qin_score": 0.26693493508116123,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 1856,
+            "winning_residual_cfo_hz": 78186.59890829044
+          },
+          {
+            "conditioned_control_score": 0.012694659281205585,
+            "method": "glrt-32",
+            "qin_minus_control": 0.1079003578921334,
+            "qin_score": 0.12059501717333898,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2432,
+            "winning_residual_cfo_hz": -85227.27272727272
+          },
+          {
+            "conditioned_control_score": 0.02392056977009088,
+            "method": "glrt-64",
+            "qin_minus_control": 0.05277986281309456,
+            "qin_score": 0.07670043258318544,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": -71022.72727272726
+          },
+          {
+            "conditioned_control_score": 0.014808364412459146,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.025602408545751715,
+            "qin_score": 0.04041077295821086,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 64,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.015410274621603173,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.0023980659761850508,
+            "qin_score": 0.017808340597788224,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 64,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.011423253763927079,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.012427612559849859,
+            "qin_score": 0.023850866323776938,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 64,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 20.0,
+        "start_sample": 50000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.17950394763534333,
+            "method": "anchor-8",
+            "qin_minus_control": 0.2786523403954777,
+            "qin_score": 0.45815628803082104,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 1600,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.1466784398931204,
+            "method": "differential-16",
+            "qin_minus_control": 0.23530198103682104,
+            "qin_score": 0.38198042092994144,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 1472,
+            "winning_residual_cfo_hz": 107976.1702149851
+          },
+          {
+            "conditioned_control_score": 0.016844009859724566,
+            "method": "differential-32",
+            "qin_minus_control": 0.20686172057376884,
+            "qin_score": 0.2237057304334934,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": 61813.21722744745
+          },
+          {
+            "conditioned_control_score": 0.039147575982961605,
+            "method": "glrt-32",
+            "qin_minus_control": 0.08882100784282752,
+            "qin_score": 0.12796858382578913,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 2752,
+            "winning_residual_cfo_hz": 106534.0909090909
+          },
+          {
+            "conditioned_control_score": 0.02421724915261247,
+            "method": "glrt-64",
+            "qin_minus_control": 0.04882483255893902,
+            "qin_score": 0.0730420817115515,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 128,
+            "winning_residual_cfo_hz": -56818.181818181816
+          },
+          {
+            "conditioned_control_score": 0.025765899194855512,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.012601874544003553,
+            "qin_score": 0.038367773738859065,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 1984,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.018875342126485135,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.0025634191408791286,
+            "qin_score": 0.021438761267364263,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 1984,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01785013790186564,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.0018686683214951781,
+            "qin_score": 0.019718806223360818,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 1984,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 25.0,
+        "start_sample": 62500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.09246092991841161,
+            "method": "anchor-8",
+            "qin_minus_control": 0.33356371029887516,
+            "qin_score": 0.42602464021728675,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 128,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.033671132449413096,
+            "method": "differential-16",
+            "qin_minus_control": 0.2461528699312343,
+            "qin_score": 0.2798240023806474,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 64,
+            "winning_residual_cfo_hz": 12152.285562532667
+          },
+          {
+            "conditioned_control_score": 0.07121030011804208,
+            "method": "differential-32",
+            "qin_minus_control": 0.18877525308591964,
+            "qin_score": 0.2599855532039617,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 1152,
+            "winning_residual_cfo_hz": -7826.601571928887
+          },
+          {
+            "conditioned_control_score": 0.021316074515662788,
+            "method": "glrt-32",
+            "qin_minus_control": 0.10947915644189968,
+            "qin_score": 0.13079523095756246,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 2816,
+            "winning_residual_cfo_hz": 14204.545454545454
+          },
+          {
+            "conditioned_control_score": 0.016847705646633206,
+            "method": "glrt-64",
+            "qin_minus_control": 0.05721142878772295,
+            "qin_score": 0.07405913443435616,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2752,
+            "winning_residual_cfo_hz": -14204.545454545454
+          },
+          {
+            "conditioned_control_score": 0.025719259447793512,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.015493571700549373,
+            "qin_score": 0.041212831148342885,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.02061737296405802,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.000344467497957069,
+            "qin_score": 0.02027290546610095,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016045989778910676,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.008787189263241582,
+            "qin_score": 0.024833179042152258,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 25.0,
+        "start_sample": 62500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.19402090219708013,
+            "method": "anchor-8",
+            "qin_minus_control": 0.1647359314117977,
+            "qin_score": 0.35875683360887783,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.06405149356727972,
+            "method": "differential-16",
+            "qin_minus_control": 0.3541805806773413,
+            "qin_score": 0.41823207424462105,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 1472,
+            "winning_residual_cfo_hz": -60199.24142942029
+          },
+          {
+            "conditioned_control_score": 0.11332494478205604,
+            "method": "differential-32",
+            "qin_minus_control": 0.11340435158447468,
+            "qin_score": 0.22672929636653072,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 2368,
+            "winning_residual_cfo_hz": 34507.800523949154
+          },
+          {
+            "conditioned_control_score": 0.07854958822851503,
+            "method": "glrt-32",
+            "qin_minus_control": 0.05344500106784429,
+            "qin_score": 0.13199458929635932,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 3328,
+            "winning_residual_cfo_hz": -106534.0909090909
+          },
+          {
+            "conditioned_control_score": 0.010112641286489856,
+            "method": "glrt-64",
+            "qin_minus_control": 0.059405113311079706,
+            "qin_score": 0.06951775459756956,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 3264,
+            "winning_residual_cfo_hz": -14204.545454545454
+          },
+          {
+            "conditioned_control_score": 0.021988741277695675,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.021596685319100344,
+            "qin_score": 0.04358542659679602,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2368,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.026111409628692572,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.0118579969098099,
+            "qin_score": 0.014253412718882672,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2368,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01871417505208396,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.003323570304665409,
+            "qin_score": 0.02203774535674937,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2368,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 30.0,
+        "start_sample": 75000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.1936569931259904,
+            "method": "anchor-8",
+            "qin_minus_control": 0.17068857538046026,
+            "qin_score": 0.36434556850645067,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.10862641959275968,
+            "method": "differential-16",
+            "qin_minus_control": 0.233555559579917,
+            "qin_score": 0.3421819791726767,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 3200,
+            "winning_residual_cfo_hz": -89528.1085811772
+          },
+          {
+            "conditioned_control_score": 0.08263051308499628,
+            "method": "differential-32",
+            "qin_minus_control": 0.14094274402770193,
+            "qin_score": 0.2235732571126982,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 100435.9624387302
+          },
+          {
+            "conditioned_control_score": 0.03218110937508685,
+            "method": "glrt-32",
+            "qin_minus_control": 0.10664047818395193,
+            "qin_score": 0.13882158755903878,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 384,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.013772280072376939,
+            "method": "glrt-64",
+            "qin_minus_control": 0.052765883480316175,
+            "qin_score": 0.06653816355269311,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 3328,
+            "winning_residual_cfo_hz": -85227.27272727272
+          },
+          {
+            "conditioned_control_score": 0.017700568668750284,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.0260014682192517,
+            "qin_score": 0.043702036888001984,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 3008,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01881064380904028,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.0024245872365367335,
+            "qin_score": 0.021235231045577015,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 3008,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016575438852653883,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.008110102832455439,
+            "qin_score": 0.024685541685109322,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 3008,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 30.0,
+        "start_sample": 75000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.1395986640521333,
+            "method": "anchor-8",
+            "qin_minus_control": 0.3324686012921588,
+            "qin_score": 0.4720672653442921,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 320,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.12317842301696595,
+            "method": "differential-16",
+            "qin_minus_control": 0.2187040532680926,
+            "qin_score": 0.3418824762850586,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 0,
+            "winning_residual_cfo_hz": 56438.57208417616
+          },
+          {
+            "conditioned_control_score": 0.13969369474644597,
+            "method": "differential-32",
+            "qin_minus_control": 0.07883741387432133,
+            "qin_score": 0.2185311086207673,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": 106253.59656989024
+          },
+          {
+            "conditioned_control_score": 0.07370057518751957,
+            "method": "glrt-32",
+            "qin_minus_control": 0.06950583543881028,
+            "qin_score": 0.14320641062632986,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": -49715.90909090909
+          },
+          {
+            "conditioned_control_score": 0.030463975143853614,
+            "method": "glrt-64",
+            "qin_minus_control": 0.04942277886945291,
+            "qin_score": 0.07988675401330653,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 0,
+            "winning_residual_cfo_hz": 99431.81818181818
+          },
+          {
+            "conditioned_control_score": 0.019274097471614866,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.021518400180331482,
+            "qin_score": 0.04079249765194635,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1728,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.02251194809682185,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.011919177091609067,
+            "qin_score": 0.010592771005212782,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1728,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01590638368329018,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.00535857402456261,
+            "qin_score": 0.02126495770785279,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1728,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 35.0,
+        "start_sample": 87500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.13672347773998117,
+            "method": "anchor-8",
+            "qin_minus_control": 0.25544499958580613,
+            "qin_score": 0.3921684773257873,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 3008,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.12260582297698128,
+            "method": "differential-16",
+            "qin_minus_control": 0.21589126011207324,
+            "qin_score": 0.3384970830890545,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 3136,
+            "winning_residual_cfo_hz": 29760.31229439457
+          },
+          {
+            "conditioned_control_score": 0.05179594691809811,
+            "method": "differential-32",
+            "qin_minus_control": 0.17836907880525277,
+            "qin_score": 0.23016502572335087,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1472,
+            "winning_residual_cfo_hz": 874.7736657279279
+          },
+          {
+            "conditioned_control_score": 0.05829492719515751,
+            "method": "glrt-32",
+            "qin_minus_control": 0.08703186679781429,
+            "qin_score": 0.1453267939929718,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 64,
+            "winning_residual_cfo_hz": -56818.181818181816
+          },
+          {
+            "conditioned_control_score": 0.01946410063196722,
+            "method": "glrt-64",
+            "qin_minus_control": 0.06923843467093249,
+            "qin_score": 0.08870253530289972,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 2816,
+            "winning_residual_cfo_hz": 28409.090909090908
+          },
+          {
+            "conditioned_control_score": 0.020245871090098875,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.024648031462922906,
+            "qin_score": 0.04489390255302178,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 448,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.02121387999106576,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.0012554516961111872,
+            "qin_score": 0.022469331687176946,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 448,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.017965246927834903,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.0027153348768789026,
+            "qin_score": 0.020680581804713806,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 448,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 35.0,
+        "start_sample": 87500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.19785157863671535,
+            "method": "anchor-8",
+            "qin_minus_control": 0.18716813656640838,
+            "qin_score": 0.3850197152031237,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 1152,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01839508774812783,
+            "method": "differential-16",
+            "qin_minus_control": 0.3253659633755567,
+            "qin_score": 0.3437610511236845,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2752,
+            "winning_residual_cfo_hz": 13110.884635879194
+          },
+          {
+            "conditioned_control_score": 0.09552242053717684,
+            "method": "differential-32",
+            "qin_minus_control": 0.13713843920880558,
+            "qin_score": 0.23266085974598244,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 1216,
+            "winning_residual_cfo_hz": -97446.9356964865
+          },
+          {
+            "conditioned_control_score": 0.024071718717772576,
+            "method": "glrt-32",
+            "qin_minus_control": 0.12171702947024463,
+            "qin_score": 0.1457887481880172,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 128,
+            "winning_residual_cfo_hz": -99431.81818181818
+          },
+          {
+            "conditioned_control_score": 0.018354742957938854,
+            "method": "glrt-64",
+            "qin_minus_control": 0.053631359648448916,
+            "qin_score": 0.07198610260638777,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2112,
+            "winning_residual_cfo_hz": 49715.90909090909
+          },
+          {
+            "conditioned_control_score": 0.02660716122414839,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.01534824973687341,
+            "qin_score": 0.0419554109610218,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 768,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016086337402732236,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.01303195222610445,
+            "qin_score": 0.029118289628836686,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 768,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.017264375519473137,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.006404211840716267,
+            "qin_score": 0.023668587360189404,
+            "winning_coarse_cfo_hz": -60000.0,
+            "winning_epoch_sample": 768,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 40.0,
+        "start_sample": 100000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.25456882975499606,
+            "method": "anchor-8",
+            "qin_minus_control": 0.20389680372763336,
+            "qin_score": 0.4584656334826294,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 128,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.21082590698248396,
+            "method": "differential-16",
+            "qin_minus_control": 0.12285253873269039,
+            "qin_score": 0.33367844571517435,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 768,
+            "winning_residual_cfo_hz": 36631.21930012145
+          },
+          {
+            "conditioned_control_score": 0.17746190507844672,
+            "method": "differential-32",
+            "qin_minus_control": 0.03044103208622531,
+            "qin_score": 0.20790293716467204,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 768,
+            "winning_residual_cfo_hz": 20767.739377518923
+          },
+          {
+            "conditioned_control_score": 0.023259330722740074,
+            "method": "glrt-32",
+            "qin_minus_control": 0.11822759491569847,
+            "qin_score": 0.14148692563843854,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1984,
+            "winning_residual_cfo_hz": 56818.181818181816
+          },
+          {
+            "conditioned_control_score": 0.02951607833896816,
+            "method": "glrt-64",
+            "qin_minus_control": 0.050342457486091216,
+            "qin_score": 0.07985853582505938,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1600,
+            "winning_residual_cfo_hz": 78125.0
+          },
+          {
+            "conditioned_control_score": 0.02449892087015996,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.015708387374249802,
+            "qin_score": 0.04020730824440976,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01728840956316733,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.013313520914476573,
+            "qin_score": 0.030601930477643903,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01966198070286699,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.0027663041582480057,
+            "qin_score": 0.022428284861114995,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 40.0,
+        "start_sample": 100000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.07953400868547705,
+            "method": "anchor-8",
+            "qin_minus_control": 0.36802183429605934,
+            "qin_score": 0.4475558429815364,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 192,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.10289029947515552,
+            "method": "differential-16",
+            "qin_minus_control": 0.1888333006841598,
+            "qin_score": 0.2917236001593153,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2688,
+            "winning_residual_cfo_hz": 60972.34027043038
+          },
+          {
+            "conditioned_control_score": 0.1380842238358997,
+            "method": "differential-32",
+            "qin_minus_control": 0.10620430754253599,
+            "qin_score": 0.24428853137843567,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": -69681.35648738423
+          },
+          {
+            "conditioned_control_score": 0.06969154801985873,
+            "method": "glrt-32",
+            "qin_minus_control": 0.07046701174294644,
+            "qin_score": 0.14015855976280517,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 3200,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.011558658266796376,
+            "method": "glrt-64",
+            "qin_minus_control": 0.05762176330039123,
+            "qin_score": 0.06918042156718761,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 896,
+            "winning_residual_cfo_hz": -92329.54545454546
+          },
+          {
+            "conditioned_control_score": 0.01784747991374396,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.02585867044094069,
+            "qin_score": 0.04370615035468465,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.023756047195571332,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.002177011137821091,
+            "qin_score": 0.02157903605775024,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016088469212524333,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.011094426837751113,
+            "qin_score": 0.027182896050275445,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 45.0,
+        "start_sample": 112500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.15987597076164023,
+            "method": "anchor-8",
+            "qin_minus_control": 0.2524012372868538,
+            "qin_score": 0.41227720804849405,
+            "winning_coarse_cfo_hz": -20000.0,
+            "winning_epoch_sample": 2176,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.060387889924020194,
+            "method": "differential-16",
+            "qin_minus_control": 0.24987623264188633,
+            "qin_score": 0.3102641225659065,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 896,
+            "winning_residual_cfo_hz": -21336.415704573214
+          },
+          {
+            "conditioned_control_score": 0.09385030479308178,
+            "method": "differential-32",
+            "qin_minus_control": 0.1293285426333518,
+            "qin_score": 0.2231788474264336,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1920,
+            "winning_residual_cfo_hz": 108091.35102051
+          },
+          {
+            "conditioned_control_score": 0.039200105192164804,
+            "method": "glrt-32",
+            "qin_minus_control": 0.14284508125233852,
+            "qin_score": 0.18204518644450332,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 320,
+            "winning_residual_cfo_hz": 49715.90909090909
+          },
+          {
+            "conditioned_control_score": 0.022795333217292248,
+            "method": "glrt-64",
+            "qin_minus_control": 0.05827949213212643,
+            "qin_score": 0.08107482534941868,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 192,
+            "winning_residual_cfo_hz": 28409.090909090908
+          },
+          {
+            "conditioned_control_score": 0.022800939210604977,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.022760572535604345,
+            "qin_score": 0.04556151174620932,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2176,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.017629395013442455,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.006282426956672929,
+            "qin_score": 0.023911821970115384,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2176,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.010116987828897774,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.010878336558917862,
+            "qin_score": 0.020995324387815636,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2176,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 45.0,
+        "start_sample": 112500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.26044616270725307,
+            "method": "anchor-8",
+            "qin_minus_control": 0.14051509567077042,
+            "qin_score": 0.4009612583780235,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 1728,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.3984749027678238,
+            "method": "differential-16",
+            "qin_minus_control": -0.05364685163452371,
+            "qin_score": 0.3448280511333001,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1152,
+            "winning_residual_cfo_hz": 29690.037076961264
+          },
+          {
+            "conditioned_control_score": 0.19997666817311113,
+            "method": "differential-32",
+            "qin_minus_control": 0.003086783675200183,
+            "qin_score": 0.20306345184831132,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1152,
+            "winning_residual_cfo_hz": 21998.314325216663
+          },
+          {
+            "conditioned_control_score": 0.021979384554789143,
+            "method": "glrt-32",
+            "qin_minus_control": 0.10260244165047783,
+            "qin_score": 0.12458182620526698,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": 63920.454545454544
+          },
+          {
+            "conditioned_control_score": 0.017297486006882218,
+            "method": "glrt-64",
+            "qin_minus_control": 0.06737181237354033,
+            "qin_score": 0.08466929838042254,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1088,
+            "winning_residual_cfo_hz": 106534.0909090909
+          },
+          {
+            "conditioned_control_score": 0.0240652976128978,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.014763891439347816,
+            "qin_score": 0.03882918905224562,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.036727535336244385,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.004650252274860968,
+            "qin_score": 0.03207728306138342,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.020983890493985746,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.0031539208009321376,
+            "qin_score": 0.024137811294917884,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 832,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 50.0,
+        "start_sample": 125000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.11696034081536447,
+            "method": "anchor-8",
+            "qin_minus_control": 0.232370037934396,
+            "qin_score": 0.3493303787497605,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1792,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.07269184153234504,
+            "method": "differential-16",
+            "qin_minus_control": 0.31624106918586015,
+            "qin_score": 0.3889329107182052,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": 57372.985547683915
+          },
+          {
+            "conditioned_control_score": 0.06433867579018192,
+            "method": "differential-32",
+            "qin_minus_control": 0.21783027134854693,
+            "qin_score": 0.28216894713872887,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2240,
+            "winning_residual_cfo_hz": -96611.30143597943
+          },
+          {
+            "conditioned_control_score": 0.02437787952824655,
+            "method": "glrt-32",
+            "qin_minus_control": 0.14452691842530313,
+            "qin_score": 0.16890479795354968,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 2944,
+            "winning_residual_cfo_hz": -7102.272727272727
+          },
+          {
+            "conditioned_control_score": 0.008823494910776232,
+            "method": "glrt-64",
+            "qin_minus_control": 0.08041309633811529,
+            "qin_score": 0.08923659124889152,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1344,
+            "winning_residual_cfo_hz": -71022.72727272726
+          },
+          {
+            "conditioned_control_score": 0.02302482994481188,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.022746507439257043,
+            "qin_score": 0.045771337384068925,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2880,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.015728587086251022,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.002651003016569127,
+            "qin_score": 0.01837959010282015,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2880,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01466590305631904,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.0023842585578591168,
+            "qin_score": 0.017050161614178157,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 2880,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 50.0,
+        "start_sample": 125000000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.10691974385349448,
+            "method": "anchor-8",
+            "qin_minus_control": 0.3080305622478029,
+            "qin_score": 0.4149503061012974,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1856,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.11249613990889527,
+            "method": "differential-16",
+            "qin_minus_control": 0.29341114085389236,
+            "qin_score": 0.40590728076278765,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 896,
+            "winning_residual_cfo_hz": 24987.622004416437
+          },
+          {
+            "conditioned_control_score": 0.13843041915624651,
+            "method": "differential-32",
+            "qin_minus_control": 0.1059072884293972,
+            "qin_score": 0.24433770758564372,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 1600,
+            "winning_residual_cfo_hz": -92569.69283315349
+          },
+          {
+            "conditioned_control_score": 0.03716851554776911,
+            "method": "glrt-32",
+            "qin_minus_control": 0.09537501332435198,
+            "qin_score": 0.1325435288721211,
+            "winning_coarse_cfo_hz": 80000.0,
+            "winning_epoch_sample": 2688,
+            "winning_residual_cfo_hz": -99431.81818181818
+          },
+          {
+            "conditioned_control_score": 0.03223354920459346,
+            "method": "glrt-64",
+            "qin_minus_control": 0.0691110952379608,
+            "qin_score": 0.10134464444255425,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 64,
+            "winning_residual_cfo_hz": -113636.36363636363
+          },
+          {
+            "conditioned_control_score": 0.022179108248376003,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.02169090765623178,
+            "qin_score": 0.04387001590460778,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.024228176359137803,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.004875007429981627,
+            "qin_score": 0.02910318378911943,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016993917031817452,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.01181198558146192,
+            "qin_score": 0.028805902613279373,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 2496,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 55.0,
+        "start_sample": 137500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.14636601714299222,
+            "method": "anchor-8",
+            "qin_minus_control": 0.2762047530997287,
+            "qin_score": 0.42257077024272094,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 64,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.059304927935445825,
+            "method": "differential-16",
+            "qin_minus_control": 0.35435396481592224,
+            "qin_score": 0.4136588927513681,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 576,
+            "winning_residual_cfo_hz": -12318.76269022848
+          },
+          {
+            "conditioned_control_score": 0.06102120665696926,
+            "method": "differential-32",
+            "qin_minus_control": 0.22956115634247293,
+            "qin_score": 0.2905823629994422,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 704,
+            "winning_residual_cfo_hz": -83870.4192950123
+          },
+          {
+            "conditioned_control_score": 0.045622591078072525,
+            "method": "glrt-32",
+            "qin_minus_control": 0.11391613760546575,
+            "qin_score": 0.15953872868353827,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2304,
+            "winning_residual_cfo_hz": 49715.90909090909
+          },
+          {
+            "conditioned_control_score": 0.014024366790746614,
+            "method": "glrt-64",
+            "qin_minus_control": 0.07146315704123406,
+            "qin_score": 0.08548752383198067,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 512,
+            "winning_residual_cfo_hz": 49715.90909090909
+          },
+          {
+            "conditioned_control_score": 0.027263690191838597,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.0148642687614659,
+            "qin_score": 0.0421279589533045,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 2688,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.021422344032743613,
+            "method": "full-frame-verify",
+            "qin_minus_control": -0.002909208773010305,
+            "qin_score": 0.018513135259733308,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 2688,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.02384266718913219,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.001238199826604329,
+            "qin_score": 0.02508086701573652,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 2688,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 55.0,
+        "start_sample": 137500000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.16310271850128608,
+            "method": "anchor-8",
+            "qin_minus_control": 0.2583038702749084,
+            "qin_score": 0.4214065887761945,
+            "winning_coarse_cfo_hz": 20000.0,
+            "winning_epoch_sample": 1216,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.23136383215337242,
+            "method": "differential-16",
+            "qin_minus_control": 0.11473366170262245,
+            "qin_score": 0.34609749385599486,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 3264,
+            "winning_residual_cfo_hz": 90125.7050575087
+          },
+          {
+            "conditioned_control_score": 0.10478059761325076,
+            "method": "differential-32",
+            "qin_minus_control": 0.11179498056652501,
+            "qin_score": 0.21657557817977577,
+            "winning_coarse_cfo_hz": 100000.0,
+            "winning_epoch_sample": 192,
+            "winning_residual_cfo_hz": 39088.31902329024
+          },
+          {
+            "conditioned_control_score": 0.03101134698379262,
+            "method": "glrt-32",
+            "qin_minus_control": 0.10598481865772966,
+            "qin_score": 0.13699616564152228,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 640,
+            "winning_residual_cfo_hz": -106534.0909090909
+          },
+          {
+            "conditioned_control_score": 0.014078067796535271,
+            "method": "glrt-64",
+            "qin_minus_control": 0.06116378706233028,
+            "qin_score": 0.07524185485886555,
+            "winning_coarse_cfo_hz": 60000.0,
+            "winning_epoch_sample": 1280,
+            "winning_residual_cfo_hz": -28409.090909090908
+          },
+          {
+            "conditioned_control_score": 0.025127950488097867,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.01827749070891044,
+            "qin_score": 0.04340544119700831,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1600,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.011008660787181353,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.006052172294980519,
+            "qin_score": 0.017060833082161872,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1600,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.012839493788375497,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.010886333177128203,
+            "qin_score": 0.0237258269655037,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 1600,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_c",
+        "start_s": 59.992,
+        "start_sample": 149980000
+      },
+      {
+        "methods": [
+          {
+            "conditioned_control_score": 0.21937230184351983,
+            "method": "anchor-8",
+            "qin_minus_control": 0.40386666591442344,
+            "qin_score": 0.6232389677579433,
+            "winning_coarse_cfo_hz": -100000.0,
+            "winning_epoch_sample": 2048,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.2694408390664705,
+            "method": "differential-16",
+            "qin_minus_control": 0.061322220606710665,
+            "qin_score": 0.33076305967318115,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 2752,
+            "winning_residual_cfo_hz": 105278.54012867899
+          },
+          {
+            "conditioned_control_score": 0.033565229717800675,
+            "method": "differential-32",
+            "qin_minus_control": 0.24726030375150243,
+            "qin_score": 0.2808255334693031,
+            "winning_coarse_cfo_hz": -40000.0,
+            "winning_epoch_sample": 3072,
+            "winning_residual_cfo_hz": 95702.15121470687
+          },
+          {
+            "conditioned_control_score": 0.03470995146575411,
+            "method": "glrt-32",
+            "qin_minus_control": 0.15524757880418955,
+            "qin_score": 0.18995753026994366,
+            "winning_coarse_cfo_hz": 40000.0,
+            "winning_epoch_sample": 3136,
+            "winning_residual_cfo_hz": -42613.63636363636
+          },
+          {
+            "conditioned_control_score": 0.033104526211267804,
+            "method": "glrt-64",
+            "qin_minus_control": 0.0477633230770262,
+            "qin_score": 0.080867849288294,
+            "winning_coarse_cfo_hz": 0.0,
+            "winning_epoch_sample": 2048,
+            "winning_residual_cfo_hz": 99431.81818181818
+          },
+          {
+            "conditioned_control_score": 0.023470323092896452,
+            "method": "full-frame-acquire",
+            "qin_minus_control": 0.015099716121396819,
+            "qin_score": 0.03857003921429327,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 2048,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.01915189303226871,
+            "method": "full-frame-verify",
+            "qin_minus_control": 0.007308621794609713,
+            "qin_score": 0.026460514826878424,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 2048,
+            "winning_residual_cfo_hz": 0.0
+          },
+          {
+            "conditioned_control_score": 0.016955932962637234,
+            "method": "full-frame-full",
+            "qin_minus_control": 0.004445591685465971,
+            "qin_score": 0.021401524648103205,
+            "winning_coarse_cfo_hz": -80000.0,
+            "winning_epoch_sample": 2048,
+            "winning_residual_cfo_hz": 0.0
+          }
+        ],
+        "probe_samples": 20000,
+        "receiver_chain_id": "rx_lnb_d",
+        "start_s": 59.992,
+        "start_sample": 149980000
+      }
+    ],
+    "starts_per_receiver": 13,
+    "union_coverage_s_per_receiver": 0.104
+  },
+  "redux_v03_postselected": [
+    {
+      "oracle_candidate": true,
+      "oracle_paired_minimum_margin": 0.31479457933227517,
+      "oracle_qualified": false,
+      "receivers": [
+        {
+          "profiles": [
+            {
+              "acquire_score": 0.07844689010287216,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.023744611196551725,
+              "hard_symbol_accuracy": 0.24708333333333332,
+              "profile": "current-default",
+              "qam_goodness_v0_2": 0.0,
+              "rms_evm": 15.890013224587744,
+              "searched_cfo_max_hz": 400000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 1.9943673706066534,
+              "soft_mean_expected_probability": 0.25061570476686884,
+              "verify_minus_control_margin": 0.05210726491861047,
+              "verify_score": 0.0758518761151622,
+              "winning_cfo_hz": 320000.0,
+              "winning_epoch_sample": 1204
+            },
+            {
+              "acquire_score": 0.3288461827668439,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.019047708445485458,
+              "hard_symbol_accuracy": 0.315,
+              "profile": "lnb-aware-union-diagnostic",
+              "qam_goodness_v0_2": 0.06810143723703878,
+              "rms_evm": 8.411182547444344,
+              "searched_cfo_max_hz": 1040000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 1.9797921395326148,
+              "soft_mean_expected_probability": 0.2573181180239992,
+              "verify_minus_control_margin": 0.3128409232668757,
+              "verify_score": 0.33188863171236116,
+              "winning_cfo_hz": 433106.79840678617,
+              "winning_epoch_sample": 1204
+            }
+          ],
+          "receiver_chain_id": "rx_lnb_c"
+        },
+        {
+          "profiles": [
+            {
+              "acquire_score": 0.37544268977402734,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.021261272979631818,
+              "hard_symbol_accuracy": 0.7920833333333334,
+              "profile": "current-default",
+              "qam_goodness_v0_2": 0.7869443583600987,
+              "rms_evm": 0.8176143327611504,
+              "searched_cfo_max_hz": 400000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 0.7495863176239465,
+              "soft_mean_expected_probability": 0.7085048841979424,
+              "verify_minus_control_margin": 0.36399567708394037,
+              "verify_score": 0.3852569500635722,
+              "winning_cfo_hz": -178686.116270424,
+              "winning_epoch_sample": 1204
+            }
+          ],
+          "receiver_chain_id": "rx_lnb_d"
+        }
+      ],
+      "sample_count": 25000,
+      "selection_rank": 0,
+      "start_s": 45.0,
+      "start_sample": 112500000
+    },
+    {
+      "oracle_candidate": true,
+      "oracle_paired_minimum_margin": 0.31099235991918844,
+      "oracle_qualified": true,
+      "receivers": [
+        {
+          "profiles": [
+            {
+              "acquire_score": 0.0444113288345229,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.011405587779958917,
+              "hard_symbol_accuracy": 0.25666666666666665,
+              "profile": "current-default",
+              "qam_goodness_v0_2": 0.007527451184195494,
+              "rms_evm": 24.969919576697603,
+              "searched_cfo_max_hz": 400000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 1.9977049449674944,
+              "soft_mean_expected_probability": 0.2502831424556438,
+              "verify_minus_control_margin": 0.009796661236367346,
+              "verify_score": 0.021202249016326263,
+              "winning_cfo_hz": 217678.72242355085,
+              "winning_epoch_sample": 628
+            },
+            {
+              "acquire_score": 0.32776619372250104,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.020493724802296897,
+              "hard_symbol_accuracy": 0.6175,
+              "profile": "lnb-aware-union-diagnostic",
+              "qam_goodness_v0_2": 0.5671100208404274,
+              "rms_evm": 1.447158013229923,
+              "searched_cfo_max_hz": 1040000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 1.47485563866804,
+              "soft_mean_expected_probability": 0.4511837569094545,
+              "verify_minus_control_margin": 0.30673161310041647,
+              "verify_score": 0.32722533790271335,
+              "winning_cfo_hz": 446557.17349569645,
+              "winning_epoch_sample": 1193
+            }
+          ],
+          "receiver_chain_id": "rx_lnb_c"
+        },
+        {
+          "profiles": [
+            {
+              "acquire_score": 0.3577978910881218,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.015290215096781646,
+              "hard_symbol_accuracy": 0.7870833333333334,
+              "profile": "current-default",
+              "qam_goodness_v0_2": 0.7793089734837438,
+              "rms_evm": 0.8464709971297298,
+              "searched_cfo_max_hz": 400000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 0.802361661227492,
+              "soft_mean_expected_probability": 0.6919203500227675,
+              "verify_minus_control_margin": 0.3555332656629502,
+              "verify_score": 0.3708234807597318,
+              "winning_cfo_hz": -165348.88035957405,
+              "winning_epoch_sample": 1193
+            }
+          ],
+          "receiver_chain_id": "rx_lnb_d"
+        }
+      ],
+      "sample_count": 25000,
+      "selection_rank": 1,
+      "start_s": 41.6,
+      "start_sample": 104000000
+    },
+    {
+      "oracle_candidate": true,
+      "oracle_paired_minimum_margin": 0.30959615739411844,
+      "oracle_qualified": false,
+      "receivers": [
+        {
+          "profiles": [
+            {
+              "acquire_score": 0.32919818626528424,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.017781929858312527,
+              "hard_symbol_accuracy": 0.7204166666666667,
+              "profile": "current-default",
+              "qam_goodness_v0_2": 0.7045955032875872,
+              "rms_evm": 1.0264548975299985,
+              "searched_cfo_max_hz": 400000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 1.0649922914598005,
+              "soft_mean_expected_probability": 0.5958129530892727,
+              "verify_minus_control_margin": 0.3036417393564309,
+              "verify_score": 0.3214236692147434,
+              "winning_cfo_hz": 379163.0965546241,
+              "winning_epoch_sample": 1148
+            },
+            {
+              "acquire_score": 0.32919818626528424,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.017781929858312527,
+              "hard_symbol_accuracy": 0.7204166666666667,
+              "profile": "lnb-aware-union-diagnostic",
+              "qam_goodness_v0_2": 0.7045955032875872,
+              "rms_evm": 1.0264548975299985,
+              "searched_cfo_max_hz": 1040000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 1.0649922914598005,
+              "soft_mean_expected_probability": 0.5958129530892727,
+              "verify_minus_control_margin": 0.3036417393564309,
+              "verify_score": 0.3214236692147434,
+              "winning_cfo_hz": 379163.0965546241,
+              "winning_epoch_sample": 1148
+            }
+          ],
+          "receiver_chain_id": "rx_lnb_c"
+        },
+        {
+          "profiles": [
+            {
+              "acquire_score": 0.3941188339033061,
+              "complete_frame_count": 7,
+              "conditioned_control_score": 0.01706106643606464,
+              "hard_symbol_accuracy": 0.84125,
+              "profile": "current-default",
+              "qam_goodness_v0_2": 0.8349852598222892,
+              "rms_evm": 0.7230842455629513,
+              "searched_cfo_max_hz": 400000.0,
+              "searched_cfo_min_hz": -400000.0,
+              "soft_mean_entropy_bits": 0.5883322873925778,
+              "soft_mean_expected_probability": 0.7711174414149381,
+              "verify_minus_control_margin": 0.4003230473119741,
+              "verify_score": 0.41738411374803874,
+              "winning_cfo_hz": -232854.4462002471,
+              "winning_epoch_sample": 1148
+            }
+          ],
+          "receiver_chain_id": "rx_lnb_d"
+        }
+      ],
+      "sample_count": 25000,
+      "selection_rank": 2,
+      "start_s": 58.5,
+      "start_sample": 146250000
+    }
+  ],
+  "redux_v9": {
+    "advanced_evidence": [
+      {
+        "association": {
+          "basic_candidate_rank": null,
+          "candidate_path_digest": {
+            "algorithm": "sha256",
+            "value": "5ef474815b4d8ae835fda5bb29ee994938c14ba363fd5579ab8e99792043c827"
+          },
+          "maximum_distance_hz": null,
+          "mean_distance_hz": null,
+          "overlap_fraction": 0,
+          "overlap_point_count": 0,
+          "state": "advanced-path-only"
+        },
+        "broadband": null,
+        "candidate_path_digest": {
+          "algorithm": "sha256",
+          "value": "5ef474815b4d8ae835fda5bb29ee994938c14ba363fd5579ab8e99792043c827"
+        },
+        "candidate_rank": null,
+        "comb": null,
+        "drift_rate_hz_s": -3750.0000000000005,
+        "dual_receiver": null,
+        "heldout_score": 0.5003499393939393,
+        "opposite_slope_score": 0.03825021212121211,
+        "orbit_association": null,
+        "receiver_chain_id": "rx_lnb_c",
+        "segment_id": "seg_plan_focused_loop_00000001_18cccbd3289eb706_b_ch4_lower",
+        "shuffled_scores": [
+          0.37589263636363646,
+          -0.06592387878787888,
+          -0.07912075757575764,
+          -0.012410924242424246
+        ],
+        "slope_bins_per_row": -0.23152558080000002,
+        "source_input_digest": {
+          "algorithm": "sha256",
+          "value": "d69830cc5cdc5ed749b26f0bb0bce34f46ad018f392956376a78a5d84e645986"
+        },
+        "spectral_peak_excess_reference": "temporal-median-residual-db-minus-per-row-median-db",
+        "stationary_score": 0.030350590909090855
+      },
+      {
+        "association": {
+          "basic_candidate_rank": null,
+          "candidate_path_digest": {
+            "algorithm": "sha256",
+            "value": "d0e6c123786f6db404186e3eff72e783efdbe135dbd1a537811217885f2a5557"
+          },
+          "maximum_distance_hz": null,
+          "mean_distance_hz": null,
+          "overlap_fraction": 0,
+          "overlap_point_count": 0,
+          "state": "advanced-path-only"
+        },
+        "broadband": null,
+        "candidate_path_digest": {
+          "algorithm": "sha256",
+          "value": "d0e6c123786f6db404186e3eff72e783efdbe135dbd1a537811217885f2a5557"
+        },
+        "candidate_rank": null,
+        "comb": null,
+        "drift_rate_hz_s": -3750.0000000000005,
+        "dual_receiver": null,
+        "heldout_score": 0.7627932575757576,
+        "opposite_slope_score": 0.07933930303030302,
+        "orbit_association": null,
+        "receiver_chain_id": "rx_lnb_d",
+        "segment_id": "seg_plan_focused_loop_00000001_18cccbd3289eb706_b_ch4_lower",
+        "shuffled_scores": [
+          0.27840140909090894,
+          0.057913499999999944,
+          -0.05554589393939392,
+          0.021886606060606037
+        ],
+        "slope_bins_per_row": -0.23152558080000002,
+        "source_input_digest": {
+          "algorithm": "sha256",
+          "value": "97c6a91ad6ab212f69e17cce885770df02d5c94d74239e082e0863ded05f3f9a"
+        },
+        "spectral_peak_excess_reference": "temporal-median-residual-db-minus-per-row-median-db",
+        "stationary_score": 0.07838310606060611
+      }
+    ],
+    "advanced_window_series": [
+      {
+        "receiver_chain_id": "rx_lnb_c",
+        "total": {
+          "derivation": "published-advanced-slope-bank-path-rate",
+          "drift_rate_hz_s": -3750.0000000000005,
+          "reference_frequency_hz": 1709870567.3217773,
+          "reference_utc_ns": 1787027347088647071,
+          "residual_rms_hz": 1623.623687663038,
+          "support_count": 200
+        }
+      },
+      {
+        "receiver_chain_id": "rx_lnb_d",
+        "total": {
+          "derivation": "published-advanced-slope-bank-path-rate",
+          "drift_rate_hz_s": -3750.0000000000005,
+          "reference_frequency_hz": 1709260215.7592773,
+          "reference_utc_ns": 1787027347088647071,
+          "residual_rms_hz": 1623.623687663038,
+          "support_count": 200
+        }
+      }
+    ],
+    "basic_candidate_count": 0,
+    "calibrated_detection_count": null,
+    "candidate_only": true,
+    "tiles": [
+      {
+        "coverage": {
+          "analyzed_sample_count": 149979136,
+          "contiguous_rf_sample_count": 150000000,
+          "contiguous_rf_span_count": 1,
+          "coverage_fraction": 0.9998609066666667,
+          "discarded_tail_sample_count": 20864,
+          "fft_frame_count": 4577
+        },
+        "receiver_chain_id": "rx_lnb_c"
+      },
+      {
+        "coverage": {
+          "analyzed_sample_count": 149979136,
+          "contiguous_rf_sample_count": 150000000,
+          "contiguous_rf_span_count": 1,
+          "coverage_fraction": 0.9998609066666667,
+          "discarded_tail_sample_count": 20864,
+          "fft_frame_count": 4577
+        },
+        "receiver_chain_id": "rx_lnb_d"
+      }
+    ]
+  },
+  "retro_positive": {
+    "calibrated_detection": null,
+    "candidate_only": true,
+    "combined": {
+      "hard_symbol_accuracy": 0.8833333333333333,
+      "median_equalized_magnitude": 1.0987903904694256,
+      "method": "inverse-noise-equalized-dual-rx",
+      "observation_count": 2400,
+      "receiver_weights": [
+        0.40806517554822136,
+        0.5919348244517787
+      ],
+      "rms_evm": 0.6381714701292854,
+      "soft_mean_confidence": 0.8936268347159785,
+      "soft_mean_entropy_bits": 0.4073559016722439,
+      "soft_mean_expected_probability": 0.8367426719835551,
+      "soft_noise_variance": 0.4072628252869734
+    },
+    "metrics_match_oracle": true,
+    "receipt_sha256": "33f829b87302391fc4e1032b90c20c8bf0a584873654518a5dfc84e6c866ab91",
+    "receivers": [
+      {
+        "acquire_score": 0.3538260645720998,
+        "complete_frame_count": 6,
+        "conditioned_control_score": 0.028848079453761274,
+        "hard_symbol_accuracy": 0.7479166666666667,
+        "held_out_verify_score": 0.36045636429377986,
+        "model_snr_db": -6.41170738304599,
+        "receiver_index": 0,
+        "rms_evm": 0.9426077037352968,
+        "soft_mean_confidence": 0.7361672522377428,
+        "soft_mean_entropy_bits": 0.9462233608980961,
+        "soft_mean_expected_probability": 0.638309814980221,
+        "soft_noise_variance": 0.888509283141129,
+        "verify_minus_control_margin": 0.3316082848400186,
+        "winning_cfo_hz": 364134.65280229383,
+        "winning_epoch_sample": 2063
+      },
+      {
+        "acquire_score": 0.3791110892963687,
+        "complete_frame_count": 6,
+        "conditioned_control_score": 0.0186326700804523,
+        "hard_symbol_accuracy": 0.7991666666666667,
+        "held_out_verify_score": 0.3942574760677691,
+        "model_snr_db": -5.846511481037662,
+        "receiver_index": 1,
+        "rms_evm": 0.7826341713001846,
+        "soft_mean_confidence": 0.8090960363896923,
+        "soft_mean_entropy_bits": 0.6919826014390635,
+        "soft_mean_expected_probability": 0.726606655126455,
+        "soft_noise_variance": 0.6125162460867268,
+        "verify_minus_control_margin": 0.37562480598731685,
+        "winning_cfo_hz": -194373.48297309756,
+        "winning_epoch_sample": 2063
+      }
+    ]
+  }
+}

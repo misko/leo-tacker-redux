@@ -1,0 +1,47 @@
+{
+  "schema": "leo-tracker.beacon-iq/v1",
+  "state": "complete",
+  "dtype": "ci16_le",
+  "layout": "sample,receiver,component; receivers interleaved RX0 I,Q,RX1 I,Q",
+  "sample_rate_hz": 2500000.0,
+  "bandwidth_hz": 2500000.0,
+  "center_frequency_hz": 1709687500.0,
+  "lnb_lo_hz": 9750000000.0,
+  "rf_center_hz": 11459687500.0,
+  "receiver_count": 2,
+  "requested_duration_s": 60.0,
+  "requested_samples_per_receiver": 150000000,
+  "captured_samples_per_receiver": 150000000,
+  "chunk_samples": 150000000,
+  "gain_mode": "agc",
+  "configured_gain_db": null,
+  "identity": {
+    "radio_id": "radio_pluto_19f2",
+    "serial": "10400056f695001322002d0010ad1719f2",
+    "receiver_labels": [
+      "rx_lnb_c",
+      "rx_lnb_d"
+    ],
+    "redux_recording_id": "rec_01M09J1R6E59GCC8ANJVYVRN1B"
+  },
+  "metadata": {
+    "channel_number": 4,
+    "region": "lower-edge",
+    "source": "verified immutable Redux CAS object; oracle wrapper only"
+  },
+  "created_utc_ns": 1787027316948559690,
+  "completed_utc_ns": 1787027377155644261,
+  "stored_bytes": 1200000000,
+  "chunks": [
+    {
+      "path": "recording.ci16",
+      "first_sample_index": 0,
+      "sample_count": 150000000,
+      "first_utc_ns": 1787027317128978809,
+      "last_utc_ns": 1787027377128978809,
+      "read_count": 1500,
+      "sha256": "23cceb3a5223180ff92398214125513d4c32cc541ec1ae5b7c4c28fba5bbcc8c",
+      "bytes": 1200000000
+    }
+  ]
+}
