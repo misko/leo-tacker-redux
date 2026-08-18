@@ -129,8 +129,8 @@ from leo_flow.services.starlink_temporal_pilot_analysis import (
 from leo_flow.storage.ports import RecordingObjectReader, RecordingView
 
 PLUGIN_ID: Final = "gauss-analysis-v1"
-SOURCE_COMMIT: Final = "53ffc17590efdef8994a637018d85b6db4c25ecf"
-SOURCE_COMMIT_UTC_NS: Final = UtcNs(1_787_034_606_000_000_000)
+SOURCE_COMMIT: Final = "07ee4d36fcbb57103eb8b2fb655bbff96ba7c6e1"
+SOURCE_COMMIT_UTC_NS: Final = UtcNs(1_787_034_928_000_000_000)
 APPROVED_PYTHON: Final = (3, 11, 16)
 APPROVED_PYTHON_VERSION: Final = "3.11.16"
 CAS_ROOT: Final = Path("/home/mouse9911/.local/share/leo-flow/objects")
