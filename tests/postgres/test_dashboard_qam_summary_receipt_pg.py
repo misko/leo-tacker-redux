@@ -45,6 +45,11 @@ def test_qam_summary_receipt_is_private_terminal_and_directionally_scoped(
             "SELECT pg_get_functiondef("
             "'read_pending_dashboard_capture_qam_products_v0_2(integer)'::regprocedure)"
         ).fetchone()
+        invalid_pending_counts = connection.execute(
+            "SELECT "
+            "(SELECT count(*) FROM read_pending_dashboard_capture_qam_products_v0_2(0)),"
+            "(SELECT count(*) FROM read_pending_dashboard_capture_qam_products_v0_2(101))"
+        ).fetchone()
 
     assert row == (
         "dashboard_capture_qam_summary_receipt_v0_2",
@@ -62,3 +67,5 @@ def test_qam_summary_receipt_is_private_terminal_and_directionally_scoped(
     assert "dashboard_capture_qam_summary_receipt_v0_2" in str(
         pending_definition[0]
     )
+    assert "lifecycle_state" in str(pending_definition[0])
+    assert invalid_pending_counts == (0, 0)

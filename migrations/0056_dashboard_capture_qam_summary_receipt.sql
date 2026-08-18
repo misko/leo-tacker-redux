@@ -156,11 +156,19 @@ WITH products AS (
   SELECT 'adaptive-v0.4'::text AS source_kind,analysis_id,recording_id,
          request_digest_value AS source_request_digest_value,
          bundle_digest_value AS source_product_digest_value,published_at_utc
-    FROM public.recording_starlink_adaptive_qam_v0_4
+    FROM public.recording_starlink_adaptive_qam_v0_4 product
+    JOIN public.object_blob blob
+      ON (blob.digest_algorithm,blob.digest_value)=
+         (product.bundle_digest_algorithm,product.bundle_digest_value)
+     AND blob.lifecycle_state='live'
   UNION ALL
   SELECT 'acquired-v0.3',analysis_id,recording_id,request_digest_value,
          bundle_digest_value,published_at_utc
-    FROM public.recording_starlink_acquired_constellation_v0_3
+    FROM public.recording_starlink_acquired_constellation_v0_3 product
+    JOIN public.object_blob blob
+      ON (blob.digest_algorithm,blob.digest_value)=
+         (product.bundle_digest_algorithm,product.bundle_digest_value)
+     AND blob.lifecycle_state='live'
 )
 SELECT p.source_kind,p.analysis_id,p.recording_id,
        p.source_request_digest_value,p.source_product_digest_value
