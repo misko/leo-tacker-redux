@@ -36,7 +36,7 @@ from leo_flow.analysis.recording.starlink_surrogate_null import (
 from leo_flow.analysis.recording.starlink_surrogate_null_recording import (
     ExactStarlinkSurrogateNullRecordingAnalyzerV0_1,
 )
-from leo_flow.contracts.core import JobId, ReceiverChainId
+from leo_flow.contracts.core import JobId, ReceiverChainId, canonical_digest
 from leo_flow.jobs import JobType
 from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
 from leo_flow.services.starlink_acquired_constellation_analysis import (
@@ -144,7 +144,7 @@ def test_v0_3_qam_is_published_in_same_fenced_suite_transaction(
         recording.recording_id
     )
     assert source is not None
-    assert source.projection.request_digest == prepared.request.digest
+    assert source.projection.request_digest == canonical_digest(prepared.request)
     latest = PostgresStarlinkAcquiredConstellationCatalogV0_3(
         connect
     ).latest_starlink_acquired_constellation(recording.recording_id)
