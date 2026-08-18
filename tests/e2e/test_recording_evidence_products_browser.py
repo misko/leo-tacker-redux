@@ -1004,6 +1004,72 @@ def browser_environment() -> dict[str, str | float | bool]:
     return environment
 
 
+def test_detail_page_loads_primary_evidence_before_extended_products() -> None:
+    ports = EvidencePorts()
+    probe = _DelayedEvidenceApplication(delay_s=0.08)
+    requests: list[str] = []
+    with running_dashboard(
+        ports, delay_probe=probe
+    ) as base_url, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, env=browser_environment())
+        try:
+            page = browser.new_page()
+            page.on("request", lambda request: requests.append(request.url))
+            started = time.monotonic()
+            response = page.goto(f"{base_url}/recordings/{REQUESTED}")
+            assert response is not None and response.ok
+            for product in ("qam", "detector"):
+                expect(page.locator(f"#evidence-{product}-state")).to_have_attribute(
+                    "data-state", "ready"
+                )
+            expect(
+                page.locator(f'#evidence-radios input[value="{REQUESTED}"]')
+            ).to_be_checked()
+            expect(
+                page.locator(f'#evidence-radios input[value="{COMPANION}"]')
+            ).not_to_be_checked()
+            primary_elapsed = time.monotonic() - started
+            expect(page.locator("#evidence-timeline-state")).to_contain_text(
+                "deferred"
+            )
+            assert not ports.timeline_queries
+            assert not ports.pilot_prescreen_queries
+            assert not ports.basic_doppler_queries
+            assert not ports.approach_queries
+            assert primary_elapsed < 0.6
+            assert probe.maximum_active <= 4
+            extended_fragments = (
+                "/api/v9/",
+                "/api/v11/",
+                "/api/v16/recordings/" + REQUESTED + "/evidence-doppler",
+                "/api/v19/",
+                "/api/v20/",
+                "/api/v23/",
+                "/api/v26/",
+                "/api/v27/",
+                "/features?",
+            )
+            assert not any(
+                fragment in request
+                for request in requests
+                for fragment in extended_fragments
+            )
+
+            page.locator("#evidence-load-extended").click()
+            expect(page.locator("#evidence-timeline-state")).to_have_attribute(
+                "data-state", "ready"
+            )
+            expect(page.locator("#evidence-doppler-state")).to_have_attribute(
+                "data-state", "ready"
+            )
+            assert ports.timeline_queries
+            assert ports.pilot_prescreen_queries
+            assert ports.basic_doppler_queries
+            assert ports.approach_queries
+        finally:
+            browser.close()
+
+
 def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> None:
     ports = EvidencePorts()
     with running_dashboard(ports) as base_url, sync_playwright() as playwright:
@@ -1023,6 +1089,8 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             expect(page.locator("#evidence-context-state")).to_contain_text(
                 "2 recording scope"
             )
+            page.locator(f'#evidence-radios input[value="{COMPANION}"]').check()
+            page.locator("#evidence-load-extended").click()
             for product in ("qam", "detector", "doppler"):
                 expect(page.locator(f"#evidence-{product}-state")).to_have_attribute(
                     "data-state", "ready"
@@ -1327,6 +1395,7 @@ def test_detail_page_overlaps_real_evidence_handlers_with_a_worker_bound() -> No
                 started = time.monotonic()
                 response = page.goto(f"{base_url}/recordings/{REQUESTED}")
                 assert response is not None and response.ok
+                page.locator("#evidence-load-extended").click()
                 for product in ("timeline", "qam", "detector", "doppler"):
                     expect(
                         page.locator(f"#evidence-{product}-state")
@@ -1417,6 +1486,7 @@ def test_detail_page_distinguishes_pending_error_and_missing_real_api_states() -
             expect(page.locator("#evidence-detector-state")).to_contain_text(
                 "dashboard query failed"
             )
+            page.locator("#evidence-load-extended").click()
             expect(page.locator("#evidence-doppler-state")).to_have_attribute(
                 "data-state", "missing"
             )
@@ -1445,6 +1515,7 @@ def test_detail_page_renders_available_recording_when_companion_is_pending() -> 
             page = browser.new_page()
             response = page.goto(f"{base_url}/recordings/{REQUESTED}")
             assert response is not None and response.ok
+            page.locator(f'#evidence-radios input[value="{COMPANION}"]').check()
             for product in ("qam", "detector"):
                 expect(page.locator(f"#evidence-{product}-state")).to_have_attribute(
                     "data-state", "ready"

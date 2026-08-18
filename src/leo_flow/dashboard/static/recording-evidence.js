@@ -13,6 +13,7 @@
 
   let context = null;
   let generation = 0;
+  let extendedLoaded = false;
   const approachRows = new Map();
   const colors = ["#80d8ff", "#fff176", "#ff8a80", "#69f0ae", "#ce93d8", "#ffb74d", "#90caf9", "#a5d6a7"];
 
@@ -805,7 +806,37 @@
     generation += 1;
     const current = generation;
     approachRows.clear(); renderApproachRows();
-    void Promise.all([loadApproaches(current), loadAdaptiveQamApproaches(current), loadTimeline(current), loadPilotPrescreen(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
+    void Promise.all([loadQam(current), loadDetectors(current)]);
+    if (extendedLoaded) {
+      void Promise.all([loadApproaches(current), loadAdaptiveQamApproaches(current), loadTimeline(current), loadPilotPrescreen(current), loadDoppler(current)]);
+    } else {
+      state("timeline", "pending", "Complete IQ tile timelines are deferred until extended analysis is requested.");
+      state("prescreen", "pending", "Complete-IQ OFDM prescreens are deferred until extended analysis is requested.");
+      state("doppler", "pending", "Doppler path composition is deferred until extended analysis is requested.");
+      node("evidence-pilot-doppler-state").dataset.state = "pending";
+      node("evidence-pilot-doppler-state").textContent = "Pilot-frequency association is deferred until extended analysis is requested.";
+    }
+  }
+
+  function loadExtended() {
+    if (extendedLoaded) return;
+    extendedLoaded = true;
+    const button = node("evidence-load-extended");
+    button.disabled = true;
+    button.textContent = "Extended analysis loading…";
+    document.dispatchEvent(new CustomEvent("leo:load-extended-recording-analysis"));
+    if (!context) {
+      button.textContent = "Extended recording analysis loaded";
+      return;
+    }
+    const current = generation;
+    void Promise.all([
+      loadApproaches(current),
+      loadAdaptiveQamApproaches(current),
+      loadTimeline(current),
+      loadPilotPrescreen(current),
+      loadDoppler(current),
+    ]).finally(() => { button.textContent = "Extended analysis loaded"; });
   }
 
   async function initialize() {
@@ -813,7 +844,10 @@
       context = await json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-context`);
       if (context.candidate_only !== true || context.calibrated_detection_count !== null) throw new Error("unsafe evidence context semantics");
       addChecks(node("evidence-radios"), "radio", context.recordings || [], (item) => `${item.radio_id} / ${item.recording_id}${item.requested ? " (this page)" : " (batch companion)"}`);
-      node("evidence-radios").querySelectorAll("input").forEach((input, index) => { input.value = context.recordings[index].recording_id; });
+      node("evidence-radios").querySelectorAll("input").forEach((input, index) => {
+        input.value = context.recordings[index].recording_id;
+        input.checked = context.recordings[index].requested === true;
+      });
       const lnbValues = [...new Set((context.receivers || []).map((item) => item.lnb_id))].map((value) => ({value}));
       const receiverValues = [...new Set((context.receivers || []).map((item) => item.receiver_chain_id))].map((value) => ({value}));
       addChecks(node("evidence-lnbs"), "lnb", lnbValues, (item) => item.value);
@@ -830,5 +864,6 @@
     }
   }
 
+  node("evidence-load-extended").addEventListener("click", loadExtended);
   void initialize();
 })();

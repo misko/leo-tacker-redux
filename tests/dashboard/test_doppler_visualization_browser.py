@@ -137,6 +137,7 @@ def test_browser_selects_one_layer_and_renders_tracks_controls_and_provenance() 
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#doppler-state")).to_have_attribute(
                 "data-state", "ready"
@@ -293,6 +294,7 @@ def test_browser_clears_stale_doppler_details_for_non_complete_states(
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#doppler-state")).to_have_attribute(
                 "data-state", expected_state

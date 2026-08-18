@@ -25,6 +25,11 @@ class PostgresCaptureDopplerScopeRepositoryV0_1:
     def capture_doppler_scope(
         self, query: CaptureDopplerSummaryQueryV0_1
     ) -> CaptureDopplerScopeViewV0_1:
+        return self._capture_scope(query, _SCOPE_SQL)
+
+    def _capture_scope(
+        self, query: CaptureDopplerSummaryQueryV0_1, scope_sql: str
+    ) -> CaptureDopplerScopeViewV0_1:
         parameters = {
             "start_utc_ns": int(query.start_utc_ns),
             "stop_utc_ns": int(query.stop_utc_ns),
@@ -39,7 +44,7 @@ class PostgresCaptureDopplerScopeRepositoryV0_1:
             count_row = cursor.fetchone()
             if count_row is None:
                 raise RuntimeError("capture Doppler scope count returned no row")
-            cursor.execute(_SCOPE_SQL, parameters)
+            cursor.execute(scope_sql, parameters)
             rows = cursor.fetchall()
         grouped: dict[str, dict[str, object]] = {}
         for row in rows:
@@ -80,6 +85,17 @@ class PostgresCaptureDopplerScopeRepositoryV0_1:
         )
 
 
+class PostgresCaptureQamScopeRepositoryV0_1(
+    PostgresCaptureDopplerScopeRepositoryV0_1
+):
+    """Prefer recent recordings with published QAM inside the UI's small bound."""
+
+    def capture_doppler_scope(
+        self, query: CaptureDopplerSummaryQueryV0_1
+    ) -> CaptureDopplerScopeViewV0_1:
+        return self._capture_scope(query, _QAM_SCOPE_SQL)
+
+
 _LATEST_SUCCESSFUL = """
 WITH latest_batches AS (
     SELECT DISTINCT ON (batch_id) projection_sequence, batch_id,
@@ -108,6 +124,43 @@ _SCOPE_SQL = (
     + """
 , bounded AS (
     SELECT * FROM successful ORDER BY recording_id LIMIT %(limit)s
+)
+SELECT bounded.recording_id, bounded.radio_id, bounded.analysis_state,
+       chain.receiver_chain_id, chain.lnb_id, chain.chain_index
+  FROM bounded
+  LEFT JOIN public.recording_hardware_link AS link
+    ON link.recording_id = bounded.recording_id
+  LEFT JOIN public.hardware_receiver_chain AS chain
+    ON chain.snapshot_id = link.hardware_snapshot_id
+   AND chain.radio_id = bounded.radio_id
+   AND chain.valid_from_utc_ns <= bounded.observed_start_utc_ns
+   AND (chain.valid_until_utc_ns IS NULL
+        OR bounded.observed_start_utc_ns < chain.valid_until_utc_ns)
+ ORDER BY bounded.recording_id, chain.chain_index
+"""
+)
+
+_QAM_SCOPE_SQL = (
+    _LATEST_SUCCESSFUL
+    + """
+, ranked AS (
+    SELECT successful.*,
+           (EXISTS (
+                SELECT 1
+                  FROM public.read_latest_recording_starlink_adaptive_qam_v0_4(
+                           successful.recording_id
+                       )
+            ) OR EXISTS (
+                SELECT 1
+                  FROM public.read_latest_recording_starlink_acquired_constellation_v0_3(
+                           successful.recording_id
+                       )
+            )) AS has_published_qam
+      FROM successful
+), bounded AS (
+    SELECT * FROM ranked
+     ORDER BY has_published_qam DESC, observed_start_utc_ns DESC, recording_id
+     LIMIT %(limit)s
 )
 SELECT bounded.recording_id, bounded.radio_id, bounded.analysis_state,
        chain.receiver_chain_id, chain.lnb_id, chain.chain_index

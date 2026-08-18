@@ -346,7 +346,7 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
     assert "View capture details, waterfall, and analysis" in javascript
     assert "makeCaptureRowNavigable" in javascript
     assert "formatCompactUtcNs" in javascript
-    assert "MAX_CAPTURE_DURATION_LOADS = 4" in javascript
+    assert "MAX_CAPTURE_DURATION_LOADS = 1" in javascript
     assert (
         "Calibrated Anchor-8 and GLRT beacon detections are unavailable" in javascript
     )

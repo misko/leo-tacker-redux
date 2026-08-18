@@ -64,6 +64,7 @@ def test_browser_renders_every_surrogate_and_sends_bounded_filters() -> None:
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#surrogate-state")).to_have_attribute(
                 "data-state", "ready"
@@ -139,6 +140,7 @@ def test_browser_exposes_pending_until_the_projection_completes() -> None:
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#surrogate-state")).to_have_attribute(
                 "data-state", "pending"
@@ -186,6 +188,7 @@ def test_browser_exposes_explicit_not_evaluated_state() -> None:
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#surrogate-state")).to_have_attribute(
                 "data-state", "not-evaluated"
@@ -238,6 +241,7 @@ def test_browser_exposes_unavailable_and_error_states(
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#surrogate-state")).to_have_attribute(
                 "data-state", expected_state

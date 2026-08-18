@@ -330,6 +330,7 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
                 ),
             )
             page.goto(f"{base_url}/recordings/{RECORDING}")
+            page.locator("#evidence-load-extended").click()
             expect(page.locator("#evidence-context-state")).to_have_attribute(
                 "data-state", "ready"
             )
@@ -498,6 +499,7 @@ def test_unified_workspace_distinguishes_pending_missing_and_error() -> None:
                 ),
             )
             page.goto(f"{base_url}/recordings/{RECORDING}")
+            page.locator("#evidence-load-extended").click()
             expect(page.locator("#evidence-qam-state")).to_have_attribute(
                 "data-state", "pending"
             )

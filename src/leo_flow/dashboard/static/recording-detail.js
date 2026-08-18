@@ -1467,16 +1467,12 @@ async function loadTemporalPilot(recordingId) {
   }
 }
 
-async function start() {
-  const recordingId = recordingIdFromPath();
-  if (!recordingId) {
-    byId("capture-page-state").dataset.state = "error";
-    byId("capture-page-state-text").textContent = "Invalid recording URL";
-    return;
-  }
-  byId("capture-identity").textContent = recordingId;
-  const [detail] = await Promise.all([
-    loadCaptureDetail(recordingId),
+let extendedAnalysisStarted = false;
+
+function loadExtendedRecordingAnalysis(recordingId) {
+  if (extendedAnalysisStarted) return;
+  extendedAnalysisStarted = true;
+  void Promise.all([
     loadWaterfall(recordingId),
     loadDopplerVisualization(recordingId),
     loadSurrogateNull(recordingId),
@@ -1485,6 +1481,32 @@ async function start() {
     loadStarlinkDecision(recordingId),
     loadAllFeatures(recordingId),
   ]);
+}
+
+async function start() {
+  const recordingId = recordingIdFromPath();
+  if (!recordingId) {
+    byId("capture-page-state").dataset.state = "error";
+    byId("capture-page-state-text").textContent = "Invalid recording URL";
+    return;
+  }
+  byId("capture-identity").textContent = recordingId;
+  for (const [id, message] of [
+    ["waterfall-state", "Waterfall projection is available through Load extended analysis."],
+    ["doppler-state", "Doppler visualization is available through Load extended analysis."],
+    ["surrogate-state", "Surrogate-null evidence is available through Load extended analysis."],
+    ["constellation-state", "Pilot constellation evidence is available through Load extended analysis."],
+    ["temporal-state", "Temporal pilot evidence is available through Load extended analysis."],
+    ["analysis-state", "Diagnostic features are available through Load extended analysis."],
+  ]) setState(id, "pending", message);
+  byId("starlink-decision-badge").textContent = "On demand";
+  byId("diagnostic-features-count").textContent = "On demand";
+  document.addEventListener(
+    "leo:load-extended-recording-analysis",
+    () => loadExtendedRecordingAnalysis(recordingId),
+    {once: true},
+  );
+  const detail = await loadCaptureDetail(recordingId);
   byId("capture-page-state").dataset.state = detail ? "ready" : "error";
   byId("capture-page-state-text").textContent = detail
     ? "Capture projection loaded"

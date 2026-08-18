@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,6 +18,8 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV17,
     DashboardJsonApplicationV18,
     DashboardJsonApplicationV22,
+    JsonRequest,
+    JsonResponse,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
 from tests.dashboard._fixtures import repository
@@ -106,7 +109,7 @@ class _MasterEvidencePorts:
         }
 
     def capture_qam_summaries(self, query: Any) -> dict[str, object]:
-        assert query.maximum_recordings == 100
+        assert query.maximum_recordings == 2
         return {
             "schema_version": 1,
             "start_utc_ns": query.start_utc_ns,
@@ -152,14 +155,39 @@ class _MasterEvidencePorts:
         }
 
 
+class _SummaryPriorityProbe:
+    def __init__(self) -> None:
+        self.application: Any = None
+        self.qam_finished = threading.Event()
+        self.qam_request_count = 0
+        self.duration_started_before_qam = False
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        if request.path == "/api/v22/capture-qam-summaries":
+            self.qam_request_count += 1
+            time.sleep(0.12)
+            response = self.application.handle(request)
+            self.qam_finished.set()
+            return response
+        if request.path.startswith("/api/v3/recordings/"):
+            self.duration_started_before_qam |= not self.qam_finished.is_set()
+        return self.application.handle(request)
+
+
 @contextmanager
-def _running_master_dashboard() -> Iterator[str]:
+def _running_master_dashboard(
+    priority_probe: _SummaryPriorityProbe | None = None,
+) -> Iterator[str]:
     queries = repository(50)
     ports = _MasterEvidencePorts()
     v3 = DashboardJsonApplicationV3(queries, queries, ports, ports, ports)
     v17 = DashboardJsonApplicationV17(cast(DashboardJsonApplicationV16, v3), ports)
     v18 = DashboardJsonApplicationV18(v17, ports)
-    app = DashboardUiApplication(DashboardJsonApplicationV22(v18, ports))
+    base_app = DashboardUiApplication(DashboardJsonApplicationV22(v18, ports))
+    app: Any = base_app
+    if priority_probe is not None:
+        priority_probe.application = base_app
+        app = priority_probe
     server = StdlibDashboardServer(request_timeout_s=0.01)
     server.preflight("127.0.0.1", 0)
     stopped = threading.Event()
@@ -266,5 +294,39 @@ def test_master_capture_table_populates_every_evidence_and_navigation_field() ->
                 "aria-label",
                 "View capture details, waterfall, and analysis for rec_ready_a",
             )
+        finally:
+            browser.close()
+
+
+def test_master_prioritizes_one_bounded_qam_summary_before_duration_enrichment() -> (
+    None
+):
+    probe = _SummaryPriorityProbe()
+    with _running_master_dashboard(probe) as base_url, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, env=_browser_environment())
+        try:
+            page = browser.new_page()
+            page.add_init_script(
+                """Date.now = () => 7200000;"""
+            )
+            started = time.monotonic()
+            response = page.goto(base_url)
+            assert response is not None and response.ok
+            row = page.locator('[data-attempt-id="cattempt_ready_a"]')
+            expect(row.locator(".capture-qam-summary")).to_have_attribute(
+                "data-state", "complete"
+            )
+            expect(row.locator(".capture-qam-candidate")).to_have_count(1)
+            qam_elapsed = time.monotonic() - started
+            expect(row.locator(".qam-detail-link")).to_have_attribute(
+                "href", "/recordings/rec_ready_a#evidence-qam"
+            )
+            expect(row.locator(".capture-duration")).to_have_text(
+                "60.00 s", timeout=15_000
+            )
+            assert probe.qam_finished.is_set()
+            assert probe.qam_request_count == 1
+            assert not probe.duration_started_before_qam
+            assert qam_elapsed < 0.75
         finally:
             browser.close()

@@ -126,6 +126,7 @@ def test_browser_renders_temporal_trace_coverage_filters_and_exact_tooltip() -> 
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
             expect(page.locator("#temporal-state")).to_have_attribute(
                 "data-state", "ready"
             )
@@ -171,6 +172,7 @@ def test_browser_temporal_missing_and_error_states(status: int, state: str) -> N
                 ),
             )
             page.goto(f"{base_url}/recordings/{RECORDING_ID}")
+            page.locator("#evidence-load-extended").click()
             expect(page.locator("#temporal-state")).to_have_attribute(
                 "data-state", state
             )
@@ -189,6 +191,7 @@ def test_browser_temporal_stays_pending_until_product_arrives() -> None:
                 lambda route: held.append(route),
             )
             page.goto(f"{base_url}/recordings/{RECORDING_ID}")
+            page.locator("#evidence-load-extended").click()
             expect(page.locator("#temporal-state")).to_have_attribute(
                 "data-state", "pending"
             )

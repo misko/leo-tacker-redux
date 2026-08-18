@@ -158,6 +158,7 @@ from . import dashboard_postgres_sql as sql
 from .dashboard_batch_postgres import PostgresCaptureBatchDashboardRepository
 from .dashboard_capture_doppler_postgres import (
     PostgresCaptureDopplerScopeRepositoryV0_1,
+    PostgresCaptureQamScopeRepositoryV0_1,
 )
 from .dashboard_observation_postgres import PostgresObservationAggregateRepositoryV0_1
 from .dashboard_recording_evidence_postgres import (
@@ -253,7 +254,7 @@ class PostgresDashboardRepository:
             PostgresCaptureDopplerScopeRepositoryV0_1(connect), self
         )
         self._capture_qam_summaries = CaptureQamSummaryQueryServiceV0_1(
-            PostgresCaptureDopplerScopeRepositoryV0_1(connect), self, adaptive_qam
+            PostgresCaptureQamScopeRepositoryV0_1(connect), self, adaptive_qam
         )
         self._pilot_doppler = (
             None

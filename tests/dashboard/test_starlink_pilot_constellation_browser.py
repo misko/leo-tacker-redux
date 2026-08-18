@@ -64,6 +64,7 @@ def test_browser_renders_qin_constellation_facts_and_selected_stream_filters() -
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#constellation-state")).to_have_attribute(
                 "data-state", "ready"
@@ -127,6 +128,7 @@ def test_browser_exposes_pending_until_constellation_projection_completes() -> N
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#constellation-state")).to_have_attribute(
                 "data-state", "pending"
@@ -187,6 +189,7 @@ def test_browser_exposes_constellation_unavailable_and_error_states(
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#constellation-state")).to_have_attribute(
                 "data-state", expected_state
@@ -220,6 +223,7 @@ def test_browser_fails_closed_on_invalid_presentation_contract() -> None:
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#constellation-state")).to_have_attribute(
                 "data-state", "error"

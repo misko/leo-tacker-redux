@@ -68,6 +68,7 @@ def test_capture_detail_page_renders_tunings_analysis_and_projected_waterfall() 
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page).to_have_title(f"{RECORDING_ID} · Capture detail · LEO Flow")
             expect(page.locator("#capture-page-state")).to_have_attribute(
@@ -192,6 +193,7 @@ def test_capture_diagnostics_group_quality_and_psd_without_losing_identity() -> 
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
 
             expect(page.locator("#diagnostic-features-count")).to_have_text("2 rows")
             expect(page.locator("#analysis-table")).to_be_hidden()
@@ -272,6 +274,7 @@ def test_capture_detail_renders_candidates_without_a_detection_count() -> None:
             )
             response = page.goto(f"{base_url}/recordings/{RECORDING_ID}")
             assert response is not None and response.ok
+            page.locator("#evidence-load-extended").click()
             expect(page.locator("#starlink-decision-badge")).to_have_text(
                 "Candidates · uncalibrated"
             )
