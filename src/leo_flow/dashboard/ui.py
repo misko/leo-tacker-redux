@@ -31,6 +31,11 @@ _RETRO_QAM_SOURCE_URL: Final = (
     "http://satpi01:8765/recordings/beacon/"
     "ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z"
 )
+_RETRO_QAM_REPORT_PATH: Final = "/canaries/retro-qam/report"
+_RETRO_QAM_REPORT_URL: Final = (
+    "https://github.com/misko/leo-tracker-redux/blob/main/"
+    "reports/qam_retro_investigation.md"
+)
 
 
 class DashboardUiApplication:
@@ -55,6 +60,16 @@ class DashboardUiApplication:
                     "text/javascript; charset=utf-8",
                     "public, max-age=300",
                     (package / "dashboard.js").read_bytes(),
+                ),
+                "/canaries/retro-qam": (
+                    "text/html; charset=utf-8",
+                    "no-store",
+                    (package / "retro-qam-canary.html").read_bytes(),
+                ),
+                "/assets/retro-qam-canary.js": (
+                    "text/javascript; charset=utf-8",
+                    "public, max-age=300",
+                    (package / "retro-qam-canary.js").read_bytes(),
                 ),
                 "/assets/recording-detail.js": (
                     "text/javascript; charset=utf-8",
@@ -105,14 +120,18 @@ class DashboardUiApplication:
         )
 
     def handle(self, request: JsonRequest) -> JsonResponse:
-        if request.path == _RETRO_QAM_SOURCE_PATH and request.method.upper() in {
+        redirects = {
+            _RETRO_QAM_SOURCE_PATH: _RETRO_QAM_SOURCE_URL,
+            _RETRO_QAM_REPORT_PATH: _RETRO_QAM_REPORT_URL,
+        }
+        if request.path in redirects and request.method.upper() in {
             "GET",
             "HEAD",
         }:
             return JsonResponse(
                 302,
                 (
-                    ("location", _RETRO_QAM_SOURCE_URL),
+                    ("location", redirects[request.path]),
                     ("cache-control", "no-store"),
                     *_SECURITY_HEADERS,
                 ),

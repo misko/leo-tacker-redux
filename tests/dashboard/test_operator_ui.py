@@ -300,6 +300,24 @@ def test_retro_qam_source_recording_link_redirects_to_historical_detail() -> Non
     )
 
 
+def test_retro_qam_has_native_detail_page_and_report_link() -> None:
+    app = application()
+    page = app.handle(JsonRequest("GET", "/canaries/retro-qam", {}))
+    assert page.status == 200
+    html = page.body.decode()
+    assert "RETRO QAM canary" in html
+    assert "/canaries/retro-qam/source-recording" in html
+    assert "/canaries/retro-qam/report" in html
+    assert (
+        app.handle(JsonRequest("GET", "/assets/retro-qam-canary.js", {})).status == 200
+    )
+    report = app.handle(JsonRequest("GET", "/canaries/retro-qam/report", {}))
+    assert report.status == 302
+    assert dict(report.headers)["location"].endswith(
+        "reports/qam_retro_investigation.md"
+    )
+
+
 def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -> None:
     app = application()
     javascript = app.handle(
