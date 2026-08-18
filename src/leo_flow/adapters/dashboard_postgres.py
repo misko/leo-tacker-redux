@@ -124,6 +124,11 @@ from leo_flow.contracts.starlink_pilot_prescreen import (
     RecordingStarlinkPilotPrescreenViewV0_1,
     StarlinkPilotPrescreenQueryV0_1,
 )
+from leo_flow.contracts.starlink_pilot_refinement import (
+    RecordingStarlinkPilotRefinementQueryPortV0_1,
+    RecordingStarlinkPilotRefinementViewV0_1,
+    StarlinkPilotRefinementQueryV0_1,
+)
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkCandidateViewV0_1
 from leo_flow.contracts.starlink_suite_pipeline import RecordingStarlinkSuiteViewV0_2
 from leo_flow.contracts.starlink_surrogate_null_pipeline import (
@@ -202,6 +207,7 @@ class PostgresDashboardRepository:
         | None = None,
         adaptive_qam: RecordingStarlinkAdaptiveQamQueryPortV0_4 | None = None,
         pilot_prescreens: RecordingStarlinkPilotPrescreenQueryPortV0_1 | None = None,
+        pilot_refinements: RecordingStarlinkPilotRefinementQueryPortV0_1 | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -234,6 +240,7 @@ class PostgresDashboardRepository:
         self._adaptive_responses = adaptive_responses
         self._adaptive_qam = adaptive_qam
         self._pilot_prescreens = pilot_prescreens
+        self._pilot_refinements = pilot_refinements
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
@@ -336,6 +343,20 @@ class PostgresDashboardRepository:
         except LookupError as error:
             raise DashboardNotFound(
                 f"pilot prescreen for recording {query.recording_id} was not found"
+            ) from error
+
+    def recording_starlink_pilot_refinement(
+        self, query: StarlinkPilotRefinementQueryV0_1
+    ) -> RecordingStarlinkPilotRefinementViewV0_1:
+        if self._pilot_refinements is None:
+            raise DashboardNotFound(
+                f"pilot refinement for recording {query.recording_id} is unavailable"
+            )
+        try:
+            return self._pilot_refinements.recording_starlink_pilot_refinement(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"pilot refinement for recording {query.recording_id} was not found"
             ) from error
 
     def recording_pilot_doppler_association(

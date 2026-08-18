@@ -81,6 +81,9 @@ from leo_flow.contracts.starlink_pilot_constellation_pipeline import (
 from leo_flow.contracts.starlink_pilot_prescreen import (
     RecordingStarlinkPilotPrescreenQueryPortV0_1,
 )
+from leo_flow.contracts.starlink_pilot_refinement import (
+    RecordingStarlinkPilotRefinementQueryPortV0_1,
+)
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
 from leo_flow.contracts.starlink_suite_pipeline import (
     RecordingStarlinkSuiteQueryPortV0_2,
@@ -117,6 +120,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV25,
     DashboardJsonApplicationV26,
     DashboardJsonApplicationV27,
+    DashboardJsonApplicationV28,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -322,6 +326,14 @@ class DashboardV27QueryPort(
     """Add complete-IQ pattern-blind pilot-prescreen timelines."""
 
 
+class DashboardV28QueryPort(
+    DashboardV27QueryPort,
+    RecordingStarlinkPilotRefinementQueryPortV0_1,
+    Protocol,
+):
+    """Add exact Qin/surrogate responses at complete-IQ prescreen seeds."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -392,6 +404,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV27Quer
     adaptive_responses = None
     adaptive_qam = None
     pilot_prescreens = None
+    pilot_refinements = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
         from leo_flow.adapters.dashboard_doppler_projection import (
@@ -589,6 +602,23 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV27Quer
             ),
             pilot_prescreen_catalog,
         )
+        from leo_flow.adapters.starlink_pilot_refinement_postgres import (
+            PostgresStarlinkPilotRefinementCatalogV0_1,
+        )
+        from leo_flow.analysis.recording.starlink_pilot_refinement_persistence import (
+            DurableRecordingStarlinkPilotRefinementQueryV0_1,
+            DurableStarlinkPilotRefinementStoreV0_1,
+            StarlinkPilotRefinementBlobStore,
+        )
+
+        pilot_refinement_catalog = PostgresStarlinkPilotRefinementCatalogV0_1(connect)
+        pilot_refinements = DurableRecordingStarlinkPilotRefinementQueryV0_1(
+            DurableStarlinkPilotRefinementStoreV0_1(
+                cast(StarlinkPilotRefinementBlobStore, blobs),
+                pilot_refinement_catalog,
+            ),
+            pilot_refinement_catalog,
+        )
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
@@ -605,6 +635,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV27Quer
         adaptive_responses=adaptive_responses,
         adaptive_qam=adaptive_qam,
         pilot_prescreens=pilot_prescreens,
+        pilot_refinements=pilot_refinements,
     )
 
 
@@ -629,7 +660,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV27QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV28QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -671,10 +702,11 @@ def _build_dashboard(
     v25 = DashboardJsonApplicationV25(v24, queries)
     v26 = DashboardJsonApplicationV26(v25, queries)
     v27 = DashboardJsonApplicationV27(v26, queries)
+    v28 = DashboardJsonApplicationV28(v27, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v27),
+        DashboardUiApplication(v28),
         diagnostics=diagnostics,
     )
 

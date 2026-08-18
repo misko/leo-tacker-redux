@@ -24,6 +24,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV25,
     DashboardJsonApplicationV26,
     DashboardJsonApplicationV27,
+    DashboardJsonApplicationV28,
     JsonRequest,
     JsonResponse,
 )
@@ -68,6 +69,7 @@ class EvidencePorts:
         self.timeline_queries: list[Any] = []
         self.pilot_doppler_queries: list[Any] = []
         self.pilot_prescreen_queries: list[Any] = []
+        self.pilot_refinement_queries: list[Any] = []
         self.approach_queries: list[str] = []
 
     def recording_evidence_context(self, recording_id: RecordingId) -> dict[str, Any]:
@@ -197,9 +199,11 @@ class EvidencePorts:
         if identity is None:
             raise DashboardNotFound("pilot prescreen recording was not found")
         radio, receiver, lnb, segment = identity
-        if not _matches(query.radio_ids, radio) or not _matches(
-            query.receiver_chain_ids, receiver
-        ) or (query.lnb_ids and lnb not in query.lnb_ids):
+        if (
+            not _matches(query.radio_ids, radio)
+            or not _matches(query.receiver_chain_ids, receiver)
+            or (query.lnb_ids and lnb not in query.lnb_ids)
+        ):
             streams = []
         else:
             windows = [
@@ -219,22 +223,24 @@ class EvidencePorts:
                 }
                 for index in range(4)
             ]
-            streams = [{
-                "selection": {
-                    "radio_id": radio,
-                    "lnb_id": lnb,
-                    "segment_id": segment,
-                    "receiver_chain_id": receiver,
-                    "channel_number": 4,
-                    "edge": "lower",
-                    "sample_rate_hz": 2_500_000,
-                    "segment_sample_count": 80_000,
-                },
-                "windows": windows,
-                "original_window_count": 4,
-                "analyzed_sample_count": 80_000,
-                "coverage_fraction": 1.0,
-            }]
+            streams = [
+                {
+                    "selection": {
+                        "radio_id": radio,
+                        "lnb_id": lnb,
+                        "segment_id": segment,
+                        "receiver_chain_id": receiver,
+                        "channel_number": 4,
+                        "edge": "lower",
+                        "sample_rate_hz": 2_500_000,
+                        "segment_sample_count": 80_000,
+                    },
+                    "windows": windows,
+                    "original_window_count": 4,
+                    "analyzed_sample_count": 80_000,
+                    "coverage_fraction": 1.0,
+                }
+            ]
         return {
             "recording_id": str(query.recording_id),
             "plan": {
@@ -247,6 +253,97 @@ class EvidencePorts:
             "truncated": False,
             "candidate_only": True,
             "calibrated_detection_count": None,
+        }
+
+    def recording_starlink_pilot_refinement(self, query: Any) -> dict[str, Any]:
+        self.pilot_refinement_queries.append(query)
+        if str(query.recording_id) in self.missing_detector_recordings:
+            raise DashboardNotFound("pilot refinement recording was not found")
+        self._raise_for_state(self.detector_state, "pilot refinement")
+        identity = _identity(str(query.recording_id))
+        if identity is None:
+            raise DashboardNotFound("pilot refinement recording was not found")
+        radio, receiver, lnb, segment = identity
+        if (
+            not _matches(query.radio_ids, radio)
+            or not _matches(query.receiver_chain_ids, receiver)
+            or (query.lnb_ids and lnb not in query.lnb_ids)
+            or (
+                query.edges
+                and "lower" not in {str(value.value) for value in query.edges}
+            )
+        ):
+            streams: list[dict[str, Any]] = []
+        else:
+            seeds = [
+                {
+                    "seed_index": 0,
+                    "start_sample": 0,
+                    "stop_sample": 20_000,
+                    "ofdm_periodicity_score": 0.72,
+                    "mean_power_counts_squared": 1000.0,
+                    "periodicity_rank": 0,
+                    "power_rank": None,
+                },
+                {
+                    "seed_index": 1,
+                    "start_sample": 20_000,
+                    "stop_sample": 40_000,
+                    "ofdm_periodicity_score": 0.64,
+                    "mean_power_counts_squared": 1200.0,
+                    "periodicity_rank": None,
+                    "power_rank": 0,
+                },
+            ]
+            points = []
+            for method_offset, method in enumerate(query.methods):
+                for window_index in range(2):
+                    qin = 0.84 - method_offset * 0.08 - window_index * 0.02
+                    points.append(
+                        {
+                            "method": method.value,
+                            "window_index": window_index,
+                            "interval_start_utc_ns": 1_000_000_000
+                            + window_index * 10_000_000,
+                            "interval_stop_utc_ns": 1_010_000_000
+                            + window_index * 10_000_000,
+                            "qin": {"score": qin},
+                            "surrogates": [
+                                {"winner": {"score": qin - 0.25}},
+                                {"winner": {"score": qin - 0.30}},
+                                {"winner": {"score": qin - 0.35}},
+                                {"winner": {"score": qin - 0.40}},
+                            ],
+                            "finite_upper_tail_rank": 1,
+                            "qin_minus_max_surrogate": 0.25,
+                        }
+                    )
+            streams = [
+                {
+                    "selection": {
+                        "radio_id": radio,
+                        "lnb_id": lnb,
+                        "segment_id": segment,
+                        "receiver_chain_id": receiver,
+                        "channel_number": 4,
+                        "edge": "lower",
+                        "sample_rate_hz": 2_500_000.0,
+                        "segment_sample_count": 60_000,
+                        "seeds": seeds,
+                    },
+                    "points": points,
+                    "original_point_count": len(points),
+                    "exact_covered_sample_count": 40_000,
+                    "exact_coverage_fraction": 2 / 3,
+                }
+            ]
+        return {
+            "recording_id": str(query.recording_id),
+            "candidate_only": True,
+            "calibration_required": True,
+            "streams": streams,
+            "original_point_count": sum(len(stream["points"]) for stream in streams),
+            "truncated": False,
         }
 
     def recording_starlink_adaptive_qam(self, query: Any) -> dict[str, Any]:
@@ -823,7 +920,8 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
     v24 = DashboardJsonApplicationV24(v23, fixture_port)
     v25 = DashboardJsonApplicationV25(v24, fixture_port)
     v26 = DashboardJsonApplicationV26(v25, fixture_port)
-    return DashboardUiApplication(DashboardJsonApplicationV27(v26, fixture_port))
+    v27 = DashboardJsonApplicationV27(v26, fixture_port)
+    return DashboardUiApplication(DashboardJsonApplicationV28(v27, fixture_port))
 
 
 @contextmanager
@@ -934,17 +1032,15 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             )
             expect(approaches).to_contain_text("Complete IQ power timeline")
             expect(approaches).to_contain_text(
-                "Symmetric adaptive Qin + surrogate search"
+                "Complete-IQ prescreen-selected exact Qin + surrogate search"
             )
-            expect(approaches).to_contain_text("stages sentinel, local")
+            expect(approaches).to_contain_text("top-ofdm-periodicity + top-power")
             expect(approaches).to_contain_text(
-                "same union of sentinel, power-seed, Qin-selected, surrogate-selected"
+                "same selected windows and full epoch/CFO grid for Qin and all four precommitted surrogates"
             )
+            expect(approaches).to_contain_text("complete-IQ selection")
             expect(approaches).to_contain_text(
-                "each Qin/surrogate pattern independently searches one full-frame epoch/CFO winner"
-            )
-            expect(approaches).to_contain_text(
-                "conditioned algorithm score vs exact-window UTC"
+                "Qin and surrogate algorithm scores vs exact-window UTC"
             )
             expect(approaches).to_contain_text("Basic blind Doppler track")
             expect(approaches).to_contain_text("Advanced-path-only Doppler")
@@ -1025,8 +1121,11 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             )
             assert len(ports.pilot_prescreen_queries) == 2
             assert all(
-                query.maximum_points == 8192
-                for query in ports.pilot_prescreen_queries
+                query.maximum_points == 8192 for query in ports.pilot_prescreen_queries
+            )
+            assert len(ports.pilot_refinement_queries) == 2
+            assert all(
+                query.maximum_points == 4096 for query in ports.pilot_refinement_queries
             )
 
             page.locator("#evidence-mode").select_option("windows")
@@ -1066,7 +1165,7 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             )
             assert all(
                 method.value != "anchor-8"
-                for method in ports.detector_queries[-1].methods
+                for method in ports.pilot_refinement_queries[-1].methods
             )
             page.locator('#evidence-methods input[value="anchor-8"]').check()
 
