@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -43,6 +44,41 @@ class _NotFoundApplication:
             (("content-type", "application/json; charset=utf-8"),),
             b'{"error":{"code":"not_found","message":"fixture route absent"}}',
         )
+
+
+class _DelayedEvidenceApplication:
+    """Measure real evidence-handler overlap without browser interception."""
+
+    _PREFIXES = tuple(f"/api/v{version}/" for version in (15, 16, 17, 19, 24, 26, 28))
+
+    def __init__(self, delay_s: float) -> None:
+        self.delay_s = delay_s
+        self.application: DashboardUiApplication | None = None
+        self.active = 0
+        self.maximum_active = 0
+        self.paths: list[str] = []
+        self._lock = threading.Lock()
+
+    def bind(self, application: DashboardUiApplication) -> None:
+        self.application = application
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        application = self.application
+        assert application is not None
+        measured = request.path.startswith(self._PREFIXES)
+        if measured:
+            with self._lock:
+                self.active += 1
+                self.maximum_active = max(self.maximum_active, self.active)
+                self.paths.append(request.path)
+        try:
+            if measured:
+                time.sleep(self.delay_s)
+            return application.handle(request)
+        finally:
+            if measured:
+                with self._lock:
+                    self.active -= 1
 
 
 class EvidencePorts:
@@ -925,10 +961,22 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
 
 
 @contextmanager
-def running_dashboard(ports: EvidencePorts) -> Iterator[str]:
-    server = StdlibDashboardServer(request_timeout_s=0.01)
+def running_dashboard(
+    ports: EvidencePorts,
+    *,
+    maximum_concurrent_requests: int = 4,
+    delay_probe: _DelayedEvidenceApplication | None = None,
+) -> Iterator[str]:
+    server = StdlibDashboardServer(
+        request_timeout_s=0.01,
+        maximum_concurrent_requests=maximum_concurrent_requests,
+    )
     server.preflight("127.0.0.1", 0)
-    application = _application(ports)
+    base_application = _application(ports)
+    application: Any = base_application
+    if delay_probe is not None:
+        delay_probe.bind(base_application)
+        application = delay_probe
     stopped = threading.Event()
 
     def serve() -> None:
@@ -1264,6 +1312,54 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             page.locator('#evidence-edges input[value="lower"]').check()
         finally:
             browser.close()
+
+
+def test_detail_page_overlaps_real_evidence_handlers_with_a_worker_bound() -> None:
+    def measure(browser: Any, maximum: int) -> tuple[float, _DelayedEvidenceApplication]:
+        probe = _DelayedEvidenceApplication(delay_s=0.08)
+        with running_dashboard(
+            EvidencePorts(),
+            maximum_concurrent_requests=maximum,
+            delay_probe=probe,
+        ) as base_url:
+            page = browser.new_page(viewport={"width": 1600, "height": 1300})
+            try:
+                started = time.monotonic()
+                response = page.goto(f"{base_url}/recordings/{REQUESTED}")
+                assert response is not None and response.ok
+                for product in ("timeline", "qam", "detector", "doppler"):
+                    expect(
+                        page.locator(f"#evidence-{product}-state")
+                    ).to_have_attribute("data-state", "ready")
+                statuses = page.evaluate(
+                    """async ([recording]) => Promise.all([
+                      fetch(`/api/v15/recordings/${recording}/starlink-full-dwell?methods=glrt-32&radio_ids=radio_a&receiver_chain_ids=rx_a&edges=lower&maximum_points=64`),
+                      fetch(`/api/v17/recordings/${recording}/starlink-acquired-constellation?mode=windows&maximum_windows_per_stream=8&maximum_points_per_constellation=64`),
+                      fetch(`/api/v28/recordings/${recording}/starlink-pilot-refinement?methods=glrt-32&radio_ids=radio_a&lnb_ids=lnb_authoritative_a&receiver_chain_ids=rx_a&edges=lower&maximum_points=64`),
+                    ]).then((responses) => responses.map((response) => response.status))""",
+                    [REQUESTED],
+                )
+                assert statuses == [200, 200, 200]
+                return time.monotonic() - started, probe
+            finally:
+                page.close()
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, env=browser_environment())
+        try:
+            serialized_elapsed, serialized_probe = measure(browser, 1)
+            concurrent_elapsed, concurrent_probe = measure(browser, 4)
+        finally:
+            browser.close()
+
+    for probe in (serialized_probe, concurrent_probe):
+        requested_versions = {
+            int(path.split("/", 3)[2].removeprefix("v")) for path in probe.paths
+        }
+        assert {15, 16, 17, 19, 24, 26, 28} <= requested_versions
+    assert serialized_probe.maximum_active == 1
+    assert 2 <= concurrent_probe.maximum_active <= 4
+    assert concurrent_elapsed < serialized_elapsed * 0.65
 
 
 def test_detail_page_combines_only_exact_time_known_pilot_receiver_pairs() -> None:
