@@ -8,6 +8,8 @@ until the assembled service enters preflight or handles a request.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -36,6 +38,10 @@ from leo_flow.contracts.dashboard_recording import (
 from leo_flow.contracts.dashboard_recording_evidence import (
     RecordingEvidenceContextQueryPortV0_1,
     RecordingEvidenceDopplerQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_retro_qam_canary import (
+    RetroQamCanaryDashboardQueryPortV0_1,
+    RetroQamCanaryDashboardViewV0_1,
 )
 from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionQueryPortV0_2,
@@ -88,6 +94,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV18,
     DashboardJsonApplicationV19,
     DashboardJsonApplicationV20,
+    DashboardJsonApplicationV21,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -117,6 +124,11 @@ _POSTGRES_TIMEOUT_S = 5
 
 class DashboardRuntimeDependencyError(RuntimeError):
     """The selected dashboard runtime dependency is unavailable."""
+
+
+class _UnavailableRetroQamCanary:
+    def latest_retro_qam_canary(self) -> RetroQamCanaryDashboardViewV0_1:
+        raise LookupError("historical QAM canary receipt is unavailable")
 
 
 class DashboardV3QueryPort(
@@ -498,10 +510,21 @@ def _build_dashboard(
     v18 = DashboardJsonApplicationV18(v17, queries)
     v19 = DashboardJsonApplicationV19(v18, queries)
     v20 = DashboardJsonApplicationV20(v19, queries)
+    canary_path = os.environ.get("LEO_RETRO_QAM_CANARY_RECEIPT")
+    canary: RetroQamCanaryDashboardQueryPortV0_1
+    if canary_path is None:
+        canary = _UnavailableRetroQamCanary()
+    else:
+        from leo_flow.adapters.dashboard_retro_qam_canary import (
+            FileRetroQamCanaryDashboardQueryV0_1,
+        )
+
+        canary = FileRetroQamCanaryDashboardQueryV0_1(Path(canary_path))
+    v21 = DashboardJsonApplicationV21(v20, canary)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v20),
+        DashboardUiApplication(v21),
         diagnostics=diagnostics,
     )
 

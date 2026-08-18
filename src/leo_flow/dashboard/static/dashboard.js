@@ -273,6 +273,58 @@ function formatRate(value) {
   return value === null || value === undefined ? "Calibration required" : `${(100 * value).toFixed(2)}%`;
 }
 
+function qamGoodnessBand(value) {
+  if (value >= 0.7) return "high";
+  if (value >= 0.35) return "moderate";
+  return "low";
+}
+
+async function loadRetroQamCanary() {
+  setState("retro-qam-canary-state", "loading", "Loading latest historical QAM acceptance receipt…");
+  const metrics = byId("retro-qam-canary-metrics");
+  const body = byId("retro-qam-canary-body");
+  const provenance = byId("retro-qam-canary-provenance");
+  metrics.hidden = true; metrics.replaceChildren(); body.replaceChildren(); provenance.replaceChildren();
+  try {
+    const payload = await fetchJson("/api/v21/canaries/retro-qam/latest");
+    if (payload.candidate_only !== true || payload.calibrated_detection !== null) throw new Error("unsafe historical canary semantics");
+    const completed = Number(payload.completed_utc_ns) / 1_000_000;
+    const ageMinutes = Math.max(0, (Date.now() - completed) / 60_000);
+    metrics.hidden = false;
+    for (const [label, value] of [
+      ["Oracle match", payload.metrics_match_oracle ? "PASS" : "FAIL"],
+      ["Combined QAM goodness", `${Number(payload.combined_qam_goodness).toFixed(3)} · ${qamGoodnessBand(Number(payload.combined_qam_goodness))}`],
+      ["Combined accuracy", `${(100 * Number(payload.combined_hard_symbol_accuracy)).toFixed(2)}%`],
+      ["Combined RMS EVM", Number(payload.combined_rms_evm).toFixed(3)],
+      ["Last run", `${formatUtcNs(payload.completed_utc_ns)} · ${ageMinutes.toFixed(1)} min ago`],
+      ["Cadence", `${Number(payload.schedule_interval_seconds) / 60} min`],
+    ]) {
+      const item = document.createElement("div"); appendText(item, "span", label, "metric-label"); appendText(item, "strong", value, "metric-value"); metrics.append(item);
+    }
+    for (const receiver of payload.receivers || []) {
+      const row = document.createElement("tr");
+      appendText(row, "td", `RX${receiver.receiver_index}`);
+      appendText(row, "td", `${Number(receiver.qam_goodness).toFixed(3)} · ${qamGoodnessBand(Number(receiver.qam_goodness))}`);
+      appendText(row, "td", `${(100 * Number(receiver.hard_symbol_accuracy)).toFixed(2)}%`);
+      appendText(row, "td", Number(receiver.rms_evm).toFixed(3));
+      appendText(row, "td", receiver.winning_epoch_sample);
+      appendText(row, "td", `${Number(receiver.winning_cfo_hz).toFixed(2)} Hz`);
+      appendText(row, "td", `${Number(receiver.held_out_verify_score).toFixed(4)} / ${Number(receiver.conditioned_control_score).toFixed(4)} (Δ ${Number(receiver.verify_minus_control_margin).toFixed(4)})`);
+      body.append(row);
+    }
+    replaceFacts(provenance, [
+      ["Corpus", payload.corpus_id],
+      ["IQ SHA-256", payload.iq_object_digest?.value || "Unavailable"],
+      ["Receipt SHA-256", payload.receipt_digest?.value || "Unavailable"],
+      ["Producer commit", payload.git_commit],
+      ["Scope", "Historical known-positive acceptance canary; not a live recording or calibrated detection"],
+    ]);
+    setState("retro-qam-canary-state", payload.metrics_match_oracle ? "ready" : "error", payload.metrics_match_oracle ? "Latest native Redux replay matches the frozen leo-tracker oracle." : "Latest replay does not match the frozen oracle; QAM/acquisition regression suspected.");
+  } catch (error) {
+    setState("retro-qam-canary-state", error?.dashboardStatus === 404 ? "missing" : "error", error?.dashboardStatus === 404 ? "No historical QAM canary receipt is available yet." : `Historical QAM canary unavailable: ${safeError(error)}`);
+  }
+}
+
 async function loadObservationAggregate(bounds) {
   setState("observation-aggregate-state", "loading", "Loading RF duty and Starlink evidence…");
   let payload;
@@ -793,6 +845,7 @@ async function refreshDashboard() {
   const results = await Promise.allSettled([
     loadActivity(currentBounds),
     loadObservationAggregate(currentBounds),
+    loadRetroQamCanary(),
     loadCaptureBatches(currentBounds, null, captureRadioFilter() !== ""),
     loadCaptureDopplerSummaries(currentBounds),
     loadRecordings(currentBounds),

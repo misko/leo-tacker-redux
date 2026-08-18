@@ -24,6 +24,7 @@
 
   <nav class="section-nav" aria-label="Dashboard sections">
     <a href="#overview">Overview</a>
+    <a href="#retro-qam-canary">QAM canary</a>
     <a href="/aggregate-stats">Aggregate stats</a>
     <a href="/aggregate-doppler">Aggregate Doppler</a>
     <a href="/full-dwell">Full-dwell responses</a>
@@ -81,6 +82,24 @@
           <tbody id="activity-body"></tbody>
         </table>
       </div>
+    </section>
+
+    <section id="retro-qam-canary" aria-labelledby="retro-qam-canary-heading">
+      <div class="section-heading">
+        <div><p class="section-index">02 / historical acceptance</p><h2 id="retro-qam-canary-heading">RETRO QAM acceptance canary</h2></div>
+        <span class="hint">Replayed every 30 minutes through native Redux; never inserted as a live recording</span>
+      </div>
+      <aside class="candidate-warning" role="note"><strong>Regression evidence, not a detection.</strong> This is the retained known-positive historical IQ window used to detect numerical regressions in acquisition and QAM separation.</aside>
+      <div id="retro-qam-canary-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading latest canary receipt…</div>
+      <div id="retro-qam-canary-metrics" class="metric-strip" hidden></div>
+      <div class="table-wrap">
+        <table>
+          <caption>Independent receiver recovery from the retained historical positive</caption>
+          <thead><tr><th scope="col">RX</th><th scope="col">QAM goodness</th><th scope="col">Accuracy</th><th scope="col">RMS EVM</th><th scope="col">Epoch</th><th scope="col">CFO</th><th scope="col">Held-out / control</th></tr></thead>
+          <tbody id="retro-qam-canary-body"></tbody>
+        </table>
+      </div>
+      <dl id="retro-qam-canary-provenance" class="fact-grid"></dl>
     </section>
 
     <section id="capture-batches" aria-labelledby="capture-batches-heading">

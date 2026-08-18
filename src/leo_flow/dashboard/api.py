@@ -54,6 +54,9 @@ from leo_flow.contracts.dashboard_recording_evidence import (
     RecordingEvidenceDopplerQueryPortV0_1,
     RecordingEvidenceDopplerQueryV0_1,
 )
+from leo_flow.contracts.dashboard_retro_qam_canary import (
+    RetroQamCanaryDashboardQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_score_distribution import (
     PointScoreDistributionQueryPortV0_2,
     ScoreDistributionQueryPortV0_1,
@@ -1006,6 +1009,44 @@ class DashboardJsonApplicationV20:
         except (ValueError, InvalidCursor) as error:
             return _error(400, "invalid_request", str(error))
         except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+class DashboardJsonApplicationV21:
+    """Expose the latest immutable historical-QAM acceptance receipt."""
+
+    _PATH = "/api/v21/canaries/retro-qam/latest"
+    _MAX_RESPONSE_BYTES = 64 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        canary: RetroQamCanaryDashboardQueryPortV0_1,
+    ) -> None:
+        self._previous, self._canary = previous, canary
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._PATH:
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            if request.query:
+                raise ValueError("retro-QAM canary query does not accept parameters")
+            encoded = canonical_json_bytes(self._canary.latest_retro_qam_canary())
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("retro-QAM canary response exceeds its byte bound")
+        except ValueError as error:
+            return _error(400, "invalid_request", str(error))
+        except LookupError as error:
             return _error(404, "not_found", str(error))
         except Exception:  # noqa: BLE001 - fixed external error contract
             return _error(500, "internal_error", "dashboard query failed")
