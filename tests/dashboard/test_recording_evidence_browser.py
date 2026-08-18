@@ -263,7 +263,8 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
             )
             goodness = page.locator("#evidence-qam-goodness .qam-goodness-entry")
             expect(goodness).to_have_count(1)
-            expect(goodness).to_have_attribute("data-goodness", "0.593175")
+            expect(goodness).to_have_attribute("data-goodness", "0.737354")
+            expect(goodness).to_have_attribute("data-goodness-band", "high")
             expect(page.locator("#evidence-detector-canvas")).to_have_attribute(
                 "data-series-count", "2"
             )
@@ -280,10 +281,16 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
             window_goodness = page.locator("#evidence-qam-goodness .qam-goodness-entry")
             expect(window_goodness).to_have_count(2)
             expect(window_goodness.nth(0)).to_have_attribute(
-                "data-goodness", "0.593175"
+                "data-goodness", "0.737354"
+            )
+            expect(window_goodness.nth(0)).to_have_attribute(
+                "data-goodness-band", "high"
             )
             expect(window_goodness.nth(1)).to_have_attribute(
                 "data-goodness", "0.000000"
+            )
+            expect(window_goodness.nth(1)).to_have_attribute(
+                "data-goodness-band", "low"
             )
             expect(page.locator("#evidence-doppler-canvas")).to_have_attribute(
                 "data-point-count", "4"

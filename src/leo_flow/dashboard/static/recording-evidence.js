@@ -173,8 +173,17 @@
     const measuredEvm = Number(rmsEvm);
     if (!Number.isFinite(measuredAccuracy) || !Number.isFinite(measuredEvm) || measuredEvm < 0) return null;
     const chanceCorrectedAccuracy = Math.max(0, Math.min(1, (measuredAccuracy - 0.25) / 0.75));
-    const compactness = 1 / (1 + measuredEvm * measuredEvm);
+    // EVM 2.0 is the diagnostic half-quality point.  This keeps the retained
+    // RETRO four-cluster examples in the high band while still driving the
+    // chance-like, EVM 18--20 controls close to zero.
+    const compactness = 1 / (1 + (measuredEvm / 2) * (measuredEvm / 2));
     return Math.sqrt(chanceCorrectedAccuracy * compactness);
+  }
+
+  function qamGoodnessBand(goodness) {
+    if (goodness >= 0.7) return "high";
+    if (goodness >= 0.35) return "moderate";
+    return "low";
   }
 
   function renderQamGoodness(entries) {
@@ -184,6 +193,7 @@
       const card = document.createElement("div");
       card.className = "qam-goodness-entry";
       card.dataset.goodness = entry.goodness.toFixed(6);
+      card.dataset.goodnessBand = qamGoodnessBand(entry.goodness);
       const label = document.createElement("span");
       label.className = "metric-label";
       label.textContent = entry.label;
@@ -191,14 +201,14 @@
       value.className = "metric-value";
       value.textContent = entry.goodness.toFixed(3);
       const detail = document.createElement("small");
-      detail.textContent = `accuracy ${(entry.accuracy * 100).toFixed(2)}% · RMS EVM ${entry.rmsEvm.toFixed(3)}`;
+      detail.textContent = `${qamGoodnessBand(entry.goodness)} · accuracy ${(entry.accuracy * 100).toFixed(2)}% · RMS EVM ${entry.rmsEvm.toFixed(3)}`;
       card.append(label, value, detail);
       target.append(card);
     }
     if (entries.length) {
       const explanation = document.createElement("p");
       explanation.className = "availability-note";
-      explanation.textContent = "QAM goodness v0.1: geometric mean of chance-corrected known-symbol accuracy and 1/(1+RMS EVM²). 0 is random/collapsed; 1 is compact ideal separation. Diagnostic only—not a calibrated detection.";
+      explanation.textContent = "QAM goodness v0.2: geometric mean of chance-corrected known-symbol accuracy and EVM compactness (EVM 2.0 is half quality). RETRO-like separated constellations rank high; random/collapsed constellations rank low. Diagnostic only—not a calibrated detection.";
       target.append(explanation);
     }
   }
