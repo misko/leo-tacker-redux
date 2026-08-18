@@ -603,6 +603,10 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             assert all(
                 query.maximum_windows_per_stream == 32 for query in ports.qam_queries
             )
+            assert all(
+                query.maximum_points_per_constellation == 128
+                for query in ports.qam_queries
+            )
 
             page.locator('#evidence-methods input[value="anchor-8"]').uncheck()
             expect(page.locator("#evidence-detector-canvas")).to_have_attribute(

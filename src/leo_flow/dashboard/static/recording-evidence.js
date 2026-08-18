@@ -340,7 +340,7 @@
       }
       const mode = node("evidence-mode").value;
       const fetched = await availablePayloads(selectedRecordings().map((recording) => {
-        const parameters = new URLSearchParams({mode, maximum_streams: "4", maximum_windows_per_stream: "32", maximum_points_per_constellation: "600"});
+        const parameters = new URLSearchParams({mode, maximum_streams: "4", maximum_windows_per_stream: "32", maximum_points_per_constellation: "128"});
         queryFilters(parameters);
         return `/api/v17/recordings/${encodeURIComponent(recording.recording_id)}/starlink-acquired-constellation?${parameters}`;
       }));
