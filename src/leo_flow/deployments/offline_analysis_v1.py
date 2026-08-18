@@ -133,6 +133,7 @@ EXPECTED_MIGRATIONS = tuple(
         (46, "starlink_adaptive_response_v0_1"),
         (47, "starlink_adaptive_qam_v0_4"),
         (48, "starlink_pilot_prescreen_v0_1"),
+        (49, "starlink_pilot_refinement_v0_1"),
     )
 )
 

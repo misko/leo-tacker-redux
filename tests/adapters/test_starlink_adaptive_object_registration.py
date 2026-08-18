@@ -17,11 +17,20 @@ from leo_flow.adapters.starlink_adaptive_response_postgres import (
 from leo_flow.adapters.starlink_adaptive_response_postgres import (
     _register_live_object as register_response_object,
 )
+from leo_flow.adapters.starlink_pilot_refinement_postgres import (
+    _cataloged as cataloged_refinement,
+)
+from leo_flow.adapters.starlink_pilot_refinement_postgres import (
+    _register_live_object as register_refinement_object,
+)
 from leo_flow.analysis.recording.starlink_adaptive_qam_persistence import (
     StarlinkAdaptiveQamConflictError,
 )
 from leo_flow.analysis.recording.starlink_adaptive_response_persistence import (
     StarlinkAdaptiveResponseConflictError,
+)
+from leo_flow.analysis.recording.starlink_pilot_refinement_persistence import (
+    StarlinkPilotRefinementConflictError,
 )
 from leo_flow.contracts.core import Digest
 from leo_flow.contracts.storage import ObjectRef
@@ -52,7 +61,7 @@ def _object() -> ObjectRef:
 
 @pytest.mark.parametrize(
     "register",
-    (register_response_object, register_qam_object),
+    (register_response_object, register_qam_object, register_refinement_object),
 )
 def test_adaptive_catalog_registers_and_verifies_its_cas_object(
     register: Callable[[Any, ObjectRef], None],
@@ -87,6 +96,7 @@ def test_adaptive_catalog_registers_and_verifies_its_cas_object(
     (
         (register_response_object, StarlinkAdaptiveResponseConflictError),
         (register_qam_object, StarlinkAdaptiveQamConflictError),
+        (register_refinement_object, StarlinkPilotRefinementConflictError),
     ),
 )
 def test_adaptive_catalog_rejects_conflicting_object_metadata(
@@ -157,6 +167,28 @@ def test_qam_catalog_restores_fixed_source_schema_identities() -> None:
     assert (
         value.source_adaptive_response_ref.schema.schema_id
         == "org.leo-flow.starlink-adaptive-response-bundle"
+    )
+    assert value.source_suite_ref.schema is not None
+    assert (
+        value.source_suite_ref.schema.schema_id
+        == "org.leo-flow.starlink-detector-suite-recording-bundle"
+    )
+
+
+def test_refinement_catalog_restores_fixed_source_schema_identities() -> None:
+    row = _catalog_row()
+    row["analysis_id"] = "slpr_" + "6" * 32
+    row["recording_identity_digest_value"] = row.pop("input_recording_digest_value")
+    row["source_prescreen_analysis_id"] = "slps_" + "7" * 32
+    row["source_prescreen_bundle_digest_value"] = Digest.sha256(b"prescreen").value
+    row["seed_count"] = 1
+
+    value = cataloged_refinement(row).projection
+
+    assert value.source_prescreen_ref.schema is not None
+    assert (
+        value.source_prescreen_ref.schema.schema_id
+        == "org.leo-flow.starlink-pilot-prescreen-bundle"
     )
     assert value.source_suite_ref.schema is not None
     assert (
