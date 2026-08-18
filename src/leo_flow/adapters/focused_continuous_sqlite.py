@@ -184,6 +184,53 @@ class SQLiteFocusedContinuousJournalV0_1:
             if cursor.rowcount != 1:
                 raise RuntimeError("focused journal recovery conflict")
 
+    def abandon_exact_analysis_process(
+        self,
+        sequence: int,
+        *,
+        expected_state: str = "analysis_running",
+        expected_error: str | None = None,
+        expected_pid: int | None = None,
+        expected_process_start_ticks: int | None = None,
+        expected_command_digest: str | None = None,
+    ) -> None:
+        """CAS one proven-dead exact analysis identity to dispatchable state."""
+        if expected_state not in {"analysis_running", "failed"}:
+            raise ValueError("only an analysis attempt may be abandoned")
+        if (expected_pid is None) != (expected_process_start_ticks is None) or (
+            expected_pid is None
+        ) != (expected_command_digest is None):
+            raise ValueError("expected analysis identity must be complete or absent")
+        if expected_pid is not None and (
+            expected_pid <= 0
+            or expected_process_start_ticks is None
+            or expected_process_start_ticks <= 0
+        ):
+            raise ValueError("expected analysis process identity must be positive")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE focused_dwell
+                   SET state='captured',error=NULL,analysis_pid=NULL,
+                       analysis_process_start_ticks=NULL,
+                       analysis_command_digest=NULL,revision=revision+1
+                 WHERE sequence=? AND state=? AND error IS ?
+                   AND analysis_pid IS ?
+                   AND analysis_process_start_ticks IS ?
+                   AND analysis_command_digest IS ?
+                """,
+                (
+                    sequence,
+                    expected_state,
+                    expected_error,
+                    expected_pid,
+                    expected_process_start_ticks,
+                    expected_command_digest,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("focused journal recovery conflict")
+
     def incomplete(self) -> tuple[FocusedContinuousRecordV0_1, ...]:
         with self._connect() as connection:
             rows = connection.execute(

@@ -83,6 +83,63 @@ def test_analysis_process_claim_and_proven_dead_recovery_are_explicit(
     assert captured.analysis_command_digest is None
 
 
+def test_analysis_recovery_cas_rejects_stale_or_inexact_identity(
+    tmp_path: Path,
+) -> None:
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    journal.insert_planned(_record(tmp_path))
+    journal.transition(0, "planned", "captured")
+    digest = "sha256:" + "b" * 64
+    journal.claim_analysis_process(
+        0, pid=123, process_start_ticks=456, command_digest=digest
+    )
+
+    with pytest.raises(RuntimeError, match="recovery conflict"):
+        journal.abandon_exact_analysis_process(
+            0,
+            expected_pid=999,
+            expected_process_start_ticks=456,
+            expected_command_digest=digest,
+        )
+
+    running = journal.get(0)
+    assert running is not None
+    assert (running.state, running.analysis_pid) == ("analysis_running", 123)
+
+
+def test_exact_identity_conflict_can_be_cas_reopened_for_analysis_only(
+    tmp_path: Path,
+) -> None:
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    journal.insert_planned(_record(tmp_path))
+    journal.transition(0, "planned", "captured")
+    digest = "sha256:" + "b" * 64
+    journal.claim_analysis_process(
+        0, pid=123, process_start_ticks=456, command_digest=digest
+    )
+    journal.transition(
+        0,
+        "analysis_running",
+        "failed",
+        error="analysis-process-identity-conflict",
+    )
+
+    journal.abandon_exact_analysis_process(
+        0,
+        expected_state="failed",
+        expected_error="analysis-process-identity-conflict",
+        expected_pid=123,
+        expected_process_start_ticks=456,
+        expected_command_digest=digest,
+    )
+
+    captured = journal.get(0)
+    assert captured is not None
+    assert captured.state == "captured"
+    assert captured.error is None
+    assert captured.analysis_pid is None
+
+
 def test_journal_preserves_failed_terminal_reason(tmp_path: Path) -> None:
     journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
     journal.insert_planned(_record(tmp_path))
