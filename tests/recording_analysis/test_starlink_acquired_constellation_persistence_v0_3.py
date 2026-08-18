@@ -217,6 +217,22 @@ def test_durable_v0_3_query_supports_overall_windows_radio_and_lnb(tmp_path) -> 
     assert len(windows.streams[0].windows) == 2
     assert len(windows.streams[0].windows[0].display_points) == 100
     assert windows.streams[0].lnb_id == "lnb-authoritative"
+    approach = query.recording_analysis_approach(request.recording_id)
+    facts = approach.qam_streams[0]
+    assert facts.lnb_id == "lnb-authoritative"
+    assert facts.window_count == 2
+    assert facts.window_sample_count == len(_products()[0])
+    assert facts.analyzed_union_sample_count == facts.segment_sample_count
+    assert facts.analyzed_union_fraction == 1.0
+    assert facts.searched_cfo_min_hz == -400_000.0
+    assert facts.searched_cfo_max_hz == 400_000.0
+    assert facts.coarse_search_cell_count > 0
+    assert facts.refinement_search_cell_count > 0
+    assert facts.hardware_calibration_state == (
+        "historical-product-profile-not-current-calibration"
+    )
+    assert approach.candidate_only and approach.calibration_required
+    assert "legacy-lnb-label-offsets-not-applied" in approach.warnings
 
 
 def test_v0_3_projection_closes_request_streams_and_window_count() -> None:

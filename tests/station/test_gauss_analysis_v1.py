@@ -259,6 +259,35 @@ def test_acquired_qam_profiles_cover_every_eligible_gauss_receiver() -> None:
     ) == len(profiles)
 
 
+def test_acquired_qam_search_is_wide_and_independent_of_mutable_lnb_labels() -> None:
+    config = analysis_v1.current_hardware_wide_acquisition_config_v0_3(2_500_000)
+    config_5m = analysis_v1.current_hardware_wide_acquisition_config_v0_3(5_000_000)
+    profiles = analysis_v1.starlink_acquired_dwell_profiles_v0_3()
+
+    assert config.receiver_cfo_profile_id == (
+        "gauss-current-hardware-independent-wide-cfo-2500000-v0.3"
+    )
+    assert config.cfo_min_hz == -1_040_000.0
+    assert config.cfo_max_hz == 1_040_000.0
+    assert config.coarse_cfo_step_hz == 160_000.0
+    assert config.fine_cfo_radius_hz == 80_000.0
+    assert len(config.coarse_cfo_hypotheses_hz) == 14
+    assert config_5m.cfo_min_hz == config.cfo_min_hz
+    assert config_5m.cfo_max_hz == config.cfo_max_hz
+    assert config_5m.coarse_cfo_step_hz == 320_000.0
+    assert config_5m.fine_cfo_radius_hz == 160_000.0
+    assert len(config_5m.coarse_cfo_hypotheses_hz) * round(5_000_000 / 750) < 100_000
+    assert all(
+        profile.acquisition_analyzer._config
+        == profile.constellation_analyzer._acquisition_config
+        for profile in profiles
+    )
+    assert all(
+        label not in config.receiver_cfo_profile_id
+        for label in ("lnb-a", "lnb-b", "lnb-c", "lnb-d", "rx_lnb")
+    )
+
+
 def test_acquired_qam_production_window_budget_is_bounded_for_live_cadence() -> None:
     assert analysis_v1.ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM == 8
 

@@ -67,6 +67,10 @@ from leo_flow.contracts.dashboard_full_dwell_timeline import (
 )
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
+from leo_flow.contracts.dashboard_recording_analysis_approach import (
+    RecordingAnalysisApproachQueryPortV0_1,
+    RecordingAnalysisApproachViewV0_1,
+)
 from leo_flow.contracts.dashboard_recording_evidence import (
     RecordingEvidenceContextViewV0_1,
     RecordingEvidenceDopplerQueryV0_1,
@@ -172,6 +176,7 @@ class PostgresDashboardRepository:
         full_dwell: RecordingStarlinkFullDwellQueryPortV0_1 | None = None,
         full_dwell_timeline: RecordingFullDwellTimelineQueryPortV0_1 | None = None,
         acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3 | None = None,
+        analysis_approaches: RecordingAnalysisApproachQueryPortV0_1 | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -200,6 +205,7 @@ class PostgresDashboardRepository:
         self._full_dwell = full_dwell
         self._full_dwell_timeline = full_dwell_timeline
         self._acquired_qam = acquired_qam
+        self._analysis_approaches = analysis_approaches
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
@@ -237,6 +243,20 @@ class PostgresDashboardRepository:
         except LookupError as error:
             raise DashboardNotFound(
                 f"acquired-QAM evidence for recording {query.recording_id} was not found"
+            ) from error
+
+    def recording_analysis_approach(
+        self, recording_id: RecordingId
+    ) -> RecordingAnalysisApproachViewV0_1:
+        if self._analysis_approaches is None:
+            raise DashboardNotFound(
+                f"analysis approaches for recording {recording_id} are unavailable"
+            )
+        try:
+            return self._analysis_approaches.recording_analysis_approach(recording_id)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"analysis approaches for recording {recording_id} were not found"
             ) from error
 
     def recording_evidence_context(

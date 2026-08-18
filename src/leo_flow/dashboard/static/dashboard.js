@@ -518,12 +518,12 @@ function appendBatchAttemptRow(body, batch, attempt) {
   satellitesCell.title = "Recording-to-satellite association is not available in the dashboard contract";
   row.append(satellitesCell);
 
+  body.append(row);
   if (attempt.recording_id) {
     const detailHref = `/recordings/${encodeURIComponent(attempt.recording_id)}`;
     makeCaptureRowNavigable(row, detailHref, attempt);
     requestCaptureDuration(attempt.recording_id);
   }
-  body.append(row);
 }
 
 function captureBatchProgress(visibleCount) {

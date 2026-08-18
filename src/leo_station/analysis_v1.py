@@ -615,7 +615,14 @@ def starlink_full_dwell_profiles_v0_1() -> tuple[FullDwellAnalysisProfileV0_1, .
 def starlink_acquired_dwell_profiles_v0_3() -> tuple[
     StarlinkAcquiredDwellCompositionProfileV0_3, ...
 ]:
-    """Bind Gauss receiver identities to the additive bounded QAM analysis."""
+    """Bind current receiver identities to one label-independent CFO search.
+
+    LNB letters and receiver-chain labels are hardware-assignment provenance,
+    not frequency-calibration keys.  The physical search is therefore the same
+    for every currently assigned receiver.  In particular, this must never
+    inherit numerical offsets from historical ``lnb-a``/``lnb-b``/etc. labels:
+    those devices have been rearranged since the oracle captures were made.
+    """
     from leo_flow.services.starlink_acquired_constellation_analysis import (
         StarlinkAcquiredDwellCompositionProfileV0_3,
     )
@@ -630,15 +637,11 @@ def starlink_acquired_dwell_profiles_v0_3() -> tuple[
             receiver_id,
             StarlinkDetectorSuiteV0_2(profile.config, _starlink_suite_execution()),
             StarlinkAcquisitionV0_3(
-                StarlinkAcquisitionConfigV0_3(
-                    f"gauss-{receiver_id}-edge-pilot-cfo-v0.3"
-                ),
+                current_hardware_wide_acquisition_config_v0_3(profile.sample_rate_hz),
                 _starlink_suite_execution(),
             ),
             StarlinkAcquiredPilotConstellationAnalyzerV0_3(
-                StarlinkAcquisitionConfigV0_3(
-                    f"gauss-{receiver_id}-edge-pilot-cfo-v0.3"
-                ),
+                current_hardware_wide_acquisition_config_v0_3(profile.sample_rate_hz),
                 STARLINK_PILOT_CONSTELLATION_CONFIG,
                 _starlink_pilot_constellation_execution(),
             ),
@@ -646,6 +649,30 @@ def starlink_acquired_dwell_profiles_v0_3() -> tuple[
         for profile in STARLINK_SUITE_PROFILES
         if profile.eligible
         for receiver_id in receiver_ids
+    )
+
+
+def current_hardware_wide_acquisition_config_v0_3(
+    sample_rate_hz: float = 2_500_000,
+) -> StarlinkAcquisitionConfigV0_3:
+    """Return the current label-independent physical CFO search contract.
+
+    The +/-1.04 MHz domain is a bounded acquisition fallback, not an LNB
+    correction and not a calibrated detection rule.  A future effective-dated
+    calibration may narrow this domain only when it is bound to an immutable
+    hardware snapshot taken for the current installation.
+    """
+
+    if sample_rate_hz not in (2_500_000, 5_000_000):
+        raise ValueError("current wide acquisition has no approved sample-rate profile")
+    exact_sample_rate_hz = int(sample_rate_hz)
+    coarse_step_hz = 160_000.0 if sample_rate_hz == 2_500_000 else 320_000.0
+    return StarlinkAcquisitionConfigV0_3(
+        f"gauss-current-hardware-independent-wide-cfo-{exact_sample_rate_hz}-v0.3",
+        cfo_min_hz=-1_040_000.0,
+        cfo_max_hz=1_040_000.0,
+        coarse_cfo_step_hz=coarse_step_hz,
+        fine_cfo_radius_hz=coarse_step_hz / 2,
     )
 
 

@@ -13,6 +13,7 @@
 
   let context = null;
   let generation = 0;
+  const approachRows = new Map();
   const colors = ["#80d8ff", "#fff176", "#ff8a80", "#69f0ae", "#ce93d8", "#ffb74d", "#90caf9", "#a5d6a7"];
 
   function state(product, value, message) {
@@ -21,7 +22,7 @@
     target.textContent = message;
     const badge = node(`evidence-${product}-badge`);
     if (badge) {
-      badge.textContent = value === "ready" ? (product === "timeline" ? "Full coverage" : "Candidate evidence") : value;
+      badge.textContent = value === "ready" ? (product === "timeline" ? "Full coverage" : product === "approaches" ? "Exact product facts" : "Candidate evidence") : value;
       badge.dataset.tone = value === "error" ? "error" : "warning";
     }
   }
@@ -83,6 +84,61 @@
 
   function identity(parts) {
     return parts.filter((item) => item !== undefined && item !== null && item !== "").join(" · ");
+  }
+
+  function duration(samples, rate) {
+    const seconds = Number(samples) / Number(rate);
+    return seconds < 1 ? `${(seconds * 1000).toFixed(3)} ms` : `${seconds.toFixed(3)} s`;
+  }
+
+  function percent(value) { return `${(100 * Number(value)).toFixed(4)}%`; }
+
+  function setApproachRows(kind, rows) {
+    for (const key of [...approachRows.keys()]) if (key.startsWith(`${kind}:`)) approachRows.delete(key);
+    rows.forEach((row, index) => approachRows.set(`${kind}:${row.key || index}`, row));
+    renderApproachRows();
+  }
+
+  function renderApproachRows() {
+    const body = node("evidence-approaches-body");
+    body.replaceChildren();
+    const rows = [...approachRows.values()].sort((left, right) => `${left.approach}:${left.scope}`.localeCompare(`${right.approach}:${right.scope}`));
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      tr.dataset.approach = row.kind;
+      for (const value of [row.approach, row.scope, row.window, row.coverage, row.search, row.response, row.status]) {
+        const td = document.createElement("td"); td.textContent = value; tr.append(td);
+      }
+      body.append(tr);
+    }
+    state("approaches", rows.length ? "ready" : "pending", rows.length ? `${rows.length} exact product-plan row(s). No historical LNB-label correction is inferred.` : "Exact persisted search and windowing facts are pending.");
+  }
+
+  async function loadApproaches(current) {
+    try {
+      const fetched = await availablePayloads(selectedRecordings().map((recording) => `/api/v23/recordings/${encodeURIComponent(recording.recording_id)}/analysis-approaches`));
+      if (current !== generation) return;
+      const rows = [];
+      for (const payload of fetched.payloads) {
+        if (payload.candidate_only !== true || payload.calibration_required !== true) throw new Error("unsafe analysis-approach semantics");
+        for (const stream of payload.qam_streams || []) rows.push({
+          kind: "qam",
+          key: identity([payload.recording_id, stream.radio_id, stream.receiver_chain_id, stream.edge]),
+          approach: "Acquired pilot QAM v0.3",
+          scope: identity([payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge]),
+          window: `${stream.window_count} × ${duration(stream.window_sample_count, stream.sample_rate_hz)}; ${stream.sampling_plan}`,
+          coverage: `${duration(stream.analyzed_union_sample_count, stream.sample_rate_hz)} / ${duration(stream.segment_sample_count, stream.sample_rate_hz)} (${percent(stream.analyzed_union_fraction)})`,
+          search: `${(Number(stream.searched_cfo_min_hz) / 1000).toFixed(1)}…${(Number(stream.searched_cfo_max_hz) / 1000).toFixed(1)} kHz physical CFO; ${Number(stream.coarse_search_cell_count).toLocaleString()} coarse + ${Number(stream.refinement_search_cell_count).toLocaleString()} refinement cells; ${stream.hardware_calibration_state}; profile ${stream.receiver_cfo_profile_ids.join(", ")}`,
+          response: `known-pilot constellation, accuracy, EVM, goodness; winning CFO ${(Number(stream.winning_cfo_min_hz) / 1000).toFixed(1)}…${(Number(stream.winning_cfo_max_hz) / 1000).toFixed(1)} kHz`,
+          status: `${stream.overall_derivation}; ${stream.retained_candidate_count} retained basins; candidate-only; whole-search calibration required`,
+        });
+      }
+      if (!rows.length && fetched.missingCount) rows.push({kind: "qam", key: "pending", approach: "Acquired pilot QAM v0.3", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "pending", response: "QAM evidence pending", status: "not yet published"});
+      setApproachRows("qam", rows);
+    } catch (error) {
+      if (current !== generation) return;
+      setApproachRows("qam", [{kind: "qam", key: "error", approach: "Acquired pilot QAM v0.3", scope: "selected recording(s)", window: "unavailable", coverage: "unavailable", search: "unavailable", response: "QAM approach query failed", status: error.message}]);
+    }
   }
 
   function seriesLegend(targetId, series) {
@@ -240,7 +296,7 @@
       if (!fetched.payloads.length) {
         node("evidence-timeline-canvas").hidden = true; node("evidence-timeline-legend").replaceChildren(); state("timeline", "pending", "The complete IQ tile timeline is pending for every selected recording."); return;
       }
-      const series = []; const widths = new Set(); let original = 0; let returned = 0; let truncated = false;
+      const series = []; const approach = []; const widths = new Set(); let original = 0; let returned = 0; let truncated = false;
       for (const payload of fetched.payloads) {
         if (payload.candidate_only !== true || payload.calibrated_detection_count !== null) throw new Error("unsafe full-dwell timeline semantics");
         original += Number(payload.original_window_count || 0); returned += Number(payload.returned_window_count || 0); truncated ||= payload.truncated === true;
@@ -249,12 +305,21 @@
           if (!receivers.has(stream.receiver_chain_id) || !lnbs.has(lnb) || !channels.has(Number(stream.channel_number)) || !edges.includes(stream.edge)) continue;
           widths.add((1000 * Number(payload.prescreen_window_samples) / Number(stream.sample_rate_hz)).toFixed(3));
           const base = identity([payload.recording_id, stream.radio_id, lnb, stream.receiver_chain_id, `CH${stream.channel_number}`, stream.edge]);
+          approach.push({
+            kind: "timeline", key: base, approach: "Complete IQ power timeline", scope: base,
+            window: `${stream.original_window_count} contiguous × ${duration(payload.prescreen_window_samples, stream.sample_rate_hz)}; stride ${duration(payload.prescreen_stride_samples, stream.sample_rate_hz)}; short tail retained`,
+            coverage: `${duration(stream.segment_sample_count, stream.sample_rate_hz)} / ${duration(stream.segment_sample_count, stream.sample_rate_hz)} (${percent(stream.prescreen_coverage_fraction)})`,
+            search: "pattern-blind mean complex power; deterministic top-power exact-refinement selection",
+            response: "power vs UTC for every raw-IQ tile",
+            status: `${percent(stream.exact_coverage_fraction)} selected for exact detector refinement; power is not detection`,
+          });
           const points = (stream.windows || []).map((window) => ({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: 10 * Math.log10(Math.max(Number(window.mean_complex_power), 1e-30))}));
           series.push({label: `${base} · every IQ tile`, points});
           const selected = (stream.windows || []).filter((window) => window.selected_for_exact_refinement).map((window) => ({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: 10 * Math.log10(Math.max(Number(window.mean_complex_power), 1e-30))}));
           if (selected.length) series.push({label: `${base} · exact-refinement selection`, points: selected});
         }
       }
+      setApproachRows("timeline", approach);
       drawChart("evidence-timeline-canvas", series, "mean complex power [dB arb.]", "windows", "UTC tile midpoint");
       seriesLegend("evidence-timeline-legend", series);
       const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
@@ -263,6 +328,7 @@
       if (current !== generation) return;
       node("evidence-timeline-canvas").hidden = true; node("evidence-timeline-legend").replaceChildren();
       state("timeline", error.status === 404 ? "pending" : "error", error.status === 404 ? "The complete IQ tile timeline is pending or unavailable." : `IQ tile timeline failed: ${error.message}`);
+      setApproachRows("timeline", [{kind: "timeline", key: "pending", approach: "Complete IQ power timeline", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "pattern-blind", response: "power vs UTC", status: error.status === 404 ? "not yet published" : error.message}]);
     }
   }
 
@@ -270,7 +336,7 @@
     state("qam", "pending", "Loading bounded acquired-QAM evidence…");
     try {
       if (!selectedRecordings().length || !checked("lnb").length || !checked("receiver").length || !checked("edge").length) {
-        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
+        node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
       }
       const mode = node("evidence-mode").value;
       const fetched = await availablePayloads(selectedRecordings().map((recording) => {
@@ -280,16 +346,17 @@
       }));
       if (current !== generation) return;
       if (!fetched.payloads.length) {
-        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
+        node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
         state("qam", "pending", "Acquired-QAM evidence is pending for every selected recording."); return;
       }
       const lnbSet = new Set(checked("lnb")); const receiverSet = new Set(checked("receiver")); const edgeSet = new Set(checked("edge"));
-      const series = []; const goodnessEntries = [];
+      const series = []; const goodnessEntries = []; const goodnessSeries = [];
       for (const payload of fetched.payloads) {
         if (payload.candidate_only !== true || payload.calibration_required !== true) throw new Error("unsafe acquired-QAM semantics");
         for (const stream of payload.streams || []) {
           if (!lnbSet.has(stream.lnb_id) || !receiverSet.has(stream.receiver_chain_id) || !edgeSet.has(stream.edge)) continue;
           const windows = stream.windows || [];
+          const timePoints = [];
           windows.forEach((window, index) => {
             const points = window.display_points || window.points || [];
             if (!points.length) return;
@@ -301,16 +368,20 @@
             const accuracy = mode === "windows" ? window.hard_symbol_accuracy : stream.overall?.support_weighted_hard_symbol_accuracy;
             const rmsEvm = mode === "windows" ? window.rms_evm : stream.overall?.support_weighted_rms_evm;
             const goodness = qamGoodness(accuracy, rmsEvm);
-            if (goodness !== null) goodnessEntries.push({label, goodness, accuracy: Number(accuracy), rmsEvm: Number(rmsEvm)});
+            if (goodness !== null) {
+              goodnessEntries.push({label, goodness, accuracy: Number(accuracy), rmsEvm: Number(rmsEvm)});
+              timePoints.push({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: goodness});
+            }
           });
+          if (timePoints.length) goodnessSeries.push({label: identity([payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, "QAM goodness"]), points: timePoints});
         }
       }
-      drawQam(series); seriesLegend("evidence-qam-legend", series); renderQamGoodness(goodnessEntries);
+      drawChart("evidence-qam-time-canvas", goodnessSeries, "QAM goodness [0,1]", mode, "selected overall window"); drawQam(series); seriesLegend("evidence-qam-legend", series); renderQamGoodness(goodnessEntries);
       const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
       state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series.${partial}` : "No acquired-QAM series match the selected hardware scope.");
     } catch (error) {
       if (current !== generation) return;
-      node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
+      node("evidence-qam-canvas").hidden = true; node("evidence-qam-time-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
       state("qam", error.status === 404 ? "pending" : "error", error.status === 404 ? "Acquired-QAM evidence is pending or unavailable for this recording." : `QAM evidence failed: ${error.message}`);
     }
   }
@@ -332,10 +403,19 @@
         node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
         state("detector", "pending", "Full-dwell detector evidence is pending for every selected recording."); return;
       }
-      const grouped = new Map(); const mode = node("evidence-mode").value;
+      const grouped = new Map(); const approach = []; const mode = node("evidence-mode").value;
       for (const payload of fetched.payloads) for (const stream of payload.streams || []) {
         const lnb = assignment(payload.recording_id, stream.receiver_chain_id)?.lnb_id;
         if (!radios.has(stream.radio_id) || !receivers.has(stream.receiver_chain_id) || !lnbs.has(lnb) || !channels.has(Number(stream.channel_number)) || !edges.includes(stream.edge)) continue;
+        const base = identity([payload.recording_id, stream.radio_id, lnb, stream.receiver_chain_id, `CH${stream.channel_number}`, stream.edge]);
+        approach.push({
+          kind: "detector", key: base, approach: "Qin + paired-surrogate detector suite", scope: base,
+          window: `${stream.exact_window_count} exact selected windows from ${stream.prescreen_window_count} complete prescreen tiles`,
+          coverage: `${percent(stream.exact_coverage_fraction)} exact; ${percent(stream.prescreen_coverage_fraction)} pattern-blind prescreen`,
+          search: `identical epoch/CFO grid for Qin and every precommitted surrogate; methods ${methods.join(", ")}`,
+          response: "algorithm score vs exact-window UTC; finite paired rank and Qin-minus-surrogate margin",
+          status: `${stream.refinement_is_data_adaptive ? "power-selected dependent windows" : "fixed windows"}; maximum over returned windows is descriptive, not calibrated`,
+        });
         for (const point of stream.points || []) for (const pattern of patterns) {
           if (!methods.includes(point.method)) continue;
           let score = null;
@@ -347,6 +427,7 @@
           grouped.get(label).push({x: (Number(point.interval_start_utc_ns) + Number(point.interval_stop_utc_ns)) / 2, y: Number(score)});
         }
       }
+      setApproachRows("detector", approach);
       const series = [...grouped].map(([label, points], index) => ({label, points: mode === "windows" ? points : [{x: index, y: Math.max(...points.map((item) => item.y))}]}));
       drawChart("evidence-detector-canvas", series, "score [0,1]", mode, "series (maximum over returned exact windows)");
       seriesLegend("evidence-detector-legend", series);
@@ -356,6 +437,7 @@
       if (current !== generation) return;
       node("evidence-detector-canvas").hidden = true; node("evidence-detector-legend").replaceChildren();
       state("detector", error.status === 404 ? "pending" : "error", error.status === 404 ? "Full-dwell detector evidence is pending in the asynchronous queue." : `Detector evidence failed: ${error.message}`);
+      setApproachRows("detector", [{kind: "detector", key: "pending", approach: "Qin + paired-surrogate detector suite", scope: "selected recording(s)", window: "pending", coverage: "pending", search: "identical Qin/surrogate search pending", response: "algorithm score vs UTC", status: error.status === 404 ? "queued" : error.message}]);
     }
   }
 
@@ -382,6 +464,17 @@
         points: mode === "windows" ? (item.windows || []).map((window) => ({x: (Number(window.point_start_utc_ns) + Number(window.point_stop_utc_ns)) / 2, y: Number(window.drift_rate_hz_s)})) : [{x: basicSeries.length + index, y: Number(item.total.drift_rate_hz_s)}],
       }));
       const series = [...basicSeries, ...advancedSeries];
+      const approach = [
+        ...(payload.series || []).map((item) => ({
+          kind: "doppler", key: identity([item.recording_id, item.radio_id, item.receiver_chain_id, item.segment_id, "basic", item.candidate_rank]), approach: "Basic blind Doppler track", scope: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, `candidate ${item.candidate_rank}`]),
+          window: `${(item.windows || []).length} adjacent path intervals with explicit sample/UTC bounds`, coverage: "track-support intervals only; not raw-IQ coverage", search: "blind continuity track then robust total fit", response: "drift rate [Hz/s] total and local windows", status: "candidate-only; uncalibrated",
+        })),
+        ...(advancedPayload.series || []).map((item) => ({
+          kind: "doppler", key: identity([item.recording_id, item.radio_id, item.receiver_chain_id, item.segment_id, "advanced", item.path_digest]), approach: "Advanced-path-only Doppler", scope: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, item.association_state]),
+          window: `${(item.windows || []).length} adjacent immutable path-point intervals`, coverage: "path-support intervals only; not raw-IQ coverage", search: "physical-rate bank with held-out/stationary/opposite/time-shuffle controls", response: "published total path rate and local slopes [Hz/s]", status: "candidate-only; no calibrated count",
+        })),
+      ];
+      setApproachRows("doppler", approach);
       drawChart("evidence-doppler-canvas", series, "drift rate [Hz/s]", mode, "published total path rate");
       seriesLegend("evidence-doppler-legend", series);
       const combinedState = series.length ? "ready" : payload.state === "pending" || advancedPayload.state === "pending" ? "pending" : payload.state === "error" || advancedPayload.state === "error" ? "error" : "missing";
@@ -390,6 +483,7 @@
       if (current !== generation) return;
       node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren();
       state("doppler", error.status === 404 ? "missing" : "error", error.status === 404 ? "Doppler evidence is unavailable." : `Doppler evidence failed: ${error.message}`);
+      setApproachRows("doppler", [{kind: "doppler", key: "missing", approach: "Doppler tracking", scope: "selected recording(s)", window: "unavailable", coverage: "unavailable", search: "blind physical-rate paths", response: "drift rate vs UTC", status: error.status === 404 ? "not published" : error.message}]);
     }
   }
 
@@ -397,7 +491,8 @@
     if (!context) return;
     generation += 1;
     const current = generation;
-    void Promise.all([loadTimeline(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
+    approachRows.clear(); renderApproachRows();
+    void Promise.all([loadApproaches(current), loadTimeline(current), loadQam(current), loadDetectors(current), loadDoppler(current)]);
   }
 
   async function initialize() {

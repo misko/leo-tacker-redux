@@ -8,7 +8,11 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
-from leo_flow.contracts.core import Digest, RecordingId, SchemaRef
+from leo_flow.contracts.core import V0_1, Digest, RecordingId, SchemaRef
+from leo_flow.contracts.dashboard_recording_analysis_approach import (
+    RecordingAnalysisApproachViewV0_1,
+    RecordingQamAnalysisApproachStreamV0_1,
+)
 from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
     RecordingReceiverLnbResolverV0_3,
     RecordingStarlinkAcquiredConstellationViewV0_3,
@@ -253,6 +257,92 @@ class DurableRecordingStarlinkAcquiredConstellationQueryV0_3:
                 True,
             )
 
+    def recording_analysis_approach(
+        self, recording_id: RecordingId
+    ) -> RecordingAnalysisApproachViewV0_1:
+        """Project exact persisted QAM search/window facts without reinterpretation."""
+
+        ref = self._catalog.latest_starlink_acquired_constellation(recording_id)
+        if ref is None:
+            raise StarlinkAcquiredConstellationNotFoundError(
+                "recording has no acquired-QAM product"
+            )
+        with self._store.open(ref) as bundle:
+            streams = []
+            for stream in bundle.streams:
+                windows = stream.windows
+                acquisitions = tuple(item.acquisition for item in windows)
+                window_sizes = {
+                    item.stop_sample - item.start_sample for item in windows
+                }
+                if len(window_sizes) != 1:
+                    raise StarlinkAcquiredConstellationIntegrityError(
+                        "acquired-QAM approach has mixed window sizes"
+                    )
+                profiles = tuple(
+                    sorted({item.receiver_cfo_profile_id for item in acquisitions})
+                )
+                searched_mins = {item.searched_cfo_min_hz for item in acquisitions}
+                searched_maxes = {item.searched_cfo_max_hz for item in acquisitions}
+                if len(searched_mins) != 1 or len(searched_maxes) != 1:
+                    raise StarlinkAcquiredConstellationIntegrityError(
+                        "acquired-QAM approach has mixed CFO domains"
+                    )
+                union_samples = _interval_union_samples(
+                    tuple((item.start_sample, item.stop_sample) for item in windows)
+                )
+                winners = tuple(item.winner.refined_cfo_hz for item in acquisitions)
+                streams.append(
+                    RecordingQamAnalysisApproachStreamV0_1(
+                        stream.radio_id,
+                        self._lnb_resolver.lnb_id_for_recording_receiver(
+                            recording_id, stream.receiver_chain_id
+                        ),
+                        stream.segment_id,
+                        stream.receiver_chain_id,
+                        stream.edge,
+                        stream.sample_rate_hz,
+                        stream.segment_sample_count,
+                        len(windows),
+                        next(iter(window_sizes)),
+                        union_samples,
+                        union_samples / stream.segment_sample_count,
+                        "bounded-evenly-spaced-endpoint-preserving-windows",
+                        stream.overall.derivation,
+                        profiles,
+                        next(iter(searched_mins)),
+                        next(iter(searched_maxes)),
+                        sum(item.coarse_search_cell_count for item in acquisitions),
+                        sum(item.refinement_search_cell_count for item in acquisitions),
+                        sum(len(item.candidates) for item in acquisitions),
+                        min(winners),
+                        max(winners),
+                        (
+                            "label-independent-wide-physical-search"
+                            if all(
+                                value.startswith(
+                                    "gauss-current-hardware-independent-wide-cfo-"
+                                )
+                                for value in profiles
+                            )
+                            else "historical-product-profile-not-current-calibration"
+                        ),
+                    )
+                )
+            return RecordingAnalysisApproachViewV0_1(
+                SchemaRef(RecordingAnalysisApproachViewV0_1.SCHEMA_ID, V0_1),
+                recording_id,
+                ref.artifact_ref,
+                tuple(streams),
+                True,
+                True,
+                (
+                    "legacy-lnb-label-offsets-not-applied",
+                    "whole-search-null-calibration-required",
+                    "window-sampling-is-not-full-exact-coverage",
+                ),
+            )
+
 
 def starlink_acquired_constellation_projection_v0_3(
     request: StarlinkAcquiredConstellationRequestV0_3,
@@ -300,3 +390,18 @@ def _projection(
         windows * 2400,
         True,
     )
+
+
+def _interval_union_samples(intervals: tuple[tuple[int, int], ...]) -> int:
+    ordered = sorted(intervals)
+    if not ordered:
+        return 0
+    total = 0
+    start, stop = ordered[0]
+    for next_start, next_stop in ordered[1:]:
+        if next_start <= stop:
+            stop = max(stop, next_stop)
+        else:
+            total += stop - start
+            start, stop = next_start, next_stop
+    return total + stop - start

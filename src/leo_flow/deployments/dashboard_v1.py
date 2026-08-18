@@ -36,6 +36,9 @@ from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPo
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_recording_analysis_approach import (
+    RecordingAnalysisApproachQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_recording_evidence import (
     RecordingEvidenceContextQueryPortV0_1,
     RecordingEvidenceDopplerQueryPortV0_1,
@@ -97,6 +100,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV20,
     DashboardJsonApplicationV21,
     DashboardJsonApplicationV22,
+    DashboardJsonApplicationV23,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -262,6 +266,14 @@ class DashboardV22QueryPort(
     """Additive bounded master-table QAM-goodness read surface."""
 
 
+class DashboardV23QueryPort(
+    DashboardV22QueryPort,
+    RecordingAnalysisApproachQueryPortV0_1,
+    Protocol,
+):
+    """Add exact recording-level analysis/window/search facts."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -291,7 +303,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV22QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV23QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -490,6 +502,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV22Quer
         full_dwell=full_dwell,
         full_dwell_timeline=full_dwell_timeline,
         acquired_qam=acquired_qam,
+        analysis_approaches=acquired_qam,
     )
 
 
@@ -514,7 +527,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV22QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV23QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -551,10 +564,11 @@ def _build_dashboard(
         canary = FileRetroQamCanaryDashboardQueryV0_1(Path(canary_path))
     v21 = DashboardJsonApplicationV21(v20, canary)
     v22 = DashboardJsonApplicationV22(v21, queries)
+    v23 = DashboardJsonApplicationV23(v22, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v22),
+        DashboardUiApplication(v23),
         diagnostics=diagnostics,
     )
 

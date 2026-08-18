@@ -99,6 +99,17 @@
         </fieldset>
       </form>
       <div class="evidence-product-grid">
+        <article class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-approaches-heading">
+          <div class="decision-heading"><h3 id="evidence-approaches-heading">Analysis approaches &amp; exact coverage</h3><span id="evidence-approaches-badge" class="status-badge" data-tone="warning">Loading</span></div>
+          <div id="evidence-approaches-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Loading exact persisted search and windowing facts…</div>
+          <div class="table-wrap">
+            <table id="evidence-approaches-table">
+              <caption>Each row preserves recording, radio, authoritative LNB assignment, receiver port, channel/edge, and product provenance. Historical LNB-label offsets are never applied.</caption>
+              <thead><tr><th scope="col">Approach</th><th scope="col">Hardware / scope</th><th scope="col">Window plan</th><th scope="col">Analyzed coverage</th><th scope="col">Search domain</th><th scope="col">Response</th><th scope="col">Aggregation / status</th></tr></thead>
+              <tbody id="evidence-approaches-body"></tbody>
+            </table>
+          </div>
+        </article>
         <article class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-timeline-heading">
           <div class="decision-heading"><h3 id="evidence-timeline-heading">Complete IQ tile timeline</h3><span id="evidence-timeline-badge" class="status-badge" data-tone="warning">Pending</span></div>
           <div id="evidence-timeline-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
@@ -110,6 +121,7 @@
           <div class="decision-heading"><h3 id="evidence-qam-heading">Pilot QAM</h3><span id="evidence-qam-badge" class="status-badge" data-tone="warning">Pending</span></div>
           <div id="evidence-qam-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Waiting for context…</div>
           <div id="evidence-qam-goodness" class="qam-goodness-list" aria-label="QAM goodness by unpooled series"></div>
+          <canvas id="evidence-qam-time-canvas" class="evidence-chart" width="760" height="300" role="img" aria-label="QAM goodness by analyzed window time" hidden></canvas>
           <canvas id="evidence-qam-canvas" class="evidence-chart" width="760" height="440" role="img" aria-label="Selected QAM constellation series" hidden></canvas>
           <div id="evidence-qam-legend" class="evidence-series-legend"></div>
         </article>

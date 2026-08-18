@@ -19,6 +19,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV17,
     DashboardJsonApplicationV19,
     DashboardJsonApplicationV20,
+    DashboardJsonApplicationV23,
     JsonRequest,
     JsonResponse,
 )
@@ -61,6 +62,7 @@ class EvidencePorts:
         self.basic_doppler_queries: list[Any] = []
         self.advanced_doppler_queries: list[Any] = []
         self.timeline_queries: list[Any] = []
+        self.approach_queries: list[str] = []
 
     def recording_evidence_context(self, recording_id: RecordingId) -> dict[str, Any]:
         assert str(recording_id) == REQUESTED
@@ -148,6 +150,7 @@ class EvidencePorts:
                         "window_count": 2,
                         "selected_display_window_index": 0,
                         "support_weighted_hard_symbol_accuracy": 0.84,
+                        "support_weighted_rms_evm": 0.72,
                     },
                     "windows": [
                         {
@@ -156,6 +159,8 @@ class EvidencePorts:
                             "stop_sample": (index + 1) * 25_000,
                             "interval_start_utc_ns": 1_000_000_000 + index * 10_000_000,
                             "interval_stop_utc_ns": 1_010_000_000 + index * 10_000_000,
+                            "hard_symbol_accuracy": 0.84 - index * 0.04,
+                            "rms_evm": 0.72 + index * 0.08,
                             "display_points": [
                                 {"i": 0.70, "q": 0.72, "expected_state": 0},
                                 {"i": -0.71, "q": 0.69, "expected_state": 1},
@@ -171,6 +176,51 @@ class EvidencePorts:
             "candidate_only": True,
             "calibration_required": True,
             "streams": streams,
+        }
+
+    def recording_analysis_approach(self, recording_id: RecordingId) -> dict[str, Any]:
+        self.approach_queries.append(str(recording_id))
+        identity = _identity(str(recording_id))
+        if identity is None:
+            raise DashboardNotFound("analysis approach was not found")
+        radio, receiver, lnb, segment = identity
+        return {
+            "recording_id": str(recording_id),
+            "candidate_only": True,
+            "calibration_required": True,
+            "warnings": [
+                "legacy-lnb-label-offsets-not-applied",
+                "whole-search-null-calibration-required",
+                "window-sampling-is-not-full-exact-coverage",
+            ],
+            "qam_streams": [
+                {
+                    "radio_id": radio,
+                    "lnb_id": lnb,
+                    "segment_id": segment,
+                    "receiver_chain_id": receiver,
+                    "edge": "lower",
+                    "sample_rate_hz": 2_500_000.0,
+                    "segment_sample_count": 150_000_000,
+                    "window_count": 32,
+                    "window_sample_count": 50_000,
+                    "analyzed_union_sample_count": 1_600_000,
+                    "analyzed_union_fraction": 1_600_000 / 150_000_000,
+                    "sampling_plan": "bounded-evenly-spaced-endpoint-preserving-windows",
+                    "overall_derivation": "support-weighted-window-summary;display=max-held-out-margin-window",
+                    "receiver_cfo_profile_ids": [
+                        "gauss-current-hardware-independent-wide-cfo-2500000-v0.3"
+                    ],
+                    "searched_cfo_min_hz": -1_040_000.0,
+                    "searched_cfo_max_hz": 1_040_000.0,
+                    "coarse_search_cell_count": 2_879_712,
+                    "refinement_search_cell_count": 82_944,
+                    "retained_candidate_count": 256,
+                    "winning_cfo_min_hz": -194_400.0,
+                    "winning_cfo_max_hz": 446_600.0,
+                    "hardware_calibration_state": "label-independent-wide-physical-search",
+                }
+            ],
         }
 
     def recording_starlink_full_dwell(self, query: Any) -> dict[str, Any]:
@@ -214,6 +264,13 @@ class EvidencePorts:
                     "receiver_chain_id": receiver,
                     "channel_number": 4,
                     "edge": "lower",
+                    "sample_rate_hz": 2_500_000.0,
+                    "segment_sample_count": 60_000,
+                    "prescreen_window_count": 3,
+                    "exact_window_count": 2,
+                    "prescreen_coverage_fraction": 1.0,
+                    "exact_coverage_fraction": 2 / 3,
+                    "refinement_is_data_adaptive": True,
                     "points": points,
                 }
             ]
@@ -385,7 +442,8 @@ def _application(ports: EvidencePorts) -> DashboardUiApplication:
     v16 = DashboardJsonApplicationV16(v15, fixture_port, fixture_port)
     v17 = DashboardJsonApplicationV17(v16, fixture_port)
     v19 = DashboardJsonApplicationV19(v17, fixture_port)
-    return DashboardUiApplication(DashboardJsonApplicationV20(v19, fixture_port))
+    v20 = DashboardJsonApplicationV20(v19, fixture_port)
+    return DashboardUiApplication(DashboardJsonApplicationV23(v20, fixture_port))
 
 
 @contextmanager
@@ -460,6 +518,27 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             expect(page.locator("#evidence-timeline-state")).to_contain_text(
                 "source union coverage is 100%"
             )
+            expect(page.locator("#evidence-approaches-state")).to_have_attribute(
+                "data-state", "ready"
+            )
+            approach_rows = page.locator("#evidence-approaches-body tr")
+            expect(approach_rows).to_have_count(10)
+            expect(
+                page.locator('#evidence-approaches-body tr[data-approach="qam"]')
+            ).to_have_count(2)
+            approaches = page.locator("#evidence-approaches-table")
+            expect(approaches).to_contain_text("Acquired pilot QAM v0.3")
+            expect(approaches).to_contain_text("Complete IQ power timeline")
+            expect(approaches).to_contain_text("Qin + paired-surrogate detector suite")
+            expect(approaches).to_contain_text("Basic blind Doppler track")
+            expect(approaches).to_contain_text("Advanced-path-only Doppler")
+            expect(approaches).to_contain_text("-1040.0…1040.0 kHz physical CFO")
+            expect(approaches).to_contain_text("label-independent-wide-physical-search")
+            expect(approaches).to_contain_text("1.0667%")
+            expect(approaches).to_contain_text("100.0000%")
+            expect(approaches).not_to_contain_text("602869")
+            expect(approaches).not_to_contain_text("legacy LNB correction")
+            assert sorted(ports.approach_queries) == sorted([REQUESTED, COMPANION])
 
             expect(page.locator("#evidence-qam-heading")).to_have_text("Pilot QAM")
             expect(page.locator("#evidence-detector-heading")).to_have_text(
@@ -469,6 +548,10 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
                 "Doppler estimates"
             )
             expect(page.locator("#evidence-qam-canvas")).to_have_attribute(
+                "data-series-count", "2"
+            )
+            expect(page.locator("#evidence-qam-time-canvas")).to_be_visible()
+            expect(page.locator("#evidence-qam-time-canvas")).to_have_attribute(
                 "data-series-count", "2"
             )
             expect(page.locator("#evidence-detector-canvas")).to_have_attribute(
@@ -496,6 +579,9 @@ def test_detail_page_renders_and_filters_all_populated_candidate_evidence() -> N
             page.locator("#evidence-mode").select_option("windows")
             expect(page.locator("#evidence-qam-canvas")).to_have_attribute(
                 "data-series-count", "4"
+            )
+            expect(page.locator("#evidence-qam-time-canvas")).to_have_attribute(
+                "data-point-count", "4"
             )
             expect(page.locator("#evidence-detector-canvas")).to_have_attribute(
                 "data-point-count", "24"
@@ -627,6 +713,7 @@ def test_detail_page_distinguishes_pending_error_and_missing_real_api_states() -
             )
             for product in ("qam", "detector", "doppler"):
                 expect(page.locator(f"#evidence-{product}-canvas")).to_be_hidden()
+            expect(page.locator("#evidence-qam-time-canvas")).to_be_hidden()
         finally:
             browser.close()
 

@@ -107,6 +107,37 @@ def test_synthetic_matrix_covers_every_mod64_epoch_and_full_cfo_domain() -> None
     assert observed_cfos == set(cfo_matrix)
 
 
+@pytest.mark.parametrize("cfo_hz", (-900_000.0, 446_600.0, 900_000.0))
+def test_label_independent_wide_physical_search_recovers_outside_old_domain(
+    cfo_hz: float,
+) -> None:
+    result = StarlinkAcquisitionV0_3(
+        StarlinkAcquisitionConfigV0_3(
+            "current-hardware-independent-wide-search",
+            cfo_min_hz=-1_040_000.0,
+            cfo_max_hz=1_040_000.0,
+            coarse_cfo_step_hz=160_000.0,
+            fine_cfo_radius_hz=80_000.0,
+        ),
+        execution_context(),
+    ).analyze_receiver(
+        _positive(31, cfo_hz),
+        recording_id=RecordingId("rec_wide_acquisition"),
+        recording_identity_digest=Digest.sha256(b"wide-acquisition"),
+        segment_id=SegmentId("seg_wide_acquisition"),
+        receiver_chain_id=ReceiverChainId("rx_current_uncalibrated"),
+        templates=_templates(),
+    )
+
+    assert result.receiver_cfo_profile_id == "current-hardware-independent-wide-search"
+    assert result.searched_cfo_min_hz == -1_040_000.0
+    assert result.searched_cfo_max_hz == 1_040_000.0
+    assert result.coarse_search_cell_count <= 100_000
+    assert result.winner.refined_epoch_sample == 31
+    assert result.winner.refined_cfo_hz == pytest.approx(cfo_hz, abs=75.0)
+    assert result.winner.verify_minus_control_margin > 0.8
+
+
 def test_multiple_alias_basins_survive_until_held_out_adjudication() -> None:
     templates = _templates()
     rng = random.Random(18)

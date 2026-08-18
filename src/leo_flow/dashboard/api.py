@@ -53,6 +53,9 @@ from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPo
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_recording_analysis_approach import (
+    RecordingAnalysisApproachQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_recording_evidence import (
     MAXIMUM_DOPPLER_WINDOW_ESTIMATES,
     RecordingEvidenceContextQueryPortV0_1,
@@ -1088,6 +1091,53 @@ class DashboardJsonApplicationV22:
             encoded = canonical_json_bytes(payload)
             if len(encoded) > self._MAX_RESPONSE_BYTES:
                 raise RuntimeError("capture QAM summary exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+class DashboardJsonApplicationV23:
+    """Expose exact persisted analysis/search/windowing facts per recording."""
+
+    _PREFIX = "/api/v23/recordings/"
+    _MAX_RESPONSE_BYTES = 256 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        approaches: RecordingAnalysisApproachQueryPortV0_1,
+    ) -> None:
+        self._previous, self._approaches = previous, approaches
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "analysis-approaches":
+                raise DashboardNotFound(f"route {path} was not found")
+            if request.query:
+                raise ValueError("analysis-approaches does not accept query parameters")
+            payload = self._approaches.recording_analysis_approach(
+                RecordingId(unquote(parts[0]))
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError(
+                    "analysis-approaches response exceeds its byte bound"
+                )
         except (ValueError, InvalidCursor) as error:
             return _error(400, "invalid_request", str(error))
         except DashboardNotFound as error:
