@@ -68,6 +68,7 @@ _EXPECTED_MIGRATIONS = (
     "0049_starlink_pilot_refinement_v0_1.sql",
     "0050_starlink_adaptive_response_reanalysis.sql",
     "0051_starlink_adaptive_response_priority.sql",
+    "0052_starlink_symbolwise_replay_product_v0_1.sql",
 )
 
 
@@ -196,7 +197,9 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE starlink_pilot_refinement_work_v0_1,
+            TRUNCATE starlink_symbolwise_replay_work_v0_1,
+                     recording_starlink_symbolwise_replay_v0_1,
+                     starlink_pilot_refinement_work_v0_1,
                      recording_starlink_pilot_refinement_v0_1,
                      recording_starlink_pilot_prescreen_v0_1,
                      recording_starlink_adaptive_qam_v0_4,

@@ -1,7 +1,7 @@
 # Legacy `pilot_symbolwise_v3` replay audit and native Redux v0.1
 
 Date: 2026-08-18 UTC  
-Status: additive component implemented and externally reproduced; candidate evidence only  
+Status: additive component and optional durable product implemented; candidate evidence only
 Redux base: `271619768f242d99d1fbf8440cdca7928591d89a`  
 Legacy numerical oracle: `leo-tracker@0bb80d14759fd8496b74e7d3219a690be18565a6`
 
@@ -186,10 +186,11 @@ was 1.57 s and maximum RSS was 48,616 KiB. The evidence itself accounted
 bound.
 
 Straight-line single-process extrapolation is about 14.4 minutes per receiver
-or 28.8 minutes for two receivers over 60 s. Windows and receivers are
-independent and can be dispatched across workers later, but this component does
-not add orchestration. The prior Qin-only timing on the same J1 window was about
-0.21-0.23 s, consistent with the five-pattern measurement.
+or 28.8 minutes for two receivers over 60 s. The durable follow-up deliberately
+processes at most one explicitly queued recording under the shared capture-aware
+optional-work admission gate. It is not automatically enqueued for each capture.
+The prior Qin-only timing on the same J1 window was about 0.21-0.23 s,
+consistent with the five-pattern measurement.
 
 Benchmark command shape:
 
@@ -197,6 +198,37 @@ Benchmark command shape:
 /usr/bin/time -f 'wall_s=%e max_rss_kib=%M user_s=%U system_s=%S' \
   uv run python <one-window native replay harness>
 ```
+
+## Optional durable recording product
+
+The additive recording-level v0.1 product persists the complete receiver
+bundles; it does not summarize away the response curve. Its immutable request
+contains the exact published `RecordingObjectRef`, the fixed resource plan,
+canonical stream selections, and one explicit frequency-center calibration
+object per physical receiver path. The bundle retains all 600 windows and all
+five Qin/surrogate evidence records per window, together with 6 s / 10% union
+coverage accounting and candidate-only limitation codes.
+
+The durable interfaces are split into narrow ports:
+
+- canonical request and bundle codecs, capped at 256 KiB and 128 MiB;
+- CAS-first exact store and bounded recording query;
+- explicit PostgreSQL enqueue, single-claim lease, and fenced
+  publish/complete/retry/park operations;
+- a recording-reader producer that verifies the published recording identity,
+  manifest stream geometry, and contiguous RF span before analysis; and
+- a station operator that requires the shared focused-capture guard and holds
+  the shared optional-work permit for at most one claim.
+
+Migration `0052_starlink_symbolwise_replay_product_v0_1.sql` contains no
+recording trigger, suite trigger, or historical `INSERT ... SELECT`. The
+capture role has no enqueue capability. On-demand and selected backfill both
+use the same explicit queue, and publication is authorized only while the exact
+work ID, lease token, lease generation, and lease expiry remain current.
+
+This product remains distinct from full-IQ tiling: it durably exposes the
+legacy-parity 10 ms / 100 ms response curve and honestly reports its 10%
+analyzed union.
 
 ## Frozen external-corpus comparison
 
@@ -245,10 +277,17 @@ uv run pytest -q \
   tests/recording_analysis/test_starlink_symbolwise_replay_external.py
 ```
 
-Result at report creation: `10 passed`; Ruff and focused mypy passed.
+Result for the original numerical component: `10 passed`; Ruff and focused
+mypy passed.
 Adjacent template, surrogate-null, RETRO, and v0.3 acquisition suites added 31
 passing tests. Source inspection also confirms that the native module contains
 no `import leo_tracker` or `from leo_tracker` statement.
 
-No dashboard, database migration, deployment file, live service, or live
-recording was modified.
+The durable follow-up focused gate ran 28 numerical-external, codec,
+persistence, service, station, and migration-structure tests. Its component-owned
+PostgreSQL adapter tests cover explicit admission, stale-fence rejection,
+replay-safe publication, completion fencing, dashboard-role reads, and
+capture-role denial. They require disposable PostgreSQL 16 and were skipped in
+the isolated environment because its Docker daemon was unavailable.
+
+No dashboard, deployment unit, live service, or live recording was modified.
