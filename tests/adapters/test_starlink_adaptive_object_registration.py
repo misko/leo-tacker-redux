@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -10,6 +10,9 @@ from leo_flow.adapters.starlink_adaptive_qam_postgres import (
 )
 from leo_flow.adapters.starlink_adaptive_qam_postgres import (
     _register_live_object as register_qam_object,
+)
+from leo_flow.adapters.starlink_adaptive_response_postgres import (
+    PostgresAdaptiveResponseWorkRepositoryV0_1,
 )
 from leo_flow.adapters.starlink_adaptive_response_postgres import (
     _cataloged as cataloged_response,
@@ -32,7 +35,7 @@ from leo_flow.analysis.recording.starlink_adaptive_response_persistence import (
 from leo_flow.analysis.recording.starlink_pilot_refinement_persistence import (
     StarlinkPilotRefinementConflictError,
 )
-from leo_flow.contracts.core import Digest
+from leo_flow.contracts.core import Digest, RecordingId
 from leo_flow.contracts.storage import ObjectRef
 
 
@@ -47,6 +50,26 @@ class _Cursor:
 
     def fetchone(self) -> dict[str, object] | None:
         return self.row
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+
+class _Connection:
+    def __init__(self, cursor: _Cursor) -> None:
+        self._cursor = cursor
+
+    def cursor(self, **_kwargs: object) -> _Cursor:
+        return self._cursor
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
 
 
 def _object() -> ObjectRef:
@@ -89,6 +112,29 @@ def test_adaptive_catalog_registers_and_verifies_its_cas_object(
         ref.locator,
     )
     assert "lifecycle_state='live'" in cursor.calls[1][0]
+
+
+def test_adaptive_reanalysis_uses_exact_recording_and_prior_result_cas() -> None:
+    cursor = _Cursor({"changed": True})
+    repository = PostgresAdaptiveResponseWorkRepositoryV0_1(
+        lambda: _Connection(cursor)  # type: ignore[arg-type]
+    )
+
+    assert repository.requeue_completed(
+        RecordingId("rec_reanalysis"),
+        "slar_" + "1" * 32,
+        "analysis-plan-cadence-v2",
+    )
+    assert cursor.calls == [
+        (
+            "SELECT public.requeue_starlink_adaptive_response_work_v0_1(%s,%s,%s) AS changed",
+            (
+                "rec_reanalysis",
+                "slar_" + "1" * 32,
+                "analysis-plan-cadence-v2",
+            ),
+        )
+    ]
 
 
 @pytest.mark.parametrize(

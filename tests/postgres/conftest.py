@@ -66,6 +66,7 @@ _EXPECTED_MIGRATIONS = (
     "0047_starlink_adaptive_qam_v0_4.sql",
     "0048_starlink_pilot_prescreen_v0_1.sql",
     "0049_starlink_pilot_refinement_v0_1.sql",
+    "0050_starlink_adaptive_response_reanalysis.sql",
 )
 
 

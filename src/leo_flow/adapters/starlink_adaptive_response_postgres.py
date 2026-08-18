@@ -234,6 +234,26 @@ class PostgresAdaptiveResponseWorkRepositoryV0_1:
     def retry(self, lease: AdaptiveResponseWorkLeaseV0_1, reason: str) -> None:
         self._transition("retry_starlink_adaptive_response_work_v0_1", lease, reason)
 
+    def requeue_completed(
+        self,
+        recording_id: RecordingId,
+        expected_result_analysis_id: str,
+        reason: str,
+    ) -> bool:
+        """CAS-reopen one completed item after an explicit analysis-plan change."""
+
+        if not expected_result_analysis_id or not reason:
+            raise ValueError("adaptive response reanalysis identity is invalid")
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            row = cursor.execute(
+                "SELECT public.requeue_starlink_adaptive_response_work_v0_1(%s,%s,%s) AS changed",
+                (str(recording_id), expected_result_analysis_id, reason),
+            ).fetchone()
+        return row is not None and row["changed"] is True
+
     def _transition(
         self,
         function: str,
