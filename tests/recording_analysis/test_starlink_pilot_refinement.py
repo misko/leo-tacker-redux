@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import cast
 
+import pytest
+
 from leo_flow.analysis.recording.starlink_detector_suite import (
     StarlinkDetectorSuiteConfigV0_2,
     StarlinkInjectionCaseV0_2,
@@ -10,6 +12,11 @@ from leo_flow.analysis.recording.starlink_detector_suite import (
 )
 from leo_flow.analysis.recording.starlink_pilot_refinement import (
     ExactStarlinkPilotRefinementAnalyzerV0_1,
+)
+from leo_flow.analysis.recording.starlink_pilot_refinement_codec import (
+    MalformedStarlinkPilotRefinementError,
+    decode_starlink_pilot_refinement,
+    encode_starlink_pilot_refinement,
 )
 from leo_flow.analysis.recording.starlink_surrogate_null import (
     starlink_search_grid_v0_1,
@@ -103,3 +110,7 @@ def test_prescreen_refinement_runs_all_methods_and_symmetric_controls() -> None:
     assert stream.selection.seeds[0].reasons == ("top-ofdm-periodicity",)
     assert stream.exact_coverage_fraction == 1.0
     assert result.calibrated_detection_count is None
+    payload = encode_starlink_pilot_refinement(result)
+    assert decode_starlink_pilot_refinement(payload) == result
+    with pytest.raises(MalformedStarlinkPilotRefinementError, match="canonical"):
+        decode_starlink_pilot_refinement(payload + b"\n")
