@@ -46,6 +46,7 @@ from leo_flow.contracts.starlink_receiver_agnostic_cfo_product import (
     ReceiverAgnosticCfoQamRecordingProductRefV0_6,
     ReceiverAgnosticCfoQamRecordingRequestV0_6,
 )
+from leo_flow.contracts.storage import RecordingObjectRef
 from leo_flow.services.capture_batch_analysis import PublishedRecordingCatalog
 from leo_flow.storage.ports import RecordingObjectReader, RecordingView
 
@@ -200,7 +201,12 @@ class DurableReceiverAgnosticCfoQamProducerV0_6:
             ),
         )
 
-    def _windows(self, recording, recording_ref, selections):  # type: ignore[no-untyped-def]
+    def _windows(
+        self,
+        recording: RecordingView,
+        recording_ref: RecordingObjectRef,
+        selections: tuple[ReceiverAgnosticCfoQamWindowSelectionV0_6, ...],
+    ) -> tuple[ReceiverAgnosticCfoWindowV0_6, ...]:
         manifest = recording.manifest
         if manifest.recording_id != recording_ref.recording_id:
             raise ValueError("recording manifest identity differs from publication")
