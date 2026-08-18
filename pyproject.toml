@@ -29,6 +29,7 @@ leo-gauss-pilot-refinement = "leo_station.pilot_refinement_operator:main"
 leo-starlink-retro-qam-canary = "leo_flow.deployments.starlink_retro_qam_canary:main"
 leo-gauss-symbolwise-replay = "leo_station.symbolwise_replay_operator:main"
 leo-gauss-symbolwise-enqueue = "leo_station.symbolwise_replay_enqueue_operator:main"
+leo-gauss-receiver-agnostic-cfo-qam = "leo_station.receiver_agnostic_cfo_qam_operator:main"
 
 [project.optional-dependencies]
 dev = [
