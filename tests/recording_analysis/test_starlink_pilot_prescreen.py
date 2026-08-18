@@ -15,6 +15,11 @@ from leo_flow.analysis.recording.starlink_pilot_prescreen_codec import (
     decode_starlink_pilot_prescreen,
     encode_starlink_pilot_prescreen,
 )
+from leo_flow.analysis.recording.starlink_pilot_prescreen_persistence import (
+    CatalogedStarlinkPilotPrescreenV0_1,
+    DurableStarlinkPilotPrescreenStoreV0_1,
+    StarlinkPilotPrescreenConflictError,
+)
 from leo_flow.contracts.core import V0_1, RadioId, SchemaRef
 from leo_flow.contracts.starlink import StarlinkEdge
 from leo_flow.contracts.starlink_full_dwell_timeline_product import (
@@ -24,9 +29,30 @@ from leo_flow.contracts.starlink_pilot_prescreen import (
     StarlinkPilotPrescreenPlanV0_1,
     StarlinkPilotPrescreenRequestV0_1,
 )
+from leo_flow.storage.filesystem import FileSystemBlobStore
 from leo_flow.storage.ports import RecordingView
 
 from .fakes import FakeRecordingView, SegmentFixture, execution_context, make_view
+
+
+class _Catalog:
+    def __init__(self) -> None:
+        self.item = None
+        self.key = None
+
+    def publish_starlink_pilot_prescreen(
+        self, projection, bundle_ref, recording_ref, *, idempotency_key
+    ):  # type: ignore[no-untyped-def]
+        del recording_ref
+        candidate = CatalogedStarlinkPilotPrescreenV0_1(projection, bundle_ref)
+        if self.item is None:
+            self.item, self.key = candidate, idempotency_key
+        elif self.item != candidate or self.key != idempotency_key:
+            raise StarlinkPilotPrescreenConflictError("conflicting immutable replay")
+        return self.item.ref
+
+    def get_starlink_pilot_prescreen(self, ref):  # type: ignore[no-untyped-def]
+        return self.item if self.item is not None and self.item.ref == ref else None
 
 
 def _ci16(left: np.ndarray, right: np.ndarray) -> bytes:
@@ -64,7 +90,9 @@ def test_ofdm_periodicity_separates_cyclic_prefix_from_seeded_noise() -> None:
     assert noise_score < 0.10
 
 
-def test_complete_prescreen_tiles_tail_and_selects_low_power_periodic_window() -> None:
+def test_complete_prescreen_tiles_tail_selects_periodicity_and_replays(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
     rng = np.random.default_rng(43)
     tile = 20_000
     noise_high = 600.0 * (rng.normal(size=tile) + 1j * rng.normal(size=tile))
@@ -131,3 +159,11 @@ def test_complete_prescreen_tiles_tail_and_selects_low_power_periodic_window() -
     assert decode_starlink_pilot_prescreen(payload) == result
     with pytest.raises(MalformedStarlinkPilotPrescreenError, match="canonical"):
         decode_starlink_pilot_prescreen(payload + b"\n")
+
+    store = DurableStarlinkPilotPrescreenStoreV0_1(
+        FileSystemBlobStore(tmp_path / "cas"), _Catalog()
+    )
+    ref = store.publish(request, result, idempotency_key="pilot-prescreen:one")
+    assert store.publish(request, result, idempotency_key="pilot-prescreen:one") == ref
+    with store.open(ref) as replay:
+        assert replay == result

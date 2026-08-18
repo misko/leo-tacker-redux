@@ -17,7 +17,7 @@ from .core import (
 from .starlink_full_dwell_timeline_product import (
     FullDwellTimelineStreamSelectionV0_1,
 )
-from .storage import RecordingObjectRef
+from .storage import ObjectRef, RecordingObjectRef
 
 MAXIMUM_PRESCREEN_WINDOWS = 100_000
 
@@ -184,3 +184,14 @@ class StarlinkPilotPrescreenBundleV0_1:
         }
         if not required.issubset(self.warnings):
             raise ValueError("pilot-prescreen warnings are incomplete")
+
+
+@dataclass(frozen=True, slots=True)
+class StarlinkPilotPrescreenProductRefV0_1:
+    analysis_id: str
+    recording_id: RecordingId
+    bundle_ref: ObjectRef
+
+    def __post_init__(self) -> None:
+        if not self.analysis_id:
+            raise ValueError("pilot-prescreen analysis identity cannot be empty")
