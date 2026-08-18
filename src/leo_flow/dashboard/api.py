@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Protocol
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from leo_flow.contracts.core import (
     CaptureAttemptId,
@@ -14,6 +15,7 @@ from leo_flow.contracts.core import (
     RadioId,
     ReceiverChainId,
     RecordingId,
+    SchemaRef,
     SegmentId,
     UtcNs,
     canonical_json_bytes,
@@ -56,6 +58,17 @@ from leo_flow.contracts.dashboard_pilot_doppler import (
 )
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_recording_analysis import (
+    EXTENDED_RECORDING_ANALYSIS_PRODUCTS,
+    PRIMARY_RECORDING_ANALYSIS_PRODUCTS,
+    RecordingAnalysisFacadeViewV0_1,
+    RecordingAnalysisProduct,
+    RecordingAnalysisProductAvailabilityQueryPortV0_1,
+    RecordingAnalysisProductEnvelopeV0_1,
+    RecordingAnalysisProductState,
+    RecordingAnalysisSection,
+    RecordingAnalysisSectionEnvelopeV0_1,
 )
 from leo_flow.contracts.dashboard_recording_analysis_approach import (
     RecordingAnalysisApproachQueryPortV0_1,
@@ -1514,6 +1527,516 @@ class DashboardJsonApplicationV30:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class RecordingAnalysisFacadeApplication:
+    """Compose the recording workspace without changing published product APIs."""
+
+    _PREFIX = "/api/recordings/"
+    _SUFFIX = "/analysis"
+    _MAX_QUERY_BYTES = 16_384
+    _MAX_RESPONSE_BYTES = 128 * 1024 * 1024
+    _ALLOWED_QUERY = frozenset(
+        {
+            "sections",
+            "mode",
+            "layer",
+            "methods",
+            "radio_ids",
+            "lnb_ids",
+            "segment_ids",
+            "receiver_chain_ids",
+            "edges",
+            "channel_numbers",
+            "interval_start_utc_ns",
+            "interval_stop_utc_ns",
+            "qam_maximum_streams",
+            "qam_maximum_windows",
+            "qam_maximum_points",
+            "doppler_maximum_windows",
+            "timeline_maximum_windows",
+            "maximum_points",
+            "cfo_qam_maximum_windows",
+            "constellation_maximum_streams",
+            "surrogate_maximum_rows",
+        }
+    )
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        availability: RecordingAnalysisProductAvailabilityQueryPortV0_1,
+    ) -> None:
+        self._previous = previous
+        self._availability = availability
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not (path.startswith(self._PREFIX) and path.endswith(self._SUFFIX)):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            recording_id = self._recording_id(path)
+            selectors = self._selectors(request.query)
+            sections = self._sections(selectors.pop("sections", "primary"))
+            facts = self._required_recording_facts(recording_id)
+            section_views = tuple(
+                self._section(recording_id, section, selectors, facts)
+                for section in sections
+            )
+            encoded = canonical_json_bytes(
+                RecordingAnalysisFacadeViewV0_1(
+                    SchemaRef(RecordingAnalysisFacadeViewV0_1.SCHEMA_ID),
+                    recording_id,
+                    sections,
+                    section_views,
+                )
+            )
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("recording analysis facade exceeds its byte bound")
+        except ValueError as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - deterministic facade boundary
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+    def _recording_id(self, path: str) -> RecordingId:
+        encoded = path.removeprefix(self._PREFIX).removesuffix(self._SUFFIX)
+        if not encoded or "/" in encoded:
+            raise DashboardNotFound(f"route {path} was not found")
+        return RecordingId(unquote(encoded))
+
+    def _selectors(self, query: dict[str, str]) -> dict[str, str]:
+        unknown = sorted(set(query) - self._ALLOWED_QUERY)
+        if unknown:
+            raise ValueError(f"unsupported query parameter {unknown[0]}")
+        if (
+            sum(len(key.encode()) + len(value.encode()) for key, value in query.items())
+            > self._MAX_QUERY_BYTES
+        ):
+            raise ValueError("recording analysis query text exceeds its bound")
+        selectors = dict(query)
+        for name, maximum in (
+            ("methods", len(REPORT_METHOD_ORDER)),
+            ("radio_ids", 16),
+            ("lnb_ids", 16),
+            ("segment_ids", 16),
+            ("receiver_chain_ids", 16),
+            ("edges", 2),
+            ("channel_numbers", 4),
+        ):
+            values = _comma_values(selectors, name, maximum)
+            if values is not None and len(set(values)) != len(values):
+                raise ValueError(f"{name} must be unique")
+            if values is None:
+                continue
+            try:
+                if name == "methods":
+                    tuple(StarlinkDetectorMethod(value) for value in values)
+                elif name == "radio_ids":
+                    tuple(RadioId(value) for value in values)
+                elif name == "segment_ids":
+                    tuple(SegmentId(value) for value in values)
+                elif name == "receiver_chain_ids":
+                    tuple(ReceiverChainId(value) for value in values)
+                elif name == "edges":
+                    tuple(StarlinkEdge(value) for value in values)
+                elif name == "channel_numbers":
+                    channels = tuple(int(value) for value in values)
+                    if len(set(channels)) != len(channels) or any(
+                        value < 1 or value > 4 for value in channels
+                    ):
+                        raise ValueError
+                elif any(
+                    not value.strip() or value != value.strip() for value in values
+                ):
+                    raise ValueError
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"invalid {name} selector") from error
+        for name, maximum in (
+            ("qam_maximum_streams", 4),
+            ("qam_maximum_windows", 32),
+            ("qam_maximum_points", MAX_CONSTELLATION_POINTS),
+            ("doppler_maximum_windows", MAXIMUM_DOPPLER_WINDOW_ESTIMATES),
+            ("timeline_maximum_windows", MAXIMUM_FULL_DWELL_TIMELINE_WINDOWS),
+            ("maximum_points", 4096),
+            ("cfo_qam_maximum_windows", 6),
+            ("constellation_maximum_streams", MAX_CONSTELLATION_QUERY_STREAMS),
+            ("surrogate_maximum_rows", MAXIMUM_SURROGATE_NULL_QUERY_ROWS),
+        ):
+            if name in selectors:
+                value = _optional_positive_int(selectors, name, 1)
+                if value > maximum:
+                    raise ValueError(f"{name} exceeds its bound")
+        if selectors.get("mode", "overall") not in {"overall", "windows"}:
+            raise ValueError("mode must be overall or windows")
+        if selectors.get("layer", "residual") not in {
+            item.value for item in DopplerWaterfallLayer
+        }:
+            raise ValueError("unknown Doppler waterfall layer")
+        for name in ("interval_start_utc_ns", "interval_stop_utc_ns"):
+            if name in selectors:
+                _optional_utc_ns(selectors, name)
+        return selectors
+
+    @staticmethod
+    def _sections(value: str) -> tuple[RecordingAnalysisSection, ...]:
+        values = value.split(",")
+        if not values or len(values) > 2 or any(not item for item in values):
+            raise ValueError("sections must be primary and/or extended")
+        try:
+            sections = tuple(RecordingAnalysisSection(item) for item in values)
+        except ValueError as error:
+            raise ValueError("sections must be primary and/or extended") from error
+        if len(set(sections)) != len(sections):
+            raise ValueError("sections must be unique")
+        return sections
+
+    def _required_recording_facts(self, recording_id: RecordingId) -> object:
+        response = self._previous.handle(
+            JsonRequest(
+                "GET",
+                f"/api/v3/recordings/{quote(str(recording_id), safe='')}",
+                {},
+            )
+        )
+        if response.status == 404:
+            raise DashboardNotFound(f"recording {recording_id} was not found")
+        return self._successful_payload(response, "recording facts")
+
+    def _section(
+        self,
+        recording_id: RecordingId,
+        section: RecordingAnalysisSection,
+        selectors: dict[str, str],
+        facts: object,
+    ) -> RecordingAnalysisSectionEnvelopeV0_1:
+        products = (
+            PRIMARY_RECORDING_ANALYSIS_PRODUCTS
+            if section is RecordingAnalysisSection.PRIMARY
+            else EXTENDED_RECORDING_ANALYSIS_PRODUCTS
+        )
+        envelopes = tuple(
+            self._product(recording_id, product, selectors, facts)
+            for product in products
+        )
+        return RecordingAnalysisSectionEnvelopeV0_1(section, envelopes)
+
+    def _product(
+        self,
+        recording_id: RecordingId,
+        product: RecordingAnalysisProduct,
+        selectors: dict[str, str],
+        facts: object,
+    ) -> RecordingAnalysisProductEnvelopeV0_1:
+        if product is RecordingAnalysisProduct.RECORDING_FACTS:
+            return RecordingAnalysisProductEnvelopeV0_1(
+                product,
+                RecordingAnalysisProductState.COMPLETE,
+                "recording-detail-v0.1",
+                facts,
+            )
+        if product is RecordingAnalysisProduct.QAM:
+            return self._qam(recording_id, selectors)
+        path, query, source = self._product_request(recording_id, product, selectors)
+        response = self._previous.handle(JsonRequest("GET", path, query))
+        if response.status == 200:
+            payload = self._successful_payload(response, product.value)
+            if self._catalog_is_complete(payload):
+                return RecordingAnalysisProductEnvelopeV0_1(
+                    product,
+                    RecordingAnalysisProductState.COMPLETE,
+                    source,
+                    payload,
+                )
+        if response.status not in {200, 404}:
+            self._successful_payload(response, product.value)
+        return self._unavailable(recording_id, product)
+
+    def _qam(
+        self, recording_id: RecordingId, selectors: dict[str, str]
+    ) -> RecordingAnalysisProductEnvelopeV0_1:
+        encoded = quote(str(recording_id), safe="")
+        query = self._qam_query(selectors)
+        for source, path in (
+            (
+                "adaptive-qam-v0.4",
+                f"/api/v25/recordings/{encoded}/starlink-adaptive-qam",
+            ),
+            (
+                "acquired-qam-v0.3",
+                f"/api/v17/recordings/{encoded}/starlink-acquired-constellation",
+            ),
+        ):
+            response = self._previous.handle(JsonRequest("GET", path, query))
+            if response.status == 200:
+                payload = self._successful_payload(response, source)
+                if not self._catalog_is_complete(payload):
+                    continue
+                return RecordingAnalysisProductEnvelopeV0_1(
+                    RecordingAnalysisProduct.QAM,
+                    RecordingAnalysisProductState.COMPLETE,
+                    source,
+                    payload,
+                )
+            if response.status != 404:
+                self._successful_payload(response, source)
+        return self._unavailable(recording_id, RecordingAnalysisProduct.QAM)
+
+    def _unavailable(
+        self, recording_id: RecordingId, product: RecordingAnalysisProduct
+    ) -> RecordingAnalysisProductEnvelopeV0_1:
+        # An optional-status failure is an internal facade failure, never an
+        # assertion that the recording itself is absent.
+        try:
+            state = self._availability.recording_analysis_product_state(
+                recording_id, product
+            )
+        except Exception as error:
+            raise RuntimeError("analysis availability query failed") from error
+        if not isinstance(state, RecordingAnalysisProductState):
+            raise TypeError("analysis availability port returned an invalid state")
+        if state is RecordingAnalysisProductState.COMPLETE:
+            raise RuntimeError("analysis availability disagrees with its catalog")
+        return RecordingAnalysisProductEnvelopeV0_1(product, state, None, None)
+
+    @staticmethod
+    def _successful_payload(response: JsonResponse, product: str) -> object:
+        if response.status != 200:
+            raise RuntimeError(f"{product} query returned status {response.status}")
+        try:
+            return json.loads(response.body)
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(f"{product} query returned invalid JSON") from error
+
+    @staticmethod
+    def _catalog_is_complete(payload: object) -> bool:
+        if not isinstance(payload, dict):
+            return True
+        if payload.get("state") in {
+            "pending",
+            "missing",
+            "error",
+            "failed",
+            "unavailable",
+            "not_evaluated",
+            "no_candidate",
+            "no_candidates",
+        }:
+            return False
+        return payload.get("queue_state") not in {"pending", "error"}
+
+    def _product_request(
+        self,
+        recording_id: RecordingId,
+        product: RecordingAnalysisProduct,
+        selectors: dict[str, str],
+    ) -> tuple[str, dict[str, str], str]:
+        encoded = quote(str(recording_id), safe="")
+        common = self._common_query(selectors)
+        methods = self._only(selectors, "methods")
+        points = self._renamed(selectors, "maximum_points", "maximum_points")
+        routes: dict[RecordingAnalysisProduct, tuple[str, dict[str, str], str]] = {
+            RecordingAnalysisProduct.EVIDENCE_CONTEXT: (
+                f"/api/v16/recordings/{encoded}/evidence-context",
+                {},
+                "evidence-context-v0.1",
+            ),
+            RecordingAnalysisProduct.ADAPTIVE_DETECTOR_RESPONSE: (
+                f"/api/v24/recordings/{encoded}/starlink-adaptive-response",
+                self._pick(
+                    common, "radio_ids", "lnb_ids", "receiver_chain_ids", "edges"
+                )
+                | methods
+                | points,
+                "adaptive-response-v0.1",
+            ),
+            RecordingAnalysisProduct.DOPPLER_SUMMARY: (
+                f"/api/v16/recordings/{encoded}/evidence-doppler",
+                self._pick(common, "radio_ids", "lnb_ids", "receiver_chain_ids")
+                | {"maximum_windows": "1"},
+                "recording-evidence-doppler-v0.1",
+            ),
+            RecordingAnalysisProduct.APPROACHES: (
+                f"/api/v23/recordings/{encoded}/analysis-approaches",
+                {},
+                "analysis-approaches-v0.1",
+            ),
+            RecordingAnalysisProduct.FULL_DWELL_TIMELINE: (
+                f"/api/v20/recordings/{encoded}/full-dwell-timeline",
+                self._pick(common, "radio_ids", "receiver_chain_ids", "edges")
+                | self._renamed(
+                    selectors, "timeline_maximum_windows", "maximum_windows"
+                ),
+                "full-dwell-timeline-v0.1",
+            ),
+            RecordingAnalysisProduct.PILOT_PRESCREEN: (
+                f"/api/v27/recordings/{encoded}/starlink-pilot-prescreen",
+                self._pick(
+                    common, "radio_ids", "lnb_ids", "receiver_chain_ids", "edges"
+                )
+                | points,
+                "pilot-prescreen-v0.1",
+            ),
+            RecordingAnalysisProduct.PILOT_REFINEMENT: (
+                f"/api/v28/recordings/{encoded}/starlink-pilot-refinement",
+                self._pick(
+                    common, "radio_ids", "lnb_ids", "receiver_chain_ids", "edges"
+                )
+                | methods
+                | points,
+                "pilot-refinement-v0.1",
+            ),
+            RecordingAnalysisProduct.LEGACY_FULL_DWELL: (
+                f"/api/v15/recordings/{encoded}/starlink-full-dwell",
+                self._pick(common, "radio_ids", "receiver_chain_ids", "edges")
+                | methods
+                | points,
+                "full-dwell-v0.1",
+            ),
+            RecordingAnalysisProduct.BASIC_DOPPLER: (
+                f"/api/v16/recordings/{encoded}/evidence-doppler",
+                self._doppler_query(selectors),
+                "recording-evidence-doppler-v0.1",
+            ),
+            RecordingAnalysisProduct.ADVANCED_DOPPLER: (
+                f"/api/v19/recordings/{encoded}/evidence-advanced-doppler",
+                self._doppler_query(selectors),
+                "advanced-doppler-v0.1",
+            ),
+            RecordingAnalysisProduct.PILOT_DOPPLER_ASSOCIATION: (
+                f"/api/v26/recordings/{encoded}/pilot-doppler-association",
+                self._pick(
+                    common, "radio_ids", "lnb_ids", "receiver_chain_ids", "edges"
+                )
+                | self._renamed(
+                    selectors, "qam_maximum_windows", "maximum_windows_per_stream"
+                ),
+                "pilot-doppler-association-v0.1",
+            ),
+            RecordingAnalysisProduct.SYMBOLWISE_REPLAY: (
+                f"/api/v29/recordings/{encoded}/symbolwise-replay",
+                self._pick(common, "radio_ids", "lnb_ids", "receiver_chain_ids"),
+                "symbolwise-replay-v0.1",
+            ),
+            RecordingAnalysisProduct.RECEIVER_AGNOSTIC_CFO_QAM: (
+                f"/api/v30/recordings/{encoded}/receiver-agnostic-cfo-qam",
+                self._pick(common, "radio_ids", "receiver_chain_ids")
+                | self._renamed(
+                    selectors, "cfo_qam_maximum_windows", "maximum_windows"
+                ),
+                "receiver-agnostic-cfo-qam-v0.6",
+            ),
+            RecordingAnalysisProduct.LEGACY_SUITE: (
+                f"/api/v4/recordings/{encoded}/starlink-suite",
+                {},
+                "starlink-suite-v0.2",
+            ),
+            RecordingAnalysisProduct.WATERFALL: (
+                f"/api/v3/recordings/{encoded}/waterfall",
+                {},
+                "recording-waterfall-v0.1",
+            ),
+            RecordingAnalysisProduct.DOPPLER_VISUALIZATION: (
+                f"/api/v9/recordings/{encoded}/doppler-visualization",
+                self._only(selectors, "layer"),
+                "doppler-visualization-v0.1",
+            ),
+            RecordingAnalysisProduct.SURROGATE_NULL: (
+                f"/api/v10/recordings/{encoded}/starlink-surrogate-null",
+                self._pick(common, "radio_ids", "edges")
+                | methods
+                | self._pick(
+                    selectors,
+                    "channel_numbers",
+                    "interval_start_utc_ns",
+                    "interval_stop_utc_ns",
+                )
+                | self._renamed(selectors, "surrogate_maximum_rows", "maximum_rows"),
+                "surrogate-null-v0.1",
+            ),
+            RecordingAnalysisProduct.TEMPORAL_PILOT: (
+                f"/api/v13/recordings/{encoded}/starlink-temporal-pilot",
+                self._pick(common, "radio_ids", "receiver_chain_ids", "edges")
+                | methods
+                | points,
+                "temporal-pilot-v0.1",
+            ),
+            RecordingAnalysisProduct.PILOT_CONSTELLATION: (
+                f"/api/v11/recordings/{encoded}/starlink-pilot-constellation",
+                self._pick(common, "segment_ids", "receiver_chain_ids", "edges")
+                | self._renamed(
+                    selectors, "constellation_maximum_streams", "maximum_streams"
+                )
+                | self._renamed(
+                    selectors, "qam_maximum_points", "maximum_points_per_stream"
+                ),
+                "pilot-constellation-v0.1",
+            ),
+        }
+        try:
+            return routes[product]
+        except KeyError as error:
+            raise RuntimeError(
+                f"unroutable analysis product {product.value}"
+            ) from error
+
+    def _qam_query(self, selectors: dict[str, str]) -> dict[str, str]:
+        return (
+            self._pick(
+                selectors,
+                "mode",
+                "radio_ids",
+                "lnb_ids",
+                "segment_ids",
+                "receiver_chain_ids",
+                "edges",
+            )
+            | self._renamed(selectors, "qam_maximum_streams", "maximum_streams")
+            | self._renamed(
+                selectors, "qam_maximum_windows", "maximum_windows_per_stream"
+            )
+            | self._renamed(
+                selectors, "qam_maximum_points", "maximum_points_per_constellation"
+            )
+        )
+
+    def _doppler_query(self, selectors: dict[str, str]) -> dict[str, str]:
+        return self._pick(
+            selectors, "radio_ids", "lnb_ids", "receiver_chain_ids"
+        ) | self._renamed(selectors, "doppler_maximum_windows", "maximum_windows")
+
+    @staticmethod
+    def _common_query(selectors: dict[str, str]) -> dict[str, str]:
+        return RecordingAnalysisFacadeApplication._pick(
+            selectors,
+            "radio_ids",
+            "lnb_ids",
+            "segment_ids",
+            "receiver_chain_ids",
+            "edges",
+        )
+
+    @staticmethod
+    def _pick(values: dict[str, str], *names: str) -> dict[str, str]:
+        return {name: values[name] for name in names if name in values}
+
+    @staticmethod
+    def _only(values: dict[str, str], name: str) -> dict[str, str]:
+        return {name: values[name]} if name in values else {}
+
+    @staticmethod
+    def _renamed(
+        values: dict[str, str], source: str, destination: str
+    ) -> dict[str, str]:
+        return {destination: values[source]} if source in values else {}
 
 
 def _receiver_agnostic_cfo_qam_query(
