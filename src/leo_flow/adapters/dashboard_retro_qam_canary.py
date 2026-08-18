@@ -9,6 +9,7 @@ import stat
 from pathlib import Path
 from typing import Any, cast
 
+from leo_flow.analysis.qam_goodness import qam_goodness_v0_2
 from leo_flow.contracts.core import (
     V0_1,
     Digest,
@@ -94,12 +95,6 @@ class FileRetroQamCanaryDashboardQueryV0_1:
                 "leo-tracker-oracle-not-runtime-dependency",
             ),
         )
-
-
-def qam_goodness_v0_2(accuracy: float, rms_evm: float) -> float:
-    chance_corrected = max(0.0, min(1.0, (accuracy - 0.25) / 0.75))
-    compactness = 1.0 / (1.0 + (rms_evm / 2.0) ** 2)
-    return math.sqrt(chance_corrected * compactness)
 
 
 def _receiver(document: dict[str, Any]) -> RetroQamCanaryReceiverViewV0_1:

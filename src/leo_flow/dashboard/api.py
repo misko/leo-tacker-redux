@@ -31,6 +31,11 @@ from leo_flow.contracts.dashboard_capture_doppler import (
     CaptureDopplerSummaryQueryPortV0_1,
     CaptureDopplerSummaryQueryV0_1,
 )
+from leo_flow.contracts.dashboard_capture_qam import (
+    MAX_CAPTURE_QAM_RECORDINGS,
+    CaptureQamSummaryQueryPortV0_1,
+    CaptureQamSummaryQueryV0_1,
+)
 from leo_flow.contracts.dashboard_doppler import (
     DopplerWaterfallLayer,
     RecordingDopplerVisualizationQueryPortV0_1,
@@ -1055,6 +1060,64 @@ class DashboardJsonApplicationV21:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class DashboardJsonApplicationV22:
+    """Add one bounded QAM-goodness summary for the master capture table."""
+
+    _ROUTE = "/api/v22/capture-qam-summaries"
+    _MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        summaries: CaptureQamSummaryQueryPortV0_1,
+    ) -> None:
+        self._previous, self._summaries = previous, summaries
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if path != self._ROUTE:
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            payload = self._summaries.capture_qam_summaries(
+                _capture_qam_summary_query(request.query)
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("capture QAM summary exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _capture_qam_summary_query(
+    query: dict[str, str],
+) -> CaptureQamSummaryQueryV0_1:
+    allowed = {"start_utc_ns", "stop_utc_ns", "maximum_recordings"}
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    try:
+        return CaptureQamSummaryQueryV0_1(
+            UtcNs(int(query["start_utc_ns"])),
+            UtcNs(int(query["stop_utc_ns"])),
+            int(query.get("maximum_recordings", str(MAX_CAPTURE_QAM_RECORDINGS))),
+        )
+    except KeyError as error:
+        raise ValueError(f"missing query parameter {error.args[0]}") from error
+    except ValueError as error:
+        raise ValueError("capture QAM summary query is invalid") from error
 
 
 def _capture_doppler_summary_query(

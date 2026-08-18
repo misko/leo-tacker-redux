@@ -134,5 +134,9 @@ def test_home_page_renders_latest_historical_qam_acceptance_canary(
             expect(page.locator("#retro-qam-canary-provenance")).to_contain_text(
                 "Historical known-positive acceptance canary"
             )
+            expect(page.locator("#retro-qam-canary-recording-link")).to_have_attribute(
+                "href",
+                "/canaries/retro-qam/source-recording",
+            )
         finally:
             browser.close()

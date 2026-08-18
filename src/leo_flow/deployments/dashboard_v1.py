@@ -22,6 +22,7 @@ from leo_flow.contracts.dashboard_batch import CaptureBatchDashboardQueryPortV0_
 from leo_flow.contracts.dashboard_capture_doppler import (
     CaptureDopplerSummaryQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_capture_qam import CaptureQamSummaryQueryPortV0_1
 from leo_flow.contracts.dashboard_doppler import (
     RecordingDopplerVisualizationQueryPortV0_1,
 )
@@ -95,6 +96,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV19,
     DashboardJsonApplicationV20,
     DashboardJsonApplicationV21,
+    DashboardJsonApplicationV22,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -252,6 +254,14 @@ class DashboardV20QueryPort(
     """Additive complete full-dwell prescreen timeline read surface."""
 
 
+class DashboardV22QueryPort(
+    DashboardV20QueryPort,
+    CaptureQamSummaryQueryPortV0_1,
+    Protocol,
+):
+    """Additive bounded master-table QAM-goodness read surface."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -281,7 +291,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV20QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV22QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -485,7 +495,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV20QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV22QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -521,10 +531,11 @@ def _build_dashboard(
 
         canary = FileRetroQamCanaryDashboardQueryV0_1(Path(canary_path))
     v21 = DashboardJsonApplicationV21(v20, canary)
+    v22 = DashboardJsonApplicationV22(v21, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v21),
+        DashboardUiApplication(v22),
         diagnostics=diagnostics,
     )
 

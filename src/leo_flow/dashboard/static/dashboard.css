@@ -103,6 +103,10 @@
   font-family: ui-monospace, monospace;
   white-space: nowrap;
 }
+.capture-qam-summary[data-state="pending"] { color: var(--warning); }
+.capture-qam-summary[data-state="error"] { color: var(--danger); }
+.capture-qam-summary[data-state="unavailable"] { color: var(--muted); }
+.capture-qam-candidate { display: block; white-space: nowrap; }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }

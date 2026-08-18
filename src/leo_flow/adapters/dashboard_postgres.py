@@ -45,6 +45,10 @@ from leo_flow.contracts.dashboard_capture_doppler import (
     CaptureDopplerSummaryQueryV0_1,
     CaptureDopplerSummaryViewV0_1,
 )
+from leo_flow.contracts.dashboard_capture_qam import (
+    CaptureQamSummaryQueryV0_1,
+    CaptureQamSummaryViewV0_1,
+)
 from leo_flow.contracts.dashboard_doppler import (
     DopplerVisualizationState,
     DopplerWaterfallLayer,
@@ -114,6 +118,7 @@ from leo_flow.dashboard import DashboardNotFound, InvalidCursor
 from leo_flow.services.capture_doppler_summary import (
     CaptureDopplerSummaryQueryServiceV0_1,
 )
+from leo_flow.services.capture_qam_summary import CaptureQamSummaryQueryServiceV0_1
 from leo_flow.services.recording_evidence import (
     RecordingEvidenceAdvancedDopplerQueryServiceV0_1,
     RecordingEvidenceDopplerQueryServiceV0_1,
@@ -206,11 +211,19 @@ class PostgresDashboardRepository:
         self._capture_doppler_summaries = CaptureDopplerSummaryQueryServiceV0_1(
             PostgresCaptureDopplerScopeRepositoryV0_1(connect), self
         )
+        self._capture_qam_summaries = CaptureQamSummaryQueryServiceV0_1(
+            PostgresCaptureDopplerScopeRepositoryV0_1(connect), self
+        )
 
     def capture_doppler_summaries(
         self, query: CaptureDopplerSummaryQueryV0_1
     ) -> CaptureDopplerSummaryViewV0_1:
         return self._capture_doppler_summaries.capture_doppler_summaries(query)
+
+    def capture_qam_summaries(
+        self, query: CaptureQamSummaryQueryV0_1
+    ) -> CaptureQamSummaryViewV0_1:
+        return self._capture_qam_summaries.capture_qam_summaries(query)
 
     def recording_starlink_acquired_constellation(
         self, query: StarlinkAcquiredConstellationQueryV0_3

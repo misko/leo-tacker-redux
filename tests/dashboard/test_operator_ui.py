@@ -289,6 +289,17 @@ def test_html_has_keyboard_landmarks_labels_and_explicit_state_hooks() -> None:
     assert "http://" not in html and "https://" not in html
 
 
+def test_retro_qam_source_recording_link_redirects_to_historical_detail() -> None:
+    response = application().handle(
+        JsonRequest("GET", "/canaries/retro-qam/source-recording", {})
+    )
+    assert response.status == 302
+    assert dict(response.headers)["location"] == (
+        "http://satpi01:8765/recordings/beacon/"
+        "ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z"
+    )
+
+
 def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -> None:
     app = application()
     javascript = app.handle(

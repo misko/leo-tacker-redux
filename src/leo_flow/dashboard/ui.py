@@ -26,6 +26,11 @@ _SECURITY_HEADERS: Final = (
     ("cross-origin-resource-policy", "same-origin"),
     ("permissions-policy", "camera=(), microphone=(), geolocation=()"),
 )
+_RETRO_QAM_SOURCE_PATH: Final = "/canaries/retro-qam/source-recording"
+_RETRO_QAM_SOURCE_URL: Final = (
+    "http://satpi01:8765/recordings/beacon/"
+    "ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z"
+)
 
 
 class DashboardUiApplication:
@@ -100,6 +105,19 @@ class DashboardUiApplication:
         )
 
     def handle(self, request: JsonRequest) -> JsonResponse:
+        if request.path == _RETRO_QAM_SOURCE_PATH and request.method.upper() in {
+            "GET",
+            "HEAD",
+        }:
+            return JsonResponse(
+                302,
+                (
+                    ("location", _RETRO_QAM_SOURCE_URL),
+                    ("cache-control", "no-store"),
+                    *_SECURITY_HEADERS,
+                ),
+                b"",
+            )
         route = self._routes.get(request.path)
         if route is None and _recording_page_id(request.path) is not None:
             route = self._recording_page

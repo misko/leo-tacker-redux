@@ -87,7 +87,10 @@
     <section id="retro-qam-canary" aria-labelledby="retro-qam-canary-heading">
       <div class="section-heading">
         <div><p class="section-index">02 / historical acceptance</p><h2 id="retro-qam-canary-heading">RETRO QAM acceptance canary</h2></div>
-        <span class="hint">Replayed every 30 minutes through native Redux; never inserted as a live recording</span>
+        <div>
+          <span class="hint">Replayed every 30 minutes through native Redux; never inserted as a live recording</span>
+          <a id="retro-qam-canary-recording-link" class="full-capture-link" href="/canaries/retro-qam/source-recording">Detailed historical recording</a>
+        </div>
       </div>
       <aside class="candidate-warning" role="note"><strong>Regression evidence, not a detection.</strong> This is the retained known-positive historical IQ window used to detect numerical regressions in acquisition and QAM separation.</aside>
       <div id="retro-qam-canary-state" class="panel-state" data-state="loading" role="status" aria-live="polite">Loading latest canary receipt…</div>
@@ -138,7 +141,7 @@
       <div class="table-wrap">
         <table id="capture-batches-table">
           <caption>Radio captures requested in the selected UTC interval; select a successful row for full details</caption>
-          <thead><tr><th scope="col">UTC</th><th scope="col">Radio</th><th scope="col">Capture</th><th scope="col">Analysis</th><th scope="col">Measured Doppler<br><span class="heading-note">candidate-only total fit</span></th><th scope="col">Pilot beacons<br><span class="heading-note">A8 / GLRT</span></th><th scope="col">Capture time</th><th scope="col">Satellites tracked</th></tr></thead>
+          <thead><tr><th scope="col">UTC</th><th scope="col">Radio</th><th scope="col">Capture</th><th scope="col">Analysis</th><th scope="col">Measured Doppler<br><span class="heading-note">candidate-only total fit</span></th><th scope="col">QAM goodness<br><span class="heading-note">candidate-only / LNB / RX</span></th><th scope="col">Pilot beacons<br><span class="heading-note">A8 / GLRT</span></th><th scope="col">Capture time</th><th scope="col">Satellites tracked</th></tr></thead>
           <tbody id="capture-attempts-body"></tbody>
         </table>
       </div>
