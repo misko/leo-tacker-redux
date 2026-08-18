@@ -126,9 +126,10 @@ class LocalCaptureAwareHeavyWorkAdmissionV0_1:
             resources = self._resource_probe()
         except (OSError, ValueError):
             return HeavyWorkAdmissionDecisionV0_1(False, "resources-unavailable")
+        resource_now = self._clock_ns()
         if (
-            now < resources.observed_utc_ns
-            or now - resources.observed_utc_ns > 5_000_000_000
+            resource_now < resources.observed_utc_ns
+            or resource_now - resources.observed_utc_ns > 5_000_000_000
         ):
             return HeavyWorkAdmissionDecisionV0_1(False, "resources-stale")
         if resources.cpu_count != self._host_cpu_cores:

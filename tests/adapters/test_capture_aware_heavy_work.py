@@ -8,6 +8,7 @@ from leo_flow.adapters.optional_heavy_work_admission import (
 )
 from leo_flow.contracts.optional_heavy_work_admission import (
     FocusedCaptureGuardV0_1,
+    HeavyWorkAdmissionDecisionV0_1,
     HeavyWorkResourceSnapshotV0_1,
 )
 
@@ -114,3 +115,41 @@ def test_slot_is_held_for_the_whole_fenced_lease(tmp_path: Path) -> None:
     next_decision, next_permit = second.acquire()
     assert next_decision.admitted and next_permit is not None
     next_permit.release()
+
+
+def test_resource_snapshot_observed_during_probe_is_not_future_dated(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "guard.json"
+    AtomicFocusedCaptureGuardPublisherV0_1(path).publish(
+        FocusedCaptureGuardV0_1(
+            NOW - 10,
+            NOW + 100,
+            NOW + 10,
+            NOW + 20,
+            0,
+            6,
+            False,
+        )
+    )
+    clock_values = iter((NOW, NOW + 2))
+    gate = LocalCaptureAwareHeavyWorkAdmissionV0_1(
+        path,
+        clock_ns=lambda: next(clock_values),
+        maximum_focused_backlog=2,
+        host_cpu_cores=24,
+        reserved_cpu_cores=8,
+        estimated_claim_cpu_cores=2,
+        minimum_memory_available_bytes=8 * 1024**3,
+        maximum_io_pressure_avg10=5.0,
+        maximum_optional_concurrency=1,
+        resource_probe=lambda: HeavyWorkResourceSnapshotV0_1(
+            NOW + 1, 24, 4.0, 32 * 1024**3, 1.0
+        ),
+    )
+
+    decision, permit = gate.acquire()
+
+    assert decision == HeavyWorkAdmissionDecisionV0_1(True, "admitted")
+    assert permit is not None
+    permit.release()
