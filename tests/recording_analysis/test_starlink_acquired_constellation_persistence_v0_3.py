@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from itertools import pairwise
 
 import pytest
 
@@ -251,6 +252,13 @@ def test_dwell_plan_spans_full_segment_and_overall_is_explicitly_derived() -> No
     assert len(starts) == 32
     assert starts[0] == 0
     assert starts[-1] == 49_950_000
+    live_60s_starts = _bounded_window_starts(150_000_000, 50_000, 32)
+    assert len(live_60s_starts) == 32
+    assert live_60s_starts[0] == 0
+    assert live_60s_starts[-1] == 149_950_000
+    assert (
+        max(right - left for left, right in pairwise(live_60s_starts)) <= 4_837_097
+    )  # no more than 1.935 s between probes at 2.5 MS/s
     _request, bundle = _prepared()
     overall = _overall(bundle.streams[0].windows)
     assert overall.window_count == 2

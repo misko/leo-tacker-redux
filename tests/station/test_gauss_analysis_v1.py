@@ -289,7 +289,23 @@ def test_acquired_qam_search_is_wide_and_independent_of_mutable_lnb_labels() -> 
 
 
 def test_acquired_qam_production_window_budget_is_bounded_for_live_cadence() -> None:
-    assert analysis_v1.ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM == 8
+    assert analysis_v1.ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM == 32
+    acquired = analysis_v1.science_manifest()["starlink_acquired_qam_v0_3"]
+    assert acquired["maximum_windows_per_stream"] == 32
+    assert acquired["window_duration_ms"] == 20
+    assert acquired["sampling_plan"] == (
+        "bounded-evenly-spaced-endpoint-preserving-windows"
+    )
+    assert acquired["coverage_semantics"] == (
+        "sparse-exact-window-sampling-not-full-dwell"
+    )
+    profiles = acquired["receiver_search_profiles"]
+    assert {(item["cfo_min_hz"], item["cfo_max_hz"]) for item in profiles} == {
+        (-1_040_000.0, 1_040_000.0)
+    }
+    assert {item["calibration"] for item in profiles} == {
+        "current-hardware-label-independent"
+    }
 
 
 def test_plugin_imports_no_capture_radio_or_private_storage_paths() -> None:

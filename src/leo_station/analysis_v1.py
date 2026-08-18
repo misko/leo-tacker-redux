@@ -55,10 +55,13 @@ from leo_flow.analysis.recording import (
 )
 from leo_flow.analysis.recording.starlink_acquired_constellation import (
     StarlinkAcquiredPilotConstellationAnalyzerV0_3,
+    starlink_acquired_constellation_algorithm_ref_v0_3,
 )
 from leo_flow.analysis.recording.starlink_acquisition import (
     StarlinkAcquisitionConfigV0_3,
     StarlinkAcquisitionV0_3,
+    starlink_acquisition_algorithm_ref_v0_3,
+    starlink_acquisition_config_ref_v0_3,
 )
 from leo_flow.analysis.recording.starlink_pilot_constellation import (
     StarlinkPilotConstellationAnalyzerV0_1,
@@ -132,7 +135,11 @@ APPROVED_PYTHON: Final = (3, 11, 16)
 APPROVED_PYTHON_VERSION: Final = "3.11.16"
 CAS_ROOT: Final = Path("/home/mouse9911/.local/share/leo-flow/objects")
 MODE_LOCK_PATH: Final = Path("/home/mouse9911/.local/state/leo-flow/pipeline-mode.lock")
-ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM: Final = 8
+# Use the complete published v0.3 window budget.  A 60 s dwell is therefore
+# sampled at roughly 1.94 s intervals instead of the former 8.57 s intervals.
+# This remains sparse exact evidence (640 ms / 60 s), and is deliberately not
+# described as full-IQ coverage; the prompt timeline owns that 100% guarantee.
+ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM: Final = 32
 
 
 class GaussRuntimeApprovalError(RuntimeError):
@@ -861,6 +868,50 @@ def science_manifest() -> dict[str, object]:
             "requested_output_schema": {
                 "schema_id": "org.leo-flow.starlink-temporal-pilot-recording-bundle",
                 "version": "0.1",
+            },
+        },
+        "starlink_acquired_qam_v0_3": {
+            "acquisition_algorithm_ref": _artifact_document(
+                starlink_acquisition_algorithm_ref_v0_3()
+            ),
+            "constellation_algorithm_ref": _artifact_document(
+                starlink_acquired_constellation_algorithm_ref_v0_3()
+            ),
+            "receiver_search_profiles": [
+                {
+                    "sample_rate_hz": sample_rate_hz,
+                    "config_ref": _artifact_document(
+                        starlink_acquisition_config_ref_v0_3(
+                            current_hardware_wide_acquisition_config_v0_3(
+                                sample_rate_hz
+                            )
+                        )
+                    ),
+                    "cfo_min_hz": current_hardware_wide_acquisition_config_v0_3(
+                        sample_rate_hz
+                    ).cfo_min_hz,
+                    "cfo_max_hz": current_hardware_wide_acquisition_config_v0_3(
+                        sample_rate_hz
+                    ).cfo_max_hz,
+                    "calibration": "current-hardware-label-independent",
+                }
+                for sample_rate_hz in (2_500_000.0, 5_000_000.0)
+            ],
+            "window_duration_ms": 20,
+            "maximum_windows_per_stream": (
+                ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM
+            ),
+            "sampling_plan": "bounded-evenly-spaced-endpoint-preserving-windows",
+            "overall_derivation": (
+                "support-weighted-window-summary;display=max-held-out-margin-window"
+            ),
+            "coverage_semantics": "sparse-exact-window-sampling-not-full-dwell",
+            "decision_semantics": "candidate-evidence-not-calibrated-detection",
+            "requested_output_schema": {
+                "schema_id": (
+                    "org.leo-flow.starlink-acquired-constellation-recording-bundle"
+                ),
+                "version": "0.3",
             },
         },
         "model": {
