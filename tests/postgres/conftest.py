@@ -198,7 +198,8 @@ def clean_database(postgres_dsn: str) -> None:
     with psycopg.connect(postgres_dsn) as connection:
         connection.execute(
             """
-            TRUNCATE starlink_symbolwise_replay_work_v0_1,
+            TRUNCATE recording_receiver_agnostic_cfo_qam_v0_6,
+                     starlink_symbolwise_replay_work_v0_1,
                      recording_starlink_symbolwise_replay_v0_1,
                      starlink_pilot_refinement_work_v0_1,
                      recording_starlink_pilot_refinement_v0_1,

@@ -88,6 +88,9 @@ from leo_flow.contracts.starlink_pilot_refinement import (
     RecordingStarlinkPilotRefinementQueryPortV0_1,
 )
 from leo_flow.contracts.starlink_pipeline import RecordingStarlinkDecisionQueryPortV0_1
+from leo_flow.contracts.starlink_receiver_agnostic_cfo_product import (
+    RecordingReceiverAgnosticCfoQamQueryPortV0_6,
+)
 from leo_flow.contracts.starlink_suite_pipeline import (
     RecordingStarlinkSuiteQueryPortV0_2,
 )
@@ -125,6 +128,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV27,
     DashboardJsonApplicationV28,
     DashboardJsonApplicationV29,
+    DashboardJsonApplicationV30,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -346,6 +350,14 @@ class DashboardV29QueryPort(
     """Add complete durable symbolwise replay curves with hardware context."""
 
 
+class DashboardV30QueryPort(
+    DashboardV29QueryPort,
+    RecordingReceiverAgnosticCfoQamQueryPortV0_6,
+    Protocol,
+):
+    """Add receiver-agnostic wide-CFO/QAM diagnostic evidence."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -375,7 +387,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV29QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV30QueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -418,6 +430,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV29Quer
     pilot_prescreens = None
     pilot_refinements = None
     symbolwise_replays = None
+    receiver_agnostic_cfo_qam = None
     cas_root = context.secrets.get(CAS_ROOT_SECRET)
     if cas_root is not None:
         from leo_flow.adapters.dashboard_doppler_projection import (
@@ -649,6 +662,25 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV29Quer
             ),
             symbolwise_catalog,
         )
+        from leo_flow.adapters.starlink_receiver_agnostic_cfo_qam_postgres import (
+            PostgresReceiverAgnosticCfoQamCatalogV0_6,
+        )
+        from leo_flow.analysis.recording.starlink_receiver_agnostic_cfo_product_persistence import (
+            DurableReceiverAgnosticCfoQamStoreV0_6,
+            DurableRecordingReceiverAgnosticCfoQamQueryV0_6,
+            ReceiverAgnosticCfoQamBlobStore,
+        )
+
+        receiver_agnostic_cfo_qam_catalog = PostgresReceiverAgnosticCfoQamCatalogV0_6(
+            connect
+        )
+        receiver_agnostic_cfo_qam = DurableRecordingReceiverAgnosticCfoQamQueryV0_6(
+            DurableReceiverAgnosticCfoQamStoreV0_6(
+                cast(ReceiverAgnosticCfoQamBlobStore, blobs),
+                receiver_agnostic_cfo_qam_catalog,
+            ),
+            receiver_agnostic_cfo_qam_catalog,
+        )
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
@@ -667,6 +699,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV29Quer
         pilot_prescreens=pilot_prescreens,
         pilot_refinements=pilot_refinements,
         symbolwise_replays=symbolwise_replays,
+        receiver_agnostic_cfo_qam=receiver_agnostic_cfo_qam,
     )
 
 
@@ -691,7 +724,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV29QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV30QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -735,10 +768,11 @@ def _build_dashboard(
     v27 = DashboardJsonApplicationV27(v26, queries)
     v28 = DashboardJsonApplicationV28(v27, queries)
     v29 = DashboardJsonApplicationV29(v28, queries)
+    v30 = DashboardJsonApplicationV30(v29, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v29),
+        DashboardUiApplication(v30),
         diagnostics=diagnostics,
     )
 
