@@ -15,6 +15,7 @@ from leo_flow.deployments.gauss_focused_continuous_operator import (
     _AnalysisChild,
     _capture_command,
     _parser,
+    _prior_analysis_releases,
     _reap,
     _recover,
     main,
@@ -53,6 +54,20 @@ def _record(tmp_path: Path) -> FocusedContinuousRecordV0_1:
         "cbatch_focused_loop_00000000_abc_u000",
         "captured",
     )
+
+
+def _sealed_release(tmp_path: Path, name: str = "prior") -> Path:
+    root = tmp_path / name
+    for relative in (
+        "release.manifest.json",
+        "validation.receipt.json",
+        "venv/bin/python",
+        "config/analysis.json",
+    ):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    return root
 
 
 def test_help_describes_continuous_capture_and_async_analysis() -> None:
@@ -283,6 +298,131 @@ def test_recovery_returns_proven_dead_attempt_to_captured_before_redispatch(
     running = journal.get(0)
     assert running is not None
     assert (running.state, running.analysis_pid) == ("analysis_running", 333)
+
+
+def test_cross_release_recovery_is_sequence_scoped_exact_and_analysis_only(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    prior_root = _sealed_release(tmp_path)
+    args.allow_prior_analysis_release = [f"0={prior_root}"]
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    record = _record(tmp_path)
+    journal.insert_planned(replace(record, state="planned"))
+    journal.transition(0, "planned", "captured")
+    captured = journal.get(0)
+    assert captured is not None
+    prior_digest = str(
+        canonical_digest(
+            tuple(_analysis_command(args, captured, prior_release_root=prior_root))
+        )
+    )
+    journal.claim_analysis_process(
+        0, pid=111, process_start_ticks=222, command_digest=prior_digest
+    )
+    journal.transition(
+        0,
+        "analysis_running",
+        "failed",
+        error="analysis-process-identity-conflict",
+    )
+
+    class NewProcess:
+        pid = 333
+
+        def poll(self):  # type: ignore[no-untyped-def]
+            return None
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout=None):  # type: ignore[no-untyped-def]
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+    dispatched: list[list[str]] = []
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._pid_start_ticks",
+        lambda pid: 444 if pid == 333 else None,
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda command, **_kw: dispatched.append(command) or NewProcess(),
+    )
+    monkeypatch.setattr(
+        "leo_flow.deployments.gauss_focused_continuous_operator._capture_closed",
+        lambda _record: (_ for _ in ()).throw(
+            AssertionError("cross-release analysis recovery must not reopen capture")
+        ),
+    )
+
+    children = {}
+    assert _recover(args, journal, children) is True
+    assert tuple(children) == (0,)
+    assert len(dispatched) == 1
+    assert dispatched[0][0] != str(prior_root / "venv/bin/python")
+    running = journal.get(0)
+    assert running is not None
+    assert (running.state, running.analysis_pid) == ("analysis_running", 333)
+
+
+def test_cross_release_recovery_fails_closed_on_wrong_path_identity(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    args = _args(tmp_path)
+    actual_prior = _sealed_release(tmp_path, "actual")
+    wrong_prior = _sealed_release(tmp_path, "wrong")
+    args.allow_prior_analysis_release = [f"0={wrong_prior}"]
+    journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
+    record = _record(tmp_path)
+    journal.insert_planned(replace(record, state="planned"))
+    journal.transition(0, "planned", "captured")
+    captured = journal.get(0)
+    assert captured is not None
+    journal.claim_analysis_process(
+        0,
+        pid=111,
+        process_start_ticks=222,
+        command_digest=str(
+            canonical_digest(
+                tuple(
+                    _analysis_command(args, captured, prior_release_root=actual_prior)
+                )
+            )
+        ),
+    )
+    journal.transition(
+        0,
+        "analysis_running",
+        "failed",
+        error="analysis-process-identity-conflict",
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("mismatched identity must not dispatch")
+        ),
+    )
+
+    assert _recover(args, journal, {}) is False
+    failed = journal.get(0)
+    assert failed is not None
+    assert failed.state == "failed"
+    assert failed.analysis_pid == 111
+
+
+def test_prior_release_allowlist_rejects_duplicates_and_noncanonical_paths(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    args.allow_prior_analysis_release = ["0=relative"]
+    assert _prior_analysis_releases(args) is None
+    args.allow_prior_analysis_release = [f"0={tmp_path}", f"0={tmp_path}"]
+    assert _prior_analysis_releases(args) is None
 
 
 def test_recovery_closes_from_valid_receipt_without_dispatch(

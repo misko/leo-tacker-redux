@@ -113,6 +113,16 @@ def _parser() -> argparse.ArgumentParser:
         choices=("graceful-drain-v1",),
         default="graceful-drain-v1",
     )
+    parser.add_argument(
+        "--allow-prior-analysis-release",
+        action="append",
+        default=[],
+        metavar="SEQUENCE=/ABSOLUTE/SEALED/RELEASE",
+        help=(
+            "allow one exact sequence's persisted analysis command identity "
+            "from an earlier sealed release"
+        ),
+    )
     return parser
 
 
@@ -217,6 +227,7 @@ def _valid_args(args: argparse.Namespace) -> bool:
         args.analysis_credential_directory,
         args.dashboard_credential_directory,
     )
+    prior_releases = _prior_analysis_releases(args)
     return (
         args.arm
         and all(path.is_absolute() and ".." not in path.parts for path in paths)
@@ -229,6 +240,14 @@ def _valid_args(args: argparse.Namespace) -> bool:
         and args.maximum_dwells >= 0
         and args.minimum_free_bytes > 0
         and args.shutdown_protocol == "graceful-drain-v1"
+        and prior_releases is not None
+        and all(
+            (root / "release.manifest.json").is_file()
+            and (root / "validation.receipt.json").is_file()
+            and (root / "venv/bin/python").is_file()
+            and (root / "config/analysis.json").is_file()
+            for root in prior_releases.values()
+        )
     )
 
 
@@ -295,10 +314,23 @@ def _capture_command(
 
 
 def _analysis_command(
-    args: argparse.Namespace, record: FocusedContinuousRecordV0_1
+    args: argparse.Namespace,
+    record: FocusedContinuousRecordV0_1,
+    *,
+    prior_release_root: Path | None = None,
 ) -> list[str]:
+    executable = (
+        sys.executable
+        if prior_release_root is None
+        else str(prior_release_root / "venv/bin/python")
+    )
+    analysis_config = (
+        args.analysis_config
+        if prior_release_root is None
+        else prior_release_root / "config/analysis.json"
+    )
     return [
-        sys.executable,
+        executable,
         "-m",
         "leo_flow.deployments.gauss_focused_analysis_operator",
         "--batch-database",
@@ -306,7 +338,7 @@ def _analysis_command(
         "--batch-id",
         record.batch_id,
         "--analysis-config",
-        str(args.analysis_config),
+        str(analysis_config),
         "--analysis-credential-directory",
         str(args.analysis_credential_directory),
         "--dashboard-credential-directory",
@@ -435,7 +467,17 @@ def _recover(
     journal: SQLiteFocusedContinuousJournalV0_1,
     children: dict[int, _AnalysisChild],
 ) -> bool:
-    for record in journal.incomplete():
+    prior_releases = _prior_analysis_releases(args)
+    if prior_releases is None:
+        return False
+    records = {record.sequence: record for record in journal.incomplete()}
+    for sequence in prior_releases:
+        allowlisted = journal.get(sequence)
+        if allowlisted is None:
+            return False
+        if allowlisted.state == "failed":
+            records[sequence] = allowlisted
+    for record in (records[sequence] for sequence in sorted(records)):
         completion = _completion_state(record)
         if completion == "valid":
             journal.transition(record.sequence, record.state, "complete")
@@ -463,17 +505,51 @@ def _recover(
             _dispatch(args, recovered, journal, children)
         elif record.state == "captured":
             _dispatch(args, record, journal, children)
-        elif record.state == "analysis_running":
+        elif record.state in {"analysis_running", "failed"}:
             expected_command = str(
                 canonical_digest(tuple(_analysis_command(args, record)))
             )
-            if (
+            prior_root = prior_releases.get(record.sequence)
+            prior_command = (
+                None
+                if prior_root is None
+                else str(
+                    canonical_digest(
+                        tuple(
+                            _analysis_command(
+                                args, record, prior_release_root=prior_root
+                            )
+                        )
+                    )
+                )
+            )
+            allowed_commands = {expected_command}
+            if prior_command is not None:
+                allowed_commands.add(prior_command)
+            if record.state == "failed" and (
+                prior_command is None
+                or record.error != "analysis-process-identity-conflict"
+                or record.analysis_command_digest != prior_command
+            ):
+                return False
+            is_prior_identity = record.analysis_command_digest == prior_command
+            if is_prior_identity and (
+                record.analysis_pid is None
+                or record.analysis_process_start_ticks is None
+            ):
+                return False
+            identity_is_live = (
                 record.analysis_pid is not None
                 and record.analysis_process_start_ticks is not None
-                and record.analysis_command_digest == expected_command
+                and record.analysis_command_digest in allowed_commands
                 and _pid_start_ticks(record.analysis_pid)
                 == record.analysis_process_start_ticks
-            ):
+            )
+            if identity_is_live:
+                if record.state == "failed":
+                    return False
+                assert record.analysis_pid is not None
+                assert record.analysis_process_start_ticks is not None
                 children[record.sequence] = _AnalysisChild(
                     record,
                     _RecoveredProcess(
@@ -483,7 +559,9 @@ def _recover(
                     ),
                 )
                 continue
-            if record.analysis_command_digest not in (None, expected_command):
+            if record.analysis_command_digest not in {None, *allowed_commands}:
+                if record.state == "failed":
+                    return False
                 journal.transition(
                     record.sequence,
                     "analysis_running",
@@ -491,13 +569,34 @@ def _recover(
                     error="analysis-process-identity-conflict",
                 )
                 return False
-            journal.abandon_analysis_process(record.sequence)
+            journal.abandon_exact_analysis_process(
+                record.sequence,
+                expected_state=record.state,
+                expected_error=record.error,
+                expected_pid=record.analysis_pid,
+                expected_process_start_ticks=record.analysis_process_start_ticks,
+                expected_command_digest=record.analysis_command_digest,
+            )
             captured = journal.get(record.sequence)
             assert captured is not None
             _dispatch(args, captured, journal, children)
         else:
             return False
     return True
+
+
+def _prior_analysis_releases(args: argparse.Namespace) -> dict[int, Path] | None:
+    releases: dict[int, Path] = {}
+    for raw in args.allow_prior_analysis_release:
+        sequence_text, separator, root_text = raw.partition("=")
+        if not separator or not sequence_text.isdecimal() or not root_text:
+            return None
+        sequence = int(sequence_text)
+        root = Path(root_text)
+        if sequence in releases or not root.is_absolute() or ".." in root.parts:
+            return None
+        releases[sequence] = root
+    return releases
 
 
 def _completion_path(record: FocusedContinuousRecordV0_1) -> Path:
