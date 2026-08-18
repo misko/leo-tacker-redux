@@ -614,6 +614,79 @@ def test_v5_never_retries_after_an_accepted_refill() -> None:
     assert delays == []
 
 
+def test_v5_enodata_failure_preserves_midstream_progress() -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader(
+        [
+            (refill(0, 3), metadata(0, 0, 100)),
+            OSError(errno.ENODATA, "metadata observations unavailable"),
+        ]
+    )
+    capture_clock = ScriptedCaptureClock(
+        [1_700_000_000_000_001_000],
+        [4_000_000_000, 4_032_500_000],
+    )
+    captured: list[bytes] = []
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        clock=capture_clock,
+    )
+
+    with pytest.raises(RadioDisconnectedError) as raised:
+        radio.acquire_segment_with_metadata(
+            request(6), lambda iq, _item: captured.append(iq)
+        )
+
+    message = str(raised.value)
+    assert "metadata observations unavailable" in message
+    assert f"radio_id={RADIO_ID}" in message
+    assert "refill_index=1" in message
+    assert "accepted_samples=3" in message
+    assert "accepted_bytes=24" in message
+    assert "elapsed_ns=32500000" in message
+    assert f"errno={errno.ENODATA}" in message
+    assert captured == [expected_bytes(3)]
+    assert reader.calls == [(0, 0), (1, 3)]
+    assert device.write_count("sample_rate") == 1
+
+
+def test_v5_enodata_failure_distinguishes_zero_accepted_bytes() -> None:
+    device = ConfigurationCountingPluto([])
+    reader = ScriptedMetadataReader(
+        [OSError(errno.ENODATA, "metadata observations unavailable")]
+    )
+    capture_clock = ScriptedCaptureClock(
+        [1_700_000_000_000_001_000],
+        [8_000_000_000, 8_005_000_000],
+    )
+    delays: list[float] = []
+    radio = PlutoPairedRadio(
+        config(host_libiio_version="0.25+c26258b"),
+        device_factory=DeviceFactory(device),
+        interleaver=pure_interleaver,
+        metadata_reader=reader,
+        clock=capture_clock,
+        delay=delays.append,
+    )
+
+    with pytest.raises(RadioDisconnectedError) as raised:
+        radio.acquire_segment_with_metadata(request(3), lambda _iq, _item: None)
+
+    message = str(raised.value)
+    assert f"radio_id={RADIO_ID}" in message
+    assert "refill_index=0" in message
+    assert "accepted_samples=0" in message
+    assert "accepted_bytes=0" in message
+    assert "elapsed_ns=5000000" in message
+    assert f"errno={errno.ENODATA}" in message
+    assert reader.calls == [(0, 0)]
+    assert device.write_count("sample_rate") == 1
+    assert delays == []
+
+
 def test_v5_semantic_refill_error_is_never_retried() -> None:
     device = ConfigurationCountingPluto([])
     reader = ScriptedMetadataReader([RefillError("semantic metadata failure")])

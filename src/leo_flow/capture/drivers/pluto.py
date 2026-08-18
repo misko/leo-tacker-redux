@@ -300,8 +300,22 @@ class PlutoPairedRadio:
             except (SampleCountError, ReceiverSkewError, RefillError):
                 raise
             except (OSError, ConnectionError) as error:
+                elapsed_ns = max(0, self._clock.now_monotonic_ns() - monotonic_start_ns)
+                error_number = getattr(error, "errno", None)
+                accepted_bytes = (
+                    samples_written
+                    * PAIRED_RECEIVERS
+                    * IQ_COMPONENTS
+                    * CI16_BYTES_PER_COMPONENT
+                )
                 raise RadioDisconnectedError(
-                    f"Pluto receive disconnected: {error}"
+                    f"Pluto receive disconnected: {error}; progress "
+                    f"radio_id={self.radio_id}, "
+                    f"refill_index={refill_count}, "
+                    f"accepted_samples={samples_written}, "
+                    f"accepted_bytes={accepted_bytes}, "
+                    f"elapsed_ns={elapsed_ns}, "
+                    f"errno={error_number if error_number is not None else 'unknown'}"
                 ) from error
             except Exception as error:
                 raise RefillError(f"Pluto v5 receive failed: {error}") from error
