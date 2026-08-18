@@ -54,6 +54,17 @@ class _States:
         return {str(value): self.values for value in ids}
 
 
+class _PendingThenSucceededStates(_States):
+    def __init__(self):
+        super().__init__("leased")
+        self.inspections = 0
+
+    def states(self, window, stage):
+        self.inspections += 1
+        self.values = "leased" if self.inspections == 1 else "succeeded"
+        return super().states(window, stage)
+
+
 @dataclass
 class _EnvironmentWorker:
     def process_one(self, stage, window, worker_instance_id):
@@ -92,6 +103,26 @@ def test_spawn_lane_reports_parked_without_claiming_another_scope():
     )
     assert result.state is DeferredAnalysisLaneState.PARKED
     assert len(result.parked_ids) == 72
+
+
+def test_spawn_lane_waits_for_an_unexpired_durable_lease(monkeypatch):
+    states = _PendingThenSucceededStates()
+    sleeps = []
+    monkeypatch.setattr(
+        "leo_flow.deployments.staged_analysis_pool.time.sleep", sleeps.append
+    )
+    lane = BoundedSpawnDeferredAnalysisLaneV1(_Worker(), states)
+
+    result = lane.drain(
+        _window(),
+        DeferredAnalysisStage.FEATURE_COMPUTE,
+        workers=1,
+        deadline_utc_ns=UtcNs(time.time_ns() + 10_000_000_000),
+    )
+
+    assert result.state is DeferredAnalysisLaneState.COMPLETE
+    assert states.inspections == 2
+    assert sleeps == [1.0]
 
 
 def test_spawn_lane_retains_math_bound_but_scrubs_ambient_secret(monkeypatch):

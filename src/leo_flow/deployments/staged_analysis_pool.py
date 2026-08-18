@@ -73,9 +73,25 @@ class BoundedSpawnDeferredAnalysisLaneV1:
             raise ValueError("lane worker count exceeds its reviewed bound")
         if int(deadline_utc_ns) <= time.time_ns():
             raise RuntimeError("deferred analysis lane deadline has elapsed")
-        children = self._spawn(window, stage, workers, deadline_utc_ns)
-        self._wait(children, deadline_utc_ns)
-        return self.inspect(window, stage)
+        retry_delay_s = 1.0
+        while True:
+            children = self._spawn(window, stage, workers, deadline_utc_ns)
+            self._wait(children, deadline_utc_ns)
+            result = self.inspect(window, stage)
+            if result.state is not DeferredAnalysisLaneState.PENDING:
+                return result
+
+            # A previous worker may still own an unexpired durable lease after
+            # its supervisor exits. Exact-scope claims correctly return no
+            # work in that case. Wait within the caller's deadline and retry;
+            # the repository will reclaim only after the lease expires.
+            remaining_s = (
+                int(deadline_utc_ns) - time.time_ns()
+            ) / 1_000_000_000
+            if remaining_s <= 0:
+                raise RuntimeError("deferred analysis lane deadline elapsed")
+            time.sleep(min(retry_delay_s, remaining_s))
+            retry_delay_s = min(retry_delay_s * 2.0, 15.0)
 
     def inspect(
         self, window: DeferredAnalysisWindowV1, stage: DeferredAnalysisStage
