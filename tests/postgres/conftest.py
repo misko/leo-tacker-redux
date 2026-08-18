@@ -61,6 +61,7 @@ _EXPECTED_MIGRATIONS = (
     "0042_starlink_full_dwell_work.sql",
     "0043_starlink_acquired_qam_v0_3.sql",
     "0044_prompt_full_dwell_timeline.sql",
+    "0045_prompt_timeline_source_acl.sql",
 )
 
 

@@ -26,3 +26,19 @@ def test_prompt_timeline_work_is_bounded_fenced_and_capture_independent() -> Non
 def test_prompt_timeline_is_in_object_liveness_inventory() -> None:
     sql = Path("migrations/0044_prompt_full_dwell_timeline.sql").read_text()
     assert "'recording_full_dwell_timeline_v0_1.bundle'" in sql
+
+
+def test_prompt_timeline_owner_has_only_declared_recording_source_columns() -> None:
+    sql = Path("migrations/0045_prompt_timeline_source_acl.sql").read_text()
+    for column in (
+        "recording_id",
+        "data_digest_algorithm",
+        "data_digest_value",
+        "metadata_digest_algorithm",
+        "metadata_digest_value",
+        "manifest_digest_value",
+        "published_at",
+    ):
+        assert column in sql
+    assert "ON public.recording TO leo_routine_owner" in sql
+    assert "GRANT SELECT ON public.recording" not in sql

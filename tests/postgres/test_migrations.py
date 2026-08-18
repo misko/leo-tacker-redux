@@ -60,6 +60,7 @@ def test_migrations_are_idempotent_and_recorded(postgres_dsn: str) -> None:
         ("0042_starlink_full_dwell_work.sql",),
         ("0043_starlink_acquired_qam_v0_3.sql",),
         ("0044_prompt_full_dwell_timeline.sql",),
+        ("0045_prompt_timeline_source_acl.sql",),
     ]
 
 
@@ -121,7 +122,7 @@ def test_analysis_can_read_only_migration_receipts(postgres_dsn: str) -> None:
     assert not analysis_insert
     assert not capture_select
     assert not dashboard_select
-    assert receipts[-1] == ("0044_prompt_full_dwell_timeline.sql",)
+    assert receipts[-1] == ("0045_prompt_timeline_source_acl.sql",)
 
 
 @pytest.mark.integration
@@ -143,8 +144,16 @@ def test_prompt_timeline_capabilities_are_narrow(postgres_dsn: str) -> None:
                    has_function_privilege('leo_dashboard','read_latest_recording_full_dwell_timeline_v0_1(text)','EXECUTE')
             """
         ).fetchone()
+        routine_source_acl = connection.execute(
+            """
+            SELECT has_column_privilege('leo_routine_owner','recording','recording_id','SELECT'),
+                   has_column_privilege('leo_routine_owner','recording','published_at','SELECT'),
+                   has_table_privilege('leo_routine_owner','recording','SELECT')
+            """
+        ).fetchone()
     assert table_acl == (False, False, False, False)
     assert function_acl == (True, False, False, True)
+    assert routine_source_acl == (True, True, False)
 
 
 @pytest.mark.integration
