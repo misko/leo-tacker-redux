@@ -7,6 +7,7 @@ from leo_flow.contracts.core import RadioId, ReceiverChainId
 from leo_flow.dashboard.api import (
     DashboardJsonApplicationV15,
     DashboardJsonApplicationV16,
+    DashboardJsonApplicationV19,
     JsonRequest,
     JsonResponse,
 )
@@ -34,6 +35,9 @@ class _Ports:
             "calibrated_detection_count": None,
             "series": [],
         }
+
+    def recording_evidence_advanced_doppler(self, query):
+        return self.recording_evidence_doppler(query)
 
 
 def _application() -> tuple[DashboardJsonApplicationV16, _Ports]:
@@ -88,3 +92,36 @@ def test_v16_rejects_unknown_unbounded_and_mutating_requests() -> None:
         app.handle(JsonRequest("GET", path, {"maximum_windows": "4097"})).status == 400
     )
     assert app.handle(JsonRequest("POST", path, {})).status == 405
+
+
+def test_v19_adds_advanced_path_doppler_without_changing_v16_routes() -> None:
+    _, ports = _application()
+    app = DashboardJsonApplicationV19(
+        cast(DashboardJsonApplicationV16, _Previous()), ports
+    )
+    response = app.handle(
+        JsonRequest(
+            "GET",
+            "/api/v19/recordings/rec_evidence/evidence-advanced-doppler",
+            {"lnb_ids": "lnb_a", "maximum_windows": "12"},
+        )
+    )
+
+    assert response.status == 200
+    assert ports.doppler_query.lnb_ids == ("lnb_a",)
+    assert ports.doppler_query.maximum_windows == 12
+    assert app.handle(JsonRequest("GET", "/older", {})).status == 299
+
+
+def test_v19_rejects_mutation_unknown_and_unbounded_queries() -> None:
+    _, ports = _application()
+    app = DashboardJsonApplicationV19(
+        cast(DashboardJsonApplicationV16, _Previous()), ports
+    )
+    path = "/api/v19/recordings/rec_evidence/evidence-advanced-doppler"
+
+    assert app.handle(JsonRequest("POST", path, {})).status == 405
+    assert app.handle(JsonRequest("GET", path, {"locator": "/private"})).status == 400
+    assert (
+        app.handle(JsonRequest("GET", path, {"maximum_windows": "4097"})).status == 400
+    )

@@ -6,7 +6,7 @@ import base64
 import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any, Final, cast
+from typing import Any, Final, Protocol, cast
 
 import psycopg
 
@@ -31,6 +31,11 @@ from leo_flow.contracts.dashboard import (
     StorageHealth,
     TimeRangeQuery,
     TrackView,
+)
+from leo_flow.contracts.dashboard_advanced_doppler import (
+    PublishedAdvancedDopplerPathQueryPortV0_1,
+    PublishedAdvancedDopplerPathV0_1,
+    RecordingEvidenceAdvancedDopplerViewV0_1,
 )
 from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardView,
@@ -105,6 +110,7 @@ from leo_flow.services.capture_doppler_summary import (
     CaptureDopplerSummaryQueryServiceV0_1,
 )
 from leo_flow.services.recording_evidence import (
+    RecordingEvidenceAdvancedDopplerQueryServiceV0_1,
     RecordingEvidenceDopplerQueryServiceV0_1,
 )
 
@@ -129,6 +135,14 @@ _MAX_PAGE_SIZE: Final = 200
 ConnectionFactory = Callable[[], psycopg.Connection[dict[str, object]]]
 
 
+class _DashboardDopplerSourcePort(
+    RecordingDopplerVisualizationQueryPortV0_1,
+    PublishedAdvancedDopplerPathQueryPortV0_1,
+    Protocol,
+):
+    pass
+
+
 class PostgresDashboardRepository:
     """Query normalized projections without gaining any write capability."""
 
@@ -137,7 +151,7 @@ class PostgresDashboardRepository:
         connect: ConnectionFactory,
         *,
         page_size: int = 50,
-        doppler: RecordingDopplerVisualizationQueryPortV0_1 | None = None,
+        doppler: _DashboardDopplerSourcePort | None = None,
         surrogate_nulls: RecordingStarlinkSurrogateNullQueryPortV0_1 | None = None,
         pilot_constellations: RecordingStarlinkPilotConstellationQueryPortV0_1
         | None = None,
@@ -177,6 +191,11 @@ class PostgresDashboardRepository:
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
+        self._recording_evidence_advanced_doppler = (
+            RecordingEvidenceAdvancedDopplerQueryServiceV0_1(
+                self._recording_evidence, self, self
+            )
+        )
         self._capture_doppler_summaries = CaptureDopplerSummaryQueryServiceV0_1(
             PostgresCaptureDopplerScopeRepositoryV0_1(connect), self
         )
@@ -209,6 +228,13 @@ class PostgresDashboardRepository:
         self, query: RecordingEvidenceDopplerQueryV0_1
     ) -> RecordingEvidenceDopplerViewV0_1:
         return self._recording_evidence_doppler.recording_evidence_doppler(query)
+
+    def recording_evidence_advanced_doppler(
+        self, query: RecordingEvidenceDopplerQueryV0_1
+    ) -> RecordingEvidenceAdvancedDopplerViewV0_1:
+        return self._recording_evidence_advanced_doppler.recording_evidence_advanced_doppler(
+            query
+        )
 
     def recording_starlink_full_dwell(
         self, query: StarlinkFullDwellQueryV0_1
@@ -313,6 +339,13 @@ class PostgresDashboardRepository:
             (RecordingDopplerVisualizationViewV0_1.CANDIDATE_WARNING,),
             ("doppler-analysis-unavailable",),
         )
+
+    def recording_advanced_doppler_paths(
+        self, recording_id: RecordingId
+    ) -> tuple[PublishedAdvancedDopplerPathV0_1, ...]:
+        if self._doppler is None:
+            return ()
+        return self._doppler.recording_advanced_doppler_paths(recording_id)
 
     def observation_aggregate(
         self, query: TimeRangeQuery

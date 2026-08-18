@@ -19,6 +19,9 @@ from leo_flow.contracts.core import (
     canonical_json_bytes,
 )
 from leo_flow.contracts.dashboard import TimeRangeQuery
+from leo_flow.contracts.dashboard_advanced_doppler import (
+    RecordingEvidenceAdvancedDopplerQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_batch import (
     CaptureBatchDashboardQueryPortV0_1,
     CaptureBatchTimeRangeQuery,
@@ -903,6 +906,52 @@ class DashboardJsonApplicationV18:
             encoded = canonical_json_bytes(payload)
             if len(encoded) > self._MAX_RESPONSE_BYTES:
                 raise RuntimeError("capture Doppler summary exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+class DashboardJsonApplicationV19:
+    """Add exact total/window estimates for advanced-path-only Doppler evidence."""
+
+    _PREFIX = "/api/v19/recordings/"
+    _MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        advanced_doppler: RecordingEvidenceAdvancedDopplerQueryPortV0_1,
+    ) -> None:
+        self._previous = previous
+        self._advanced_doppler = advanced_doppler
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "evidence-advanced-doppler":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._advanced_doppler.recording_evidence_advanced_doppler(
+                _recording_evidence_doppler_query(
+                    RecordingId(unquote(parts[0])), request.query
+                )
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("advanced Doppler evidence exceeds its byte bound")
         except (ValueError, InvalidCursor) as error:
             return _error(400, "invalid_request", str(error))
         except DashboardNotFound as error:

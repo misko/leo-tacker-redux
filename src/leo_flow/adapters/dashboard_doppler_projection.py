@@ -10,7 +10,11 @@ from leo_flow.contracts.blind_doppler import (
     BlindDopplerCandidateV0_1,
     DopplerPolynomialOrder,
 )
-from leo_flow.contracts.core import RecordingId, SchemaRef
+from leo_flow.contracts.core import RecordingId, SchemaRef, UtcNs
+from leo_flow.contracts.dashboard_advanced_doppler import (
+    PublishedAdvancedDopplerPathPointV0_1,
+    PublishedAdvancedDopplerPathV0_1,
+)
 from leo_flow.contracts.dashboard_doppler import (
     DopplerAdvancedEvidenceViewV0_1,
     DopplerBroadbandEvidenceViewV0_1,
@@ -145,6 +149,93 @@ class DurableDashboardDopplerProjectionV0_1:
                 reason_codes=tuple(sorted(set(waterfall.reason_codes))),
             )
 
+    def recording_advanced_doppler_paths(
+        self, recording_id: RecordingId
+    ) -> tuple[PublishedAdvancedDopplerPathV0_1, ...]:
+        """Expose exact immutable slope-bank points without fabricating candidates."""
+
+        refs = self._query.list_recording_doppler(recording_id)
+        if not refs:
+            return ()
+        product_ids = {str(ref.waterfall_product_id) for ref in refs}
+        waterfall_digests = {ref.waterfall_bundle_digest for ref in refs}
+        if len(product_ids) != 1 or len(waterfall_digests) != 1:
+            raise RuntimeError(
+                "recording Doppler products identify different waterfalls"
+            )
+        with self._waterfalls.open(next(iter(product_ids))) as durable_waterfall:
+            waterfall = durable_waterfall.bundle
+            if (
+                waterfall.recording_id != recording_id
+                or durable_waterfall.ref.bundle_ref.digest
+                != next(iter(waterfall_digests))
+            ):
+                raise RuntimeError("Doppler and waterfall products disagree")
+            tiles = {
+                (tile.segment_id, tile.receiver_chain_id): tile
+                for tile in waterfall.tiles
+            }
+            paths: list[PublishedAdvancedDopplerPathV0_1] = []
+            for ref in refs:
+                tile = tiles.get((ref.segment_id, ref.receiver_chain_id))
+                if tile is None:
+                    raise RuntimeError("advanced Doppler path has no waterfall tile")
+                with self._doppler.open(recording_id, ref.doppler_id) as durable:
+                    advanced = durable.advanced
+                    bank = advanced.slope_bank
+                    association = advanced.association
+                    if (
+                        bank is None
+                        or association is None
+                        or association.state != "advanced-path-only"
+                    ):
+                        continue
+                    if len(bank.track.bins) != len(tile.time_bins):
+                        raise RuntimeError(
+                            "advanced Doppler path and waterfall rows disagree"
+                        )
+                    points = tuple(
+                        PublishedAdvancedDopplerPathPointV0_1(
+                            row_index,
+                            row.start_sample,
+                            row.stop_sample,
+                            _sample_utc_ns(
+                                tile.segment_start_utc_ns,
+                                row.start_sample,
+                                tile.sample_rate_hz,
+                            ),
+                            _sample_utc_ns(
+                                tile.segment_start_utc_ns,
+                                row.stop_sample,
+                                tile.sample_rate_hz,
+                            ),
+                            row.midpoint_utc_ns,
+                            tile.center_frequency_hz
+                            + tile.frequency_bin_offsets_hz[frequency_bin],
+                        )
+                        for row_index, (row, frequency_bin) in enumerate(
+                            zip(tile.time_bins, bank.track.bins, strict=True)
+                        )
+                    )
+                    paths.append(
+                        PublishedAdvancedDopplerPathV0_1(
+                            recording_id,
+                            ref.segment_id,
+                            ref.receiver_chain_id,
+                            bank.candidate_path_digest,
+                            str(ref.doppler_id) + ":advanced",
+                            association.state,
+                            bank.track.drift_rate_hz_s,
+                            points,
+                        )
+                    )
+        return tuple(
+            sorted(
+                paths,
+                key=lambda item: (str(item.segment_id), str(item.receiver_chain_id)),
+            )
+        )
+
 
 def _unavailable(
     recording_id: RecordingId, layer: DopplerWaterfallLayer
@@ -164,6 +255,10 @@ def _unavailable(
         (RecordingDopplerVisualizationViewV0_1.CANDIDATE_WARNING,),
         ("doppler-analysis-unavailable",),
     )
+
+
+def _sample_utc_ns(start: UtcNs, sample: int, sample_rate_hz: float) -> UtcNs:
+    return UtcNs(int(start) + round(sample * 1_000_000_000 / sample_rate_hz))
 
 
 def _tile(

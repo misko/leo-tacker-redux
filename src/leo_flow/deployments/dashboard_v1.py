@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from leo_flow.adapters.dashboard_http import StdlibDashboardServer
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
+from leo_flow.contracts.dashboard_advanced_doppler import (
+    RecordingEvidenceAdvancedDopplerQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_batch import CaptureBatchDashboardQueryPortV0_1
 from leo_flow.contracts.dashboard_capture_doppler import (
     CaptureDopplerSummaryQueryPortV0_1,
@@ -80,6 +83,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV16,
     DashboardJsonApplicationV17,
     DashboardJsonApplicationV18,
+    DashboardJsonApplicationV19,
     JsonDashboardHandler,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
@@ -214,6 +218,14 @@ class DashboardV18QueryPort(
     Protocol,
 ):
     """Additive bounded master-table Doppler summary surface."""
+
+
+class DashboardV19QueryPort(
+    DashboardV18QueryPort,
+    RecordingEvidenceAdvancedDopplerQueryPortV0_1,
+    Protocol,
+):
+    """Additive exact advanced-path-only Doppler read surface."""
 
 
 class _ReadinessCheckedDashboardServer:
@@ -441,7 +453,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV18QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardV19QueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -464,10 +476,11 @@ def _build_dashboard(
     v16 = DashboardJsonApplicationV16(v15, queries, queries)
     v17 = DashboardJsonApplicationV17(v16, queries)
     v18 = DashboardJsonApplicationV18(v17, queries)
+    v19 = DashboardJsonApplicationV19(v18, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(v18),
+        DashboardUiApplication(v19),
         diagnostics=diagnostics,
     )
 

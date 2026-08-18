@@ -147,6 +147,50 @@ def _doppler() -> dict[str, object]:
     }
 
 
+def _advanced_doppler() -> dict[str, object]:
+    return {
+        "requested_recording_id": RECORDING,
+        "state": "complete",
+        "candidate_only": True,
+        "calibrated_detection_count": None,
+        "series": [
+            {
+                "recording_id": RECORDING,
+                "radio_id": "radio_a",
+                "lnb_id": "lnb_authoritative",
+                "receiver_chain_id": "rx_a",
+                "segment_id": "seg_a",
+                "association_state": "advanced-path-only",
+                "total": {"drift_rate_hz_s": -12500.0},
+                "windows": [
+                    {
+                        "point_start_utc_ns": 1_000_000_000,
+                        "point_stop_utc_ns": 1_100_000_000,
+                        "interval_start_utc_ns": 950_000_000,
+                        "interval_stop_utc_ns": 1_150_000_000,
+                        "start_sample": 0,
+                        "stop_sample": 200,
+                        "drift_rate_hz_s": -12000.0,
+                        "support_count": 2,
+                    },
+                    {
+                        "point_start_utc_ns": 1_100_000_000,
+                        "point_stop_utc_ns": 1_200_000_000,
+                        "interval_start_utc_ns": 1_050_000_000,
+                        "interval_stop_utc_ns": 1_250_000_000,
+                        "start_sample": 100,
+                        "stop_sample": 300,
+                        "drift_rate_hz_s": -13000.0,
+                        "support_count": 2,
+                    },
+                ],
+            }
+        ],
+        "original_window_count": 2,
+        "truncated": False,
+    }
+
+
 def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> None:
     with running_dashboard() as base_url, sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True, env=browser_environment())
@@ -191,6 +235,14 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
                     body=json.dumps(_doppler()),
                 ),
             )
+            page.route(
+                f"**/api/v19/recordings/{RECORDING}/evidence-advanced-doppler?*",
+                lambda route: route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps(_advanced_doppler()),
+                ),
+            )
             page.goto(f"{base_url}/recordings/{RECORDING}")
             expect(page.locator("#evidence-context-state")).to_have_attribute(
                 "data-state", "ready"
@@ -207,14 +259,17 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
                 "data-series-count", "2"
             )
             expect(page.locator("#evidence-doppler-canvas")).to_have_attribute(
-                "data-series-count", "1"
+                "data-series-count", "2"
+            )
+            expect(page.locator("#evidence-doppler-legend")).to_contain_text(
+                "advanced path only"
             )
             page.locator("#evidence-mode").select_option("windows")
             expect(page.locator("#evidence-qam-canvas")).to_have_attribute(
                 "data-series-count", "2"
             )
             expect(page.locator("#evidence-doppler-canvas")).to_have_attribute(
-                "data-point-count", "2"
+                "data-point-count", "4"
             )
             assert "overall" in qam_modes and "windows" in qam_modes
             page.locator('#evidence-lnbs input[value="lnb_authoritative"]').uncheck()
@@ -303,6 +358,14 @@ def test_unified_workspace_distinguishes_pending_missing_and_error() -> None:
                     status=200,
                     content_type="application/json",
                     body=json.dumps(missing),
+                ),
+            )
+            page.route(
+                f"**/api/v19/recordings/{RECORDING}/evidence-advanced-doppler?*",
+                lambda route: route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({**missing, "warnings": []}),
                 ),
             )
             page.goto(f"{base_url}/recordings/{RECORDING}")

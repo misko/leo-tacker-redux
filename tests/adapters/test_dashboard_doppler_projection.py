@@ -228,3 +228,23 @@ def test_advanced_only_path_and_zero_candidate_provenance_are_not_suppressed() -
         is DopplerCandidateAssociationState.ADVANCED_PATH_ONLY
     )
     assert evidence.candidate_path_digest == advanced_path_digest
+
+    paths = projection.recording_advanced_doppler_paths(waterfall.recording_id)
+    assert len(paths) == 1
+    path = paths[0]
+    assert path.association_state == "advanced-path-only"
+    assert path.path_digest == advanced_path_digest
+    assert path.provenance_artifact_id == str(ref.doppler_id) + ":advanced"
+    assert len(path.points) == len(waterfall.tiles[0].time_bins)
+    first = path.points[0]
+    first_row = waterfall.tiles[0].time_bins[0]
+    first_bin = advanced.slope_bank.track.bins[0]  # type: ignore[union-attr]
+    assert (first.start_sample, first.stop_sample) == (
+        first_row.start_sample,
+        first_row.stop_sample,
+    )
+    assert first.midpoint_utc_ns == first_row.midpoint_utc_ns
+    assert first.frequency_hz == (
+        waterfall.tiles[0].center_frequency_hz
+        + waterfall.tiles[0].frequency_bin_offsets_hz[first_bin]
+    )

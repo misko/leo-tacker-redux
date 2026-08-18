@@ -250,17 +250,26 @@
         node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren(); state("doppler", "missing", "Select at least one radio, LNB, and receiver."); return;
       }
       const parameters = new URLSearchParams({maximum_windows: "4096"}); queryFilters(parameters); parameters.delete("edges");
-      const payload = await json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-doppler?${parameters}`);
+      const [payload, advancedPayload] = await Promise.all([
+        json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-doppler?${parameters}`),
+        json(`/api/v19/recordings/${encodeURIComponent(recordingId)}/evidence-advanced-doppler?${parameters}`),
+      ]);
       if (current !== generation) return;
-      if (payload.candidate_only !== true || payload.calibrated_detection_count !== null) throw new Error("unsafe Doppler semantics");
+      if (payload.candidate_only !== true || payload.calibrated_detection_count !== null || advancedPayload.candidate_only !== true || advancedPayload.calibrated_detection_count !== null) throw new Error("unsafe Doppler semantics");
       const mode = node("evidence-mode").value;
-      const series = (payload.series || []).map((item, index) => ({
-        label: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, `candidate ${item.candidate_rank}`]),
+      const basicSeries = (payload.series || []).map((item, index) => ({
+        label: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, `basic candidate ${item.candidate_rank}`]),
         points: mode === "windows" ? (item.windows || []).map((window) => ({x: (Number(window.interval_start_utc_ns) + Number(window.interval_stop_utc_ns)) / 2, y: Number(window.drift_rate_hz_s)})) : [{x: index, y: Number(item.total.drift_rate_hz_s)}],
       }));
-      drawChart("evidence-doppler-canvas", series, "drift rate [Hz/s]", mode, "published total candidate fit");
+      const advancedSeries = (advancedPayload.series || []).map((item, index) => ({
+        label: identity([item.recording_id, item.radio_id, item.lnb_id, item.receiver_chain_id, item.segment_id, "advanced path only"]),
+        points: mode === "windows" ? (item.windows || []).map((window) => ({x: (Number(window.point_start_utc_ns) + Number(window.point_stop_utc_ns)) / 2, y: Number(window.drift_rate_hz_s)})) : [{x: basicSeries.length + index, y: Number(item.total.drift_rate_hz_s)}],
+      }));
+      const series = [...basicSeries, ...advancedSeries];
+      drawChart("evidence-doppler-canvas", series, "drift rate [Hz/s]", mode, "published total path rate");
       seriesLegend("evidence-doppler-legend", series);
-      state("doppler", payload.state === "complete" && series.length ? "ready" : payload.state, payload.state === "complete" && series.length ? `${series.length} unpooled series; ${mode === "overall" ? "published total candidate fits" : "adjacent published track-point slopes with explicit UTC/sample bounds"}.` : `Doppler evidence is ${payload.state}.`);
+      const combinedState = series.length ? "ready" : payload.state === "pending" || advancedPayload.state === "pending" ? "pending" : payload.state === "error" || advancedPayload.state === "error" ? "error" : "missing";
+      state("doppler", combinedState, series.length ? `${series.length} unpooled series (${basicSeries.length} basic candidate, ${advancedSeries.length} advanced-path-only); ${mode === "overall" ? "published total path rates" : "adjacent immutable path-point slopes with explicit UTC/sample scope"}. Candidate evidence only; no calibrated detection is implied.` : `Doppler evidence is ${combinedState}.`);
     } catch (error) {
       if (current !== generation) return;
       node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren();
