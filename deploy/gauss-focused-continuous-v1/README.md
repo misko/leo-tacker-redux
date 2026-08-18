@@ -45,3 +45,12 @@ analyses in flight, providing twelve useful analysis workers while preserving
 capture headroom.
 Duration is part of every immutable capture-definition digest and is passed
 unchanged to the capture child; historical 20-second definitions remain valid.
+
+The optional-heavy-work guard begins 40 seconds before each immutable requested
+capture start and remains active through the dwell plus the existing five-second
+completion margin. This buffer changes only the local optional-work status; it
+does not shift, delay, or reinterpret the requested capture time. The prompt
+timeline worker therefore gets only the early off-window admission slot, then
+has a 40-second drain interval before RF sampling. Guard publication remains
+best-effort: a missing or failed status write makes optional work fail closed and
+never blocks capture.

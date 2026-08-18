@@ -11,11 +11,13 @@
     "maximum_focused_backlog": 64,
     "fresh_capture_guard_required": true,
     "claims_during_capture_guard": false,
+    "pre_sampling_guard_buffer_seconds": 40,
+    "capture_completion_guard_margin_seconds": 5,
     "host_cpu_cores": 24,
     "reserved_cpu_cores": 8,
-    "estimated_claim_cpu_cores": 3,
+    "estimated_claim_cpu_cores": 1,
     "minimum_memory_available_bytes": 8589934592,
-    "maximum_io_pressure_avg10": 5.0
+    "maximum_io_pressure_avg10": 80.0
   },
   "timeline": {
     "tile_sample_count": 20000,
@@ -29,17 +31,18 @@
     "maximum_claims_per_cycle": 1,
     "lease_ttl_seconds": 900,
     "poll_seconds": 5,
-    "cpu_quota_percent": 300,
+    "cpu_quota_percent": 100,
     "memory_max_bytes": 3221225472,
     "tasks_max": 8,
-    "nice": 12
+    "nice": 15
   },
   "acceptance": {
     "duration_seconds": 60,
     "sample_rate_hz": 5000000,
     "receiver_count": 2,
-    "maximum_elapsed_seconds": 120,
+    "maximum_elapsed_seconds": 27.5,
     "measured_elapsed_seconds": 12.409013,
+    "maximum_observed_productive_interval_seconds": 27.479,
     "measurement_utc_date": "2026-08-18",
     "measurement_kind": "synthetic-zero-ci16-production-analyzer",
     "tile_reads": 15000,

@@ -169,7 +169,7 @@ def test_unit_has_resource_and_cancellation_bounds() -> None:
         "deploy/gauss-prompt-full-dwell-v1/leo-gauss-prompt-full-dwell.service.in",
     ).read_text(encoding="utf-8")
     for required in (
-        "CPUQuota=300%",
+        "CPUQuota=100%",
         "MemoryMax=3G",
         "TasksMax=8",
         "TimeoutStopSec=30s",
@@ -179,12 +179,14 @@ def test_unit_has_resource_and_cancellation_bounds() -> None:
         "--maximum-focused-backlog 64",
         "--host-cpu-cores 24",
         "--reserved-cpu-cores 8",
-        "--estimated-claim-cpu-cores 3",
+        "--estimated-claim-cpu-cores 1",
+        "--maximum-io-pressure-avg10 80",
         "--maximum-optional-concurrency 1",
     ):
         assert required in unit
     assert "DeviceAllow" not in unit
     assert "pipeline-mode.lock" not in unit
+    assert "Nice=15" in unit
 
 
 def test_deployment_inventory_keeps_one_guarded_worker_and_tail_coverage() -> None:
@@ -195,5 +197,8 @@ def test_deployment_inventory_keeps_one_guarded_worker_and_tail_coverage() -> No
     assert '"maximum_optional_concurrency": 1' in inventory
     assert '"maximum_focused_backlog": 64' in inventory
     assert '"claims_during_capture_guard": false' in inventory
+    assert '"pre_sampling_guard_buffer_seconds": 40' in inventory
+    assert '"capture_completion_guard_margin_seconds": 5' in inventory
     assert '"retains_short_tail": true' in inventory
-    assert '"maximum_elapsed_seconds": 120' in inventory
+    assert '"maximum_elapsed_seconds": 27.5' in inventory
+    assert '"maximum_observed_productive_interval_seconds": 27.479' in inventory

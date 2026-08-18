@@ -14,10 +14,12 @@ from leo_flow.deployments.gauss_focused_continuous_operator import (
     _analysis_command,
     _AnalysisChild,
     _capture_command,
+    _optional_work_guard_bounds,
     _parser,
     _prior_analysis_releases,
     _reap,
     _recover,
+    _valid_args,
     main,
 )
 
@@ -77,6 +79,28 @@ def test_help_describes_continuous_capture_and_async_analysis() -> None:
     assert "asynchronously" in text
     assert "--maximum-in-flight-analyses" in text
     assert "--maximum-analysis-attempts" in text
+    assert "--optional-work-guard-buffer-seconds" in text
+
+
+def test_optional_work_guard_buffer_defaults_to_forty_seconds(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    assert args.optional_work_guard_buffer_seconds == 40
+
+
+def test_optional_work_guard_buffer_is_positive_and_within_capture_lead(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    for path in (args.station_a, args.station_b, args.analysis_config):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    assert _valid_args(args)
+    args.optional_work_guard_buffer_seconds = 0
+    assert not _valid_args(args)
+    args.optional_work_guard_buffer_seconds = args.lead_seconds + 1
+    assert not _valid_args(args)
 
 
 def test_capture_child_is_capture_only_and_analysis_child_is_capture_safe(
@@ -109,6 +133,22 @@ def test_capture_child_receives_configured_sixty_second_duration(
     assert capture[capture.index("--duration-seconds") + 1] == "60"
 
 
+def test_guard_buffer_does_not_move_requested_capture_time(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    args.duration_seconds = 60
+    args.optional_work_guard_buffer_seconds = 40
+    record = replace(_record(tmp_path), requested_start_utc_ns=100_000_000_000)
+
+    guard_from, guard_until = _optional_work_guard_bounds(args, record)
+    capture = _capture_command(args, record)
+
+    assert guard_from == 60_000_000_000
+    assert guard_until == 165_000_000_000
+    assert capture[capture.index("--requested-start-utc-ns") + 1] == str(
+        record.requested_start_utc_ns
+    )
+
+
 def test_restart_journal_exposes_captured_work_for_redispatch(tmp_path: Path) -> None:
     journal = SQLiteFocusedContinuousJournalV0_1(tmp_path / "journal.sqlite3")
     planned = _record(tmp_path)
@@ -138,6 +178,7 @@ def test_user_service_is_one_continuous_loop_without_timer_or_shell_engine() -> 
     assert "--analysis-nice 15" in unit
     assert "--duration-seconds 60" in unit
     assert "--lead-seconds 57" in unit
+    assert "--optional-work-guard-buffer-seconds 40" in unit
     assert (
         "--heavy-work-guard-status %t/leo-flow-optional-heavy/guard.json" in unit
     )

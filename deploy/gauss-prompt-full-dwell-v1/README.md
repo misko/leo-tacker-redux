@@ -11,7 +11,7 @@ tail. For the supported 2.5/5 Msps dwells this is an 8/4 ms base timeline;
 Migration `0044_prompt_full_dwell_timeline.sql` is required. The service has
 analysis credentials and read/write CAS access only; it has no capture port,
 radio device, pipeline mode lock, or primary-analysis dependency. A 15-minute
-fenced lease, eight-attempt terminal park, 3-CPU quota, 3 GiB memory maximum,
+fenced lease, eight-attempt terminal park, 1-CPU quota, 3 GiB memory maximum,
 and one-job process bound contain resource use and cancellation. Publication
 is CAS-first and exact-replay safe. The V20 dashboard prefers this prompt base
 product and retains V15 as a compatibility fallback.
@@ -29,9 +29,11 @@ work slot. Focused analysis only admits PostgreSQL work and never reads timeline
 IQ or awaits timeline publication.
 
 The deployment acceptance gate is a complete synthetic or exact real 60-second,
-5 Msps, two-receiver run of the production power tiler in less than the
-120-second focused-capture cadence. Record elapsed time, covered samples, final
-tail, and window count; do not enable this inventory if the gate fails.
+5 Msps, two-receiver run of the production power tiler within 27.5 seconds.
+Record elapsed time, covered samples, final tail, and window count; do not enable
+this inventory if the gate fails. The focused supervisor stops new claims 40
+seconds before RF sampling, so the reviewed bound leaves at least 12.5 seconds
+between a conforming claim's completion and the requested capture start.
 
 On 2026-08-18 the production analyzer completed a synthetic zero-CI16 60-second,
 5 Msps, two-receiver timeline in 12.409013 seconds: 15,000 shared tile reads,
@@ -40,6 +42,13 @@ through the final stop on both streams. This is a compute/geometry acceptance
 measurement with a bounded lazy source; it does not include catalog or CAS I/O.
 The worker's separate CPU, memory, capture-guard, and I/O-pressure gates remain
 required for live claims.
+
+Live productive intervals observed for identical 60-second, 2.5 Msps inputs
+were normally 7.5--10.1 seconds and no more than 27.479 seconds in the reviewed
+burst. The deployed worker therefore declares one estimated CPU core, a 100%
+CPU quota, nice level 15, and one global optional slot. Its I/O PSI admission
+ceiling is 80% specifically for the early off-window slot; the 40-second guard
+then prevents any new claim during the drain buffer or RF sampling.
 
 For a bounded operator check or backfill step, append `--once`; each invocation
 admits at most two newest recordings and processes at most one lease.

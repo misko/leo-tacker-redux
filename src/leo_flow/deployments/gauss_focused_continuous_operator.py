@@ -40,6 +40,8 @@ DEFAULT_POLL_INTERVAL_S = 0.25
 DEFAULT_MINIMUM_FREE_BYTES = 10 * 1024**3
 DEFAULT_LEAD_SECONDS = MINIMUM_LEAD_NS // 1_000_000_000 + 15
 DEFAULT_ANALYSIS_NICE = 15
+DEFAULT_OPTIONAL_WORK_GUARD_BUFFER_SECONDS = 40
+CAPTURE_COMPLETION_GUARD_MARGIN_SECONDS = 5
 
 
 @dataclass(slots=True)
@@ -124,6 +126,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--lead-seconds", type=int, default=DEFAULT_LEAD_SECONDS)
     parser.add_argument("--duration-seconds", type=int, default=20)
+    parser.add_argument(
+        "--optional-work-guard-buffer-seconds",
+        type=int,
+        default=DEFAULT_OPTIONAL_WORK_GUARD_BUFFER_SECONDS,
+        help=(
+            "stop new optional-work claims this many seconds before sampling; "
+            "does not alter the requested capture time"
+        ),
+    )
     parser.add_argument("--maximum-dwells", type=int, default=0)
     parser.add_argument(
         "--minimum-free-bytes", type=int, default=DEFAULT_MINIMUM_FREE_BYTES
@@ -183,7 +194,12 @@ def main(argv: list[str] | None = None) -> int:
             active=True,
             guard_from_utc_ns=time.time_ns(),
             guard_until_utc_ns=time.time_ns()
-            + (args.lead_seconds + args.duration_seconds + 5) * 1_000_000_000,
+            + (
+                args.lead_seconds
+                + args.duration_seconds
+                + CAPTURE_COMPLETION_GUARD_MARGIN_SECONDS
+            )
+            * 1_000_000_000,
         )
         while not stopping and (
             args.maximum_dwells == 0 or completed_capture_count < args.maximum_dwells
@@ -196,16 +212,16 @@ def main(argv: list[str] | None = None) -> int:
                 _write_failure_latch(failure_latch, "capacity-gate-failed")
                 return 4
             record = _plan(args, journal)
+            guard_from_utc_ns, guard_until_utc_ns = _optional_work_guard_bounds(
+                args, record
+            )
             _publish_guard(
                 publisher,
                 journal,
                 children,
                 active=True,
-                guard_from_utc_ns=record.requested_start_utc_ns,
-                guard_until_utc_ns=(
-                    record.requested_start_utc_ns
-                    + (args.duration_seconds + 5) * 1_000_000_000
-                ),
+                guard_from_utc_ns=guard_from_utc_ns,
+                guard_until_utc_ns=guard_until_utc_ns,
             )
             print(
                 json.dumps(
@@ -328,6 +344,9 @@ def _valid_args(args: argparse.Namespace) -> bool:
         and 1 <= args.maximum_analysis_attempts <= 10
         and args.lead_seconds * 1_000_000_000 >= MINIMUM_LEAD_NS
         and 1 <= args.duration_seconds <= 300
+        and 1
+        <= args.optional_work_guard_buffer_seconds
+        <= args.lead_seconds
         and args.maximum_dwells >= 0
         and args.minimum_free_bytes > 0
         and args.shutdown_protocol == "graceful-drain-v1"
@@ -339,6 +358,24 @@ def _valid_args(args: argparse.Namespace) -> bool:
             and (root / "config/analysis.json").is_file()
             for root in prior_releases.values()
         )
+    )
+
+
+def _optional_work_guard_bounds(
+    args: argparse.Namespace,
+    record: FocusedContinuousRecordV0_1,
+) -> tuple[int, int]:
+    """Exclude optional claims before sampling without moving the capture."""
+
+    second_ns = 1_000_000_000
+    return (
+        record.requested_start_utc_ns
+        - args.optional_work_guard_buffer_seconds * second_ns,
+        record.requested_start_utc_ns
+        + (
+            args.duration_seconds + CAPTURE_COMPLETION_GUARD_MARGIN_SECONDS
+        )
+        * second_ns,
     )
 
 
