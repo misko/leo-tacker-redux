@@ -6,7 +6,10 @@ radio pairs.  As soon as a pair closes terminally, the supervisor dispatches
 its six exact FeatureSet, waterfall/Doppler, and Starlink suite/null/QAM jobs in
 a child process and immediately begins preparing the next capture.
 
-Up to eight pair analyses may be in flight.  PostgreSQL migration 0037 records
+Up to four pair analyses may be in flight, each at lowered CPU scheduling
+priority so the capture path retains headroom. Captured pairs beyond that limit
+remain in the durable journal and are dispatched FIFO as slots open; capture
+does not wait for analysis capacity. PostgreSQL migration 0037 records
 each terminal pair and its exact six jobs before any lease is claimed; the
 capture gate permits only those registered jobs to overlap radio work.  An
 unregistered lease, low-capacity gate, uncertain capture, failed analysis, or

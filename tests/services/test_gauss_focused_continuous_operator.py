@@ -131,7 +131,7 @@ def test_user_service_is_one_continuous_loop_without_timer_or_shell_engine() -> 
         "deploy/gauss-focused-continuous-v1/leo-focused-continuous.service.in"
     ).read_text(encoding="utf-8")
     assert "leo-gauss-focused-continuous" in unit
-    assert "--maximum-in-flight-analyses 8" in unit
+    assert "--maximum-in-flight-analyses 4" in unit
     assert "--compute-workers 8" in unit
     assert "--analysis-nice 15" in unit
     assert "--duration-seconds 60" in unit
