@@ -62,6 +62,7 @@ from leo_flow.storage.filesystem import FileSystemBlobStore
 from leo_flow.storage.postgres_catalog import PostgresRecordingCatalog
 from leo_flow.storage.recording_codec import SigMFRecordingObjectReader
 from leo_station.analysis_v1 import (
+    ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM,
     CAS_ROOT,
     RECORDING_ALGORITHM_REF,
     RECORDING_CONFIG_REF,
@@ -499,6 +500,7 @@ def _suite_compute(
                 starlink_temporal_pilot_preparers_v0_1(),
             ),
             starlink_acquired_dwell_profiles_v0_3(),
+            maximum_windows_per_stream=ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM,
         ),
         AtomicPostgresCombinedStarlinkSuiteCommitterV0_3(blobs, connect),
         worker_id=worker_id,

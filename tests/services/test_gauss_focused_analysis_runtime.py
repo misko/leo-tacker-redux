@@ -79,6 +79,13 @@ def test_focused_suite_compute_composes_temporal_pilot_preparers() -> None:
     assert isinstance(profiles, ast.Call)
     assert isinstance(profiles.func, ast.Name)
     assert profiles.func.id == "starlink_acquired_dwell_profiles_v0_3"
+    window_budget = next(
+        keyword.value
+        for keyword in dwell_calls[0].keywords
+        if keyword.arg == "maximum_windows_per_stream"
+    )
+    assert isinstance(window_budget, ast.Name)
+    assert window_budget.id == "ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM"
 
 
 def test_focused_preparation_links_both_recordings_before_job_submission() -> None:

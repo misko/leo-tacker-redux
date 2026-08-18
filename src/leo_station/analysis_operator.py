@@ -70,6 +70,7 @@ from leo_flow.services.starlink_suite_submission import (
 from leo_flow.services.waterfall_submission import SubmittedWaterfallAnalysisV0_1
 
 from .analysis_v1 import (
+    ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM,
     CAS_ROOT,
     MODE_LOCK_PATH,
     PLUGIN,
@@ -583,6 +584,7 @@ def _process_starlink_suite_one(credentials: SecretProvider) -> bool:
                 starlink_temporal_pilot_preparers_v0_1(),
             ),
             starlink_acquired_dwell_profiles_v0_3(),
+            maximum_windows_per_stream=ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM,
         ),
         AtomicPostgresCombinedStarlinkSuiteCommitterV0_3(blobs, connect),
         worker_id="gauss-starlink-suite-analysis-1",
@@ -678,6 +680,7 @@ def _backfill_starlink_acquired_qam_v0_3(
             reader,
             cast(Any, _ExistingSuite()),
             starlink_acquired_dwell_profiles_v0_3(),
+            maximum_windows_per_stream=ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM,
         )
         lease = JobLease(
             JobId(f"job_v03_backfill_{canonical_digest(submitted.request).value}"),

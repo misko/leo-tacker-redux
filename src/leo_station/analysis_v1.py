@@ -132,6 +132,7 @@ APPROVED_PYTHON: Final = (3, 11, 16)
 APPROVED_PYTHON_VERSION: Final = "3.11.16"
 CAS_ROOT: Final = Path("/home/mouse9911/.local/share/leo-flow/objects")
 MODE_LOCK_PATH: Final = Path("/home/mouse9911/.local/state/leo-flow/pipeline-mode.lock")
+ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM: Final = 8
 
 
 class GaussRuntimeApprovalError(RuntimeError):

@@ -259,6 +259,10 @@ def test_acquired_qam_profiles_cover_every_eligible_gauss_receiver() -> None:
     ) == len(profiles)
 
 
+def test_acquired_qam_production_window_budget_is_bounded_for_live_cadence() -> None:
+    assert analysis_v1.ACQUIRED_QAM_MAXIMUM_WINDOWS_PER_STREAM == 8
+
+
 def test_plugin_imports_no_capture_radio_or_private_storage_paths() -> None:
     source = inspect.getsource(analysis_v1) + inspect.getsource(analysis_operator)
     forbidden = (

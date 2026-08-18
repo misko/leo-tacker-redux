@@ -320,3 +320,12 @@ detector evidence, does not alter any published QAM contract, and is not a
 calibrated Starlink detection or false-alarm probability. Overall mode uses the
 published support-weighted accuracy/EVM; window mode uses each window's metrics.
 Radios, LNBs, receiver chains, and windows remain unpooled.
+
+The live acquired-QAM v0.3 producer uses eight evenly spaced windows per stream.
+The immutable contract permits up to 32 and records the requested bound and exact
+window intervals, but running the complete eight-method suite 32 times per receiver
+cannot keep pace with the two-minute capture cadence on the 24-core development
+host. Eight retains beginning-to-end dwell sampling while reducing this stage's
+dominant CPU work by approximately fourfold. The independent V15 full-dwell queue
+continues to provide its broader pattern-blind prescreen plus sparse exact
+all-algorithm windows; this operational bound does not reinterpret those products.
