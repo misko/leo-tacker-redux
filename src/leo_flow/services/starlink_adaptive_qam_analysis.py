@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from leo_flow.analysis.recording.quality import decode_ci16
 from leo_flow.analysis.recording.starlink_adaptive_qam import (
     adaptive_qam_window_selections_v0_4,
+    shared_adaptive_qam_window_selections_v0_4,
 )
 from leo_flow.analysis.recording.starlink_adaptive_qam_persistence import (
     DurableStarlinkAdaptiveQamStoreV0_4,
@@ -34,10 +36,12 @@ from leo_flow.contracts.starlink_adaptive_qam import (
     StarlinkAdaptiveQamBundleV0_4,
     StarlinkAdaptiveQamRequestV0_4,
     StarlinkAdaptiveQamStreamRequestV0_4,
+    StarlinkAdaptiveQamWindowSelectionV0_4,
 )
 from leo_flow.contracts.starlink_adaptive_response import (
     StarlinkAdaptiveResponseBundleV0_1,
     StarlinkAdaptiveResponseProductRefV0_1,
+    StarlinkAdaptiveResponseStreamV0_1,
 )
 from leo_flow.contracts.starlink_suite_pipeline import (
     StarlinkDetectorSuiteProductRefV0_2,
@@ -110,6 +114,37 @@ class DurableAdaptiveQamProducerV0_4:
             for suite in source_suite.suites
             for method in suite.methods
         }
+        grouped_response_streams: dict[
+            tuple[object, ...], list[StarlinkAdaptiveResponseStreamV0_1]
+        ] = defaultdict(list)
+        for stream in source_response.streams:
+            grouped_response_streams[
+                (
+                    stream.radio_id,
+                    stream.segment_id,
+                    stream.channel_number,
+                    stream.edge,
+                    stream.sample_rate_hz,
+                    stream.segment_sample_count,
+                )
+            ].append(stream)
+        selections_by_stream: dict[
+            tuple[object, object, object],
+            tuple[StarlinkAdaptiveQamWindowSelectionV0_4, ...],
+        ] = {}
+        for grouped in grouped_response_streams.values():
+            ordered = tuple(
+                sorted(grouped, key=lambda item: str(item.receiver_chain_id))
+            )
+            shared = shared_adaptive_qam_window_selections_v0_4(
+                ordered,
+                qam_window_sample_count=self._qam_window_sample_count,
+                maximum_windows=self._maximum_windows,
+            )
+            for stream, group_selections in zip(ordered, shared, strict=True):
+                selections_by_stream[
+                    (stream.segment_id, stream.receiver_chain_id, stream.edge)
+                ] = group_selections
         with self._reader.open(recording_ref) as recording:
             segments = {item.segment_id: item for item in recording.manifest.segments}
             request_streams = []
@@ -141,11 +176,19 @@ class DurableAdaptiveQamProducerV0_4:
                     )
                 except ValueError as error:
                     raise ValueError("adaptive QAM receiver is absent") from error
-                selections = adaptive_qam_window_selections_v0_4(
-                    response_stream,
-                    qam_window_sample_count=self._qam_window_sample_count,
-                    maximum_windows=self._maximum_windows,
+                selections = selections_by_stream.get(
+                    (
+                        response_stream.segment_id,
+                        response_stream.receiver_chain_id,
+                        response_stream.edge,
+                    )
                 )
+                if selections is None:
+                    selections = adaptive_qam_window_selections_v0_4(
+                        response_stream,
+                        qam_window_sample_count=self._qam_window_sample_count,
+                        maximum_windows=self._maximum_windows,
+                    )
                 templates = qin_edge_pilot_template_pair_v0_1(
                     segment.actual_sample_rate_hz, response_stream.edge
                 )
