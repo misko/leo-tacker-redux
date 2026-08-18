@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import expect, sync_playwright
@@ -9,44 +8,28 @@ from tests.dashboard.test_doppler_visualization_browser import (
     browser_environment,
     running_dashboard,
 )
-from tests.e2e.test_dashboard_browser import _freeze_browser_clock
 
 
-def _payload(recording: str) -> dict[str, object]:
+def _candidate(
+    recording: str,
+    lnb: str,
+    receiver: str,
+    accuracy: float,
+    evm: float,
+) -> dict[str, object]:
     return {
         "recording_id": recording,
-        "mode": "windows",
-        "candidate_only": True,
-        "calibration_required": True,
-        "analysis_ref": {"artifact_id": f"qam_{recording}"},
-        "streams": [
-            {
-                "radio_id": "radio_a",
-                "lnb_id": lnb,
-                "receiver_chain_id": receiver,
-                "segment_id": f"seg_{receiver}",
-                "edge": "lower",
-                "overall": {"window_count": 32},
-                "windows": [
-                    {
-                        "window_index": 0,
-                        "hard_symbol_accuracy": 0.26,
-                        "rms_evm": 4.0,
-                        "verify_minus_control_margin": 0.001,
-                    },
-                    {
-                        "window_index": 31,
-                        "hard_symbol_accuracy": accuracy,
-                        "rms_evm": evm,
-                        "verify_minus_control_margin": 0.3,
-                    },
-                ],
-            }
-            for lnb, receiver, accuracy, evm in (
-                ("lnb_a1", "rx_a1", 0.80, 0.78),
-                ("lnb_a2", "rx_a2", 0.26, 4.0),
-            )
-        ],
+        "radio_id": "radio_a",
+        "lnb_id": lnb,
+        "receiver_chain_id": receiver,
+        "segment_id": f"seg_{receiver}",
+        "edge": "lower",
+        "qam_goodness": 0.75 if receiver == "rx_a1" else 0.01,
+        "hard_symbol_accuracy": accuracy,
+        "rms_evm": evm,
+        "window_count": 32,
+        "analysis_id": f"qam_{recording}",
+        "selection": "highest-qam-goodness-per-recording-radio-lnb-receiver",
     }
 
 
@@ -57,35 +40,76 @@ def test_master_table_progressively_loads_qam_and_links_every_recording_detail()
         browser = playwright.chromium.launch(headless=True, env=browser_environment())
         try:
             page = browser.new_page()
-            _freeze_browser_clock(page)
+            page.add_init_script(
+                """
+                (() => {
+                  const NativeDate = Date;
+                  class FixedDate extends NativeDate {
+                    constructor(...args) { super(...(args.length ? args : [7200000])); }
+                    static now() { return 7200000; }
+                  }
+                  FixedDate.parse = NativeDate.parse;
+                  FixedDate.UTC = NativeDate.UTC;
+                  globalThis.Date = FixedDate;
+                })();
+                """
+            )
             requests: list[str] = []
 
             def fulfill(route):
                 requests.append(route.request.url)
-                recording = route.request.url.split("/recordings/")[1].split("/")[0]
                 query = parse_qs(urlparse(route.request.url).query)
                 assert query == {
-                    "mode": ["windows"],
-                    "maximum_streams": ["16"],
-                    "maximum_windows_per_stream": ["32"],
-                    "maximum_points_per_constellation": ["1"],
+                    "start_utc_ns": ["0"],
+                    "stop_utc_ns": ["7200000000000"],
+                    "maximum_recordings": ["100"],
                 }
-                if recording == "rec_pending_a":
-                    route.fulfill(
-                        status=404,
-                        content_type="application/json",
-                        body=json.dumps({"error": {"message": "pending"}}),
-                    )
-                    return
                 route.fulfill(
                     status=200,
-                    content_type="application/json",
-                    body=json.dumps(_payload(recording)),
+                    json={
+                        "schema_version": 1,
+                        "start_utc_ns": 0,
+                        "stop_utc_ns": 7_200_000_000_000,
+                        "candidate_only": True,
+                        "calibration_required": True,
+                        "calibrated_detection_count": None,
+                        "recordings": [
+                            {
+                                "recording_id": "rec_ready_a",
+                                "radio_id": "radio_a",
+                                "analysis_state": "complete",
+                                "state": "complete",
+                                "candidates": [
+                                    _candidate(
+                                        "rec_ready_a", "lnb_a1", "rx_a1", 0.80, 0.78
+                                    ),
+                                    _candidate(
+                                        "rec_ready_a", "lnb_a2", "rx_a2", 0.26, 4.0
+                                    ),
+                                ],
+                                "reason_codes": [],
+                            },
+                            {
+                                "recording_id": "rec_pending_a",
+                                "radio_id": "radio_a",
+                                "analysis_state": "pending",
+                                "state": "pending",
+                                "candidates": [],
+                                "reason_codes": ["acquired-qam-analysis-pending"],
+                            },
+                        ],
+                        "original_recording_count": 2,
+                        "truncated": False,
+                        "warnings": [
+                            "candidate-only-qam-goodness-not-starlink-detection",
+                            "highest-goodness-selected-independently-per-authoritative-lnb-receiver",
+                            "best-analyzed-window-not-support-weighted-dwell-mean",
+                            "radio-lnb-receiver-series-are-never-pooled",
+                        ],
+                    },
                 )
 
-            page.route(
-                "**/api/v17/recordings/*/starlink-acquired-constellation?*", fulfill
-            )
+            page.route("**/api/v22/capture-qam-summaries?*", fulfill)
             page.goto(base_url)
             ready = page.locator(
                 '[data-recording-id="rec_ready_a"] .capture-qam-summary'
@@ -105,6 +129,6 @@ def test_master_table_progressively_loads_qam_and_links_every_recording_detail()
             expect(pending.locator(".qam-detail-link")).to_have_attribute(
                 "href", "/recordings/rec_pending_a#evidence-qam"
             )
-            assert len(requests) == 3
+            assert len(requests) == 1
         finally:
             browser.close()

@@ -19,6 +19,7 @@ let captureDopplerSummaries = new Map();
 let captureDopplerBulkState = "loading";
 let captureQamSummaries = new Map();
 let captureQamGeneration = 0;
+let captureQamBulkState = "loading";
 const captureDurationCache = new Map();
 const captureDurationQueued = new Set();
 const captureDurationQueue = [];
@@ -248,7 +249,15 @@ function appendCaptureQamCell(row, attempt) {
     cell.dataset.state = "unavailable";
   } else {
     const summary = captureQamSummaries.get(attempt.recording_id);
-    const state = summary?.state || "loading";
+    const state = summary?.state || (
+      captureQamBulkState === "loading"
+        ? "loading"
+        : captureQamBulkState === "error"
+          ? "error"
+          : ["pending", "running"].includes(attempt.analysis_state)
+            ? "pending"
+            : "unavailable"
+    );
     cell.dataset.state = state;
     if (state === "complete") {
       for (const candidate of summary.candidates || []) {
@@ -622,55 +631,36 @@ async function loadCaptureDopplerSummaries(bounds) {
   }
 }
 
-async function loadOneCaptureQamSummary(attempt, generation) {
-  const recordingId = attempt.recording_id;
-  if (!recordingId) return;
-  try {
-    const parameters = new URLSearchParams({mode: "windows", maximum_streams: "16", maximum_windows_per_stream: "32", maximum_points_per_constellation: "1"});
-    const payload = await fetchJson(`/api/v17/recordings/${encodeURIComponent(recordingId)}/starlink-acquired-constellation?${parameters}`);
-    if (generation !== captureQamGeneration) return;
-    if (payload.candidate_only !== true || payload.calibration_required !== true) throw new Error("Dashboard returned unsafe capture QAM semantics");
-    const candidates = [];
-    for (const stream of payload.streams || []) {
-      const windows = (stream.windows || []).map((window) => ({window, goodness: qamGoodness(Number(window.hard_symbol_accuracy), Number(window.rms_evm))})).filter((item) => item.goodness !== null);
-      windows.sort((left, right) => right.goodness - left.goodness || Number(right.window.verify_minus_control_margin) - Number(left.window.verify_minus_control_margin) || Number(left.window.window_index) - Number(right.window.window_index));
-      const selected = windows[0];
-      if (!selected) continue;
-      candidates.push({
-        lnb_id: stream.lnb_id,
-        receiver_chain_id: stream.receiver_chain_id,
-        edge: stream.edge,
-        qam_goodness: selected.goodness,
-        hard_symbol_accuracy: Number(selected.window.hard_symbol_accuracy),
-        rms_evm: Number(selected.window.rms_evm),
-        window_count: stream.overall?.window_count ?? (stream.windows || []).length,
-        analysis_id: payload.analysis_ref?.artifact_id || "acquired-qam-v0.3",
-      });
-    }
-    captureQamSummaries.set(recordingId, {state: candidates.length ? "complete" : "unavailable", candidates, reason_codes: candidates.length ? [] : ["no-acquired-qam-streams"]});
-  } catch (error) {
-    if (generation !== captureQamGeneration) return;
-    const state = error?.dashboardStatus === 404 && ["pending", "running"].includes(attempt.analysis_state) ? "pending" : error?.dashboardStatus === 404 ? "unavailable" : "error";
-    captureQamSummaries.set(recordingId, {state, candidates: [], reason_codes: [state === "pending" ? "acquired-qam-analysis-pending" : state === "unavailable" ? "published-acquired-qam-unavailable" : safeError(error)]});
-  }
-  if (generation === captureQamGeneration) renderCaptureRows();
-}
-
-async function loadCaptureQamSummaries() {
+async function loadCaptureQamSummaries(bounds) {
   const generation = ++captureQamGeneration;
   captureQamSummaries = new Map();
+  captureQamBulkState = "loading";
   renderCaptureRows();
-  const attempts = [...new Map(
-    loadedCaptureBatches.flatMap((batch) => batch.attempts || []).filter((attempt) => attempt.recording_id).map((attempt) => [attempt.recording_id, attempt]),
-  ).values()];
-  let cursor = 0;
-  async function worker() {
-    while (generation === captureQamGeneration && cursor < attempts.length) {
-      const attempt = attempts[cursor++];
-      await loadOneCaptureQamSummary(attempt, generation);
+  try {
+    const payload = await fetchJson(`/api/v22/capture-qam-summaries?${timeQuery(bounds)}&maximum_recordings=100`);
+    if (generation !== captureQamGeneration) return;
+    const warnings = new Set(payload.warnings || []);
+    if (
+      payload.candidate_only !== true
+      || payload.calibration_required !== true
+      || payload.calibrated_detection_count !== null
+      || !warnings.has("radio-lnb-receiver-series-are-never-pooled")
+      || !warnings.has("highest-goodness-selected-independently-per-authoritative-lnb-receiver")
+    ) {
+      throw new Error("Dashboard returned unsafe capture QAM semantics");
     }
+    captureQamSummaries = new Map(
+      (payload.recordings || []).map((item) => [item.recording_id, item]),
+    );
+    captureQamBulkState = "ready";
+  } catch (error) {
+    if (generation !== captureQamGeneration) return;
+    captureQamSummaries = new Map();
+    captureQamBulkState = error?.dashboardStatus === 404 ? "unavailable" : "error";
+    if (captureQamBulkState === "error") throw error;
+  } finally {
+    if (generation === captureQamGeneration) renderCaptureRows();
   }
-  await Promise.all(Array.from({length: Math.min(4, attempts.length)}, () => worker()));
 }
 
 function selectedCaptureBounds() {
@@ -944,7 +934,7 @@ async function refreshDashboard() {
     loadRetroQamCanary(),
     captureBatches,
     loadCaptureDopplerSummaries(currentBounds),
-    captureBatches.then(() => loadCaptureQamSummaries()),
+    loadCaptureQamSummaries(currentBounds),
     loadRecordings(currentBounds),
     loadTracks(currentBounds),
     loadStorage(),
@@ -979,7 +969,8 @@ byId("capture-filters").addEventListener("submit", (event) => {
   event.preventDefault();
   const bounds = selectedCaptureBounds();
   Promise.allSettled([
-    loadCaptureBatches(bounds, null, captureRadioFilter() !== "").then(() => loadCaptureQamSummaries()),
+    loadCaptureBatches(bounds, null, captureRadioFilter() !== ""),
+    loadCaptureQamSummaries(bounds),
     loadCaptureDopplerSummaries(bounds),
   ]);
 });
