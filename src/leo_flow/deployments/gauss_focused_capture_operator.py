@@ -61,6 +61,13 @@ class FocusedCaptureDefinition:
     requested_start_utc_ns: UtcNs
     station_a_digest: Digest
     station_b_digest: Digest
+    duration_ns: int = DURATION_NS
+
+    def __post_init__(self) -> None:
+        if self.duration_ns <= 0 or self.duration_ns % 1_000_000_000:
+            raise ValueError(
+                "focused duration must be a positive whole number of seconds"
+            )
 
     def document(self) -> dict[str, object]:
         return {
@@ -75,7 +82,7 @@ class FocusedCaptureDefinition:
             "edge": EDGE,
             "sample_rate_hz": SAMPLE_RATE_HZ,
             "bandwidth_hz": BANDWIDTH_HZ,
-            "duration_ns": DURATION_NS,
+            "duration_ns": self.duration_ns,
             "hardware_block_duration_ns": 40_000_000,
             "maximum_observed_start_skew_ns": MAXIMUM_SKEW_NS,
             "maximum_start_lateness_ns": MAXIMUM_LATENESS_NS,
@@ -105,7 +112,7 @@ class _FocusedUnit:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="leo-gauss-focused-capture",
-        description="Capture one synchronized 20-second CH4-lower pair and analyze it.",
+        description="Capture one synchronized CH4-lower pair and analyze it.",
     )
     parser.add_argument("--monitor-id", required=True)
     parser.add_argument("--requested-start-utc-ns", type=int, required=True)
@@ -117,6 +124,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--analysis-credential-directory", type=Path, required=True)
     parser.add_argument("--dashboard-credential-directory", type=Path, required=True)
     parser.add_argument("--confirm-definition-digest", required=True)
+    parser.add_argument(
+        "--duration-seconds",
+        type=int,
+        default=DURATION_NS // 1_000_000_000,
+    )
     parser.add_argument("--arm", action="store_true")
     parser.add_argument("--capture-only", action="store_true")
     return parser
@@ -138,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         UtcNs(args.requested_start_utc_ns),
         first.specification_digest,
         second.specification_digest,
+        args.duration_seconds * 1_000_000_000,
     )
     print(
         json.dumps(
@@ -167,13 +180,15 @@ def main(argv: list[str] | None = None) -> int:
         first,
         plan_id=plan_a_id,
         state_root=unit_root / "radio-a",
-        arm_name=f"{args.monitor_id}-ch4-lower-20s",
+        arm_name=f"{args.monitor_id}-ch4-lower-{args.duration_seconds}s",
+        duration_ns=definition.duration_ns,
     )
     station_b = materialize_focused_monitor_station(
         second,
         plan_id=plan_b_id,
         state_root=unit_root / "radio-b",
-        arm_name=f"{args.monitor_id}-ch4-lower-20s",
+        arm_name=f"{args.monitor_id}-ch4-lower-{args.duration_seconds}s",
+        duration_ns=definition.duration_ns,
     )
     batch = CaptureBatchDefinition(
         SchemaRef(CaptureBatchDefinition.SCHEMA_ID),

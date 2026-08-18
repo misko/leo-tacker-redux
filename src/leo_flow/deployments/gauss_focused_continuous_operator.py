@@ -85,7 +85,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="leo-gauss-focused-continuous",
         description=(
-            "Continuously capture synchronized 20-second CH4-lower dwells and "
+            "Continuously capture synchronized configurable-duration CH4-lower dwells and "
             "dispatch exact analysis asynchronously."
         ),
     )
@@ -103,6 +103,7 @@ def _parser() -> argparse.ArgumentParser:
         default=MAXIMUM_IN_FLIGHT_ANALYSES,
     )
     parser.add_argument("--lead-seconds", type=int, default=DEFAULT_LEAD_SECONDS)
+    parser.add_argument("--duration-seconds", type=int, default=20)
     parser.add_argument("--maximum-dwells", type=int, default=0)
     parser.add_argument(
         "--minimum-free-bytes", type=int, default=DEFAULT_MINIMUM_FREE_BYTES
@@ -237,6 +238,7 @@ def _valid_args(args: argparse.Namespace) -> bool:
         and 1 <= args.compute_workers <= 8
         and 1 <= args.maximum_in_flight_analyses <= MAXIMUM_IN_FLIGHT_ANALYSES
         and args.lead_seconds * 1_000_000_000 >= MINIMUM_LEAD_NS
+        and 1 <= args.duration_seconds <= 300
         and args.maximum_dwells >= 0
         and args.minimum_free_bytes > 0
         and args.shutdown_protocol == "graceful-drain-v1"
@@ -266,6 +268,7 @@ def _plan(
         UtcNs(requested),
         first.specification_digest,
         second.specification_digest,
+        args.duration_seconds * 1_000_000_000,
     )
     root = args.state_root / monitor_id
     record = FocusedContinuousRecordV0_1(
@@ -308,6 +311,8 @@ def _capture_command(
         str(args.dashboard_credential_directory),
         "--confirm-definition-digest",
         record.definition_digest,
+        "--duration-seconds",
+        str(args.duration_seconds),
         "--arm",
         "--capture-only",
     ]

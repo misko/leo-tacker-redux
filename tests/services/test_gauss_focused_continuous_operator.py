@@ -87,6 +87,7 @@ def test_capture_child_is_capture_only_and_analysis_child_is_capture_safe(
     analysis = _analysis_command(args, record)
 
     assert "--capture-only" in capture
+    assert capture[capture.index("--duration-seconds") + 1] == "20"
     assert "--confirm-definition-digest" in capture
     assert record.definition_digest in capture
     assert "--capture-safe" in analysis
@@ -95,6 +96,16 @@ def test_capture_child_is_capture_only_and_analysis_child_is_capture_safe(
     assert "--analysis-attempt-lock" in analysis
     assert record.definition_digest in analysis
     assert "--compute-workers" in analysis
+
+
+def test_capture_child_receives_configured_sixty_second_duration(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    args.duration_seconds = 60
+    capture = _capture_command(args, _record(tmp_path))
+
+    assert capture[capture.index("--duration-seconds") + 1] == "60"
 
 
 def test_restart_journal_exposes_captured_work_for_redispatch(tmp_path: Path) -> None:
@@ -122,6 +133,7 @@ def test_user_service_is_one_continuous_loop_without_timer_or_shell_engine() -> 
     assert "leo-gauss-focused-continuous" in unit
     assert "--maximum-in-flight-analyses 8" in unit
     assert "--compute-workers 8" in unit
+    assert "--duration-seconds 60" in unit
     assert "Restart=no" in unit
     assert "KillMode=process" in unit
     assert "--shutdown-protocol graceful-drain-v1" in unit

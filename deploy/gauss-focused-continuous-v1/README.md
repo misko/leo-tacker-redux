@@ -1,7 +1,7 @@
 # Continuous focused CH4-lower collection
 
 This user service replaces the ten-minute one-shot timer.  Its Python
-supervisor continuously plans and captures synchronized 20-second CH4-lower
+supervisor continuously plans and captures synchronized, configurable-duration CH4-lower
 radio pairs.  As soon as a pair closes terminally, the supervisor dispatches
 its six exact FeatureSet, waterfall/Doppler, and Starlink suite/null/QAM jobs in
 a child process and immediately begins preparing the next capture.
@@ -32,3 +32,7 @@ after restart; malformed or contradictory evidence fails closed.
 The 30-second lead is active capture preparation, not a ten-minute scheduling
 pause.  The service has no timer and remains continuously active until stopped
 or a fail-closed condition occurs.
+
+The deployed template selects 60-second dwells with `--duration-seconds 60`.
+Duration is part of every immutable capture-definition digest and is passed
+unchanged to the capture child; historical 20-second definitions remain valid.

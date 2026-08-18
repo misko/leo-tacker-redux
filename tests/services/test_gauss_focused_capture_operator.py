@@ -37,11 +37,21 @@ def test_operator_policy_is_exact_ch4_lower_twenty_seconds() -> None:
     )
     assert str(definition.digest).startswith("sha256:")
 
+    sixty_seconds = FocusedCaptureDefinition(
+        "focused_test_60s",
+        UtcNs(123),
+        Digest.sha256(b"a"),
+        Digest.sha256(b"b"),
+        60_000_000_000,
+    )
+    assert sixty_seconds.document()["duration_ns"] == 60_000_000_000
+    assert sixty_seconds.digest != definition.digest
+
 
 def test_operator_help_names_focused_capture() -> None:
     text = _parser().format_help()
     assert text.startswith("usage: leo-gauss-focused-capture")
-    assert "20-second CH4-lower" in text
+    assert "--duration-seconds DURATION_SECONDS" in text
 
 
 def test_analysis_help_promises_no_radio_contact() -> None:
