@@ -481,7 +481,7 @@ def _folded_anchor_scores(
     )
 
 
-def _normalized_frame_score(
+def normalized_frame_score_v0_3(
     values: np.ndarray,
     template: np.ndarray,
     sample_rate_hz: float,
@@ -511,6 +511,11 @@ def _normalized_frame_score(
         )
         frame += 1
     return (float(np.mean(per_frame)) if per_frame else 0.0, len(per_frame))
+
+
+# Keep the implementation-private name for the immutable v0.3 acquisition path.
+# Additive consumers use ``normalized_frame_score_v0_3`` explicitly.
+_normalized_frame_score = normalized_frame_score_v0_3
 
 
 def _pilot_sample_indexes(

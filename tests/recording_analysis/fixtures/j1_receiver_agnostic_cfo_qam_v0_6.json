@@ -1,0 +1,60 @@
+{
+  "schema": "org.leo-flow.conditioned-raw-iq-cfo-qam-canary/v1",
+  "source_sha256": "23cceb3a5223180ff92398214125513d4c32cc541ec1ae5b7c4c28fba5bbcc8c",
+  "sample_count": 150000000,
+  "receiver_count": 2,
+  "sample_rate_hz": 2500000.0,
+  "window_sample_count": 25000,
+  "edge": "lower",
+  "scope": {
+    "conditioned_numerical_canary_only": true,
+    "calibration_member": false,
+    "detection_claim": false
+  },
+  "cases": [
+    {
+      "case_id": "early-receiver-0",
+      "start_sample": 101500000,
+      "receiver_index": 0,
+      "epoch_sample": 1188,
+      "cfo_hz": 450423.9939616095,
+      "normalized_score_v0_3": 0.29166809338287936,
+      "hard_symbol_accuracy_v0_5": 0.6716666666666666,
+      "rms_evm_v0_5": 1.4589301133156531,
+      "complete_frame_count": 7
+    },
+    {
+      "case_id": "late-receiver-0",
+      "start_sample": 149500000,
+      "receiver_index": 0,
+      "epoch_sample": 1134,
+      "cfo_hz": 373552.47880750697,
+      "normalized_score_v0_3": 0.09723944024096186,
+      "hard_symbol_accuracy_v0_5": 0.32708333333333334,
+      "rms_evm_v0_5": 4.752033143287692,
+      "complete_frame_count": 7
+    },
+    {
+      "case_id": "early-receiver-1",
+      "start_sample": 101500000,
+      "receiver_index": 1,
+      "epoch_sample": 1188,
+      "cfo_hz": -161334.286223267,
+      "normalized_score_v0_3": 0.37065223995984525,
+      "hard_symbol_accuracy_v0_5": 0.765,
+      "rms_evm_v0_5": 0.8448202398697091,
+      "complete_frame_count": 7
+    },
+    {
+      "case_id": "late-receiver-1",
+      "start_sample": 149500000,
+      "receiver_index": 1,
+      "epoch_sample": 1134,
+      "cfo_hz": -237920.9309141801,
+      "normalized_score_v0_3": 0.3859227047197713,
+      "hard_symbol_accuracy_v0_5": 0.8145833333333333,
+      "rms_evm_v0_5": 0.798423727430682,
+      "complete_frame_count": 7
+    }
+  ]
+}

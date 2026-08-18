@@ -7,7 +7,19 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ._validation import require_finite
-from .core import Digest, SchemaRef, SchemaVersion, canonical_digest
+from .core import (
+    ArtifactRef,
+    Digest,
+    Provenance,
+    RadioId,
+    ReceiverChainId,
+    RecordingId,
+    SchemaRef,
+    SchemaVersion,
+    SegmentId,
+    canonical_digest,
+)
+from .starlink import StarlinkEdge
 from .starlink_adaptive_calibration import AdaptivePatternRole
 
 V0_6 = SchemaVersion(0, 6)
@@ -263,3 +275,159 @@ class ReceiverAgnosticCfoSearchReceiptV0_6:
     @property
     def digest(self) -> Digest:
         return canonical_digest(self)
+
+
+@dataclass(frozen=True)
+class ReceiverAgnosticCfoWindowV0_6:
+    """Exact raw-IQ interval and physical receiver provenance; never a CFO hint."""
+
+    recording_id: RecordingId
+    recording_identity_digest: Digest
+    radio_id: RadioId
+    segment_id: SegmentId
+    receiver_chain_id: ReceiverChainId
+    edge: StarlinkEdge
+    sample_rate_hz: float
+    start_sample: int
+    stop_sample: int
+    source_recording_ref: ArtifactRef
+    source_window_ref: ArtifactRef
+
+    def __post_init__(self) -> None:
+        require_finite(self.sample_rate_hz, "sample_rate_hz")
+        if (
+            self.sample_rate_hz <= 0
+            or self.start_sample < 0
+            or self.stop_sample <= self.start_sample
+        ):
+            raise ValueError("receiver-agnostic CFO window is invalid")
+
+    @property
+    def sample_count(self) -> int:
+        return self.stop_sample - self.start_sample
+
+    @property
+    def identity(self) -> tuple[str, str, str, int, int]:
+        return (
+            str(self.recording_id),
+            str(self.segment_id),
+            str(self.receiver_chain_id),
+            self.start_sample,
+            self.stop_sample,
+        )
+
+    @property
+    def digest(self) -> Digest:
+        return canonical_digest(self)
+
+
+@dataclass(frozen=True)
+class ReceiverAgnosticPatternQamEvidenceV0_6:
+    """Known-pattern QAM evaluated at that pattern's own v0.6 winner."""
+
+    pattern_index: int
+    role: AdaptivePatternRole
+    template_ref: ArtifactRef
+    control_template_ref: ArtifactRef
+    winner: ReceiverAgnosticCfoWinnerV0_6
+    complete_frame_count: int
+    hard_symbol_accuracy: float
+    rms_evm: float
+    qam_goodness: float
+
+    def __post_init__(self) -> None:
+        expected = (
+            AdaptivePatternRole.QIN
+            if self.pattern_index == 0
+            else AdaptivePatternRole.SURROGATE
+        )
+        for name in ("hard_symbol_accuracy", "rms_evm", "qam_goodness"):
+            require_finite(getattr(self, name), name)
+        if (
+            self.pattern_index < 0
+            or self.role is not expected
+            or self.winner.pattern_index != self.pattern_index
+            or self.template_ref.digest == self.control_template_ref.digest
+            or self.complete_frame_count <= 0
+            or not 0 <= self.hard_symbol_accuracy <= 1
+            or self.rms_evm < 0
+            or not 0 <= self.qam_goodness <= 1
+        ):
+            raise ValueError("receiver-agnostic pattern QAM evidence is invalid")
+
+
+@dataclass(frozen=True)
+class ReceiverAgnosticCfoQamWindowBundleV0_6:
+    """Additive raw-window CFO/QAM product; not storage or a detection verdict."""
+
+    schema: SchemaRef
+    analysis_id: str
+    window: ReceiverAgnosticCfoWindowV0_6
+    search_algorithm_ref: ArtifactRef
+    scorer_algorithm_ref: ArtifactRef
+    qam_algorithm_ref: ArtifactRef
+    config_ref: ArtifactRef
+    search_receipt: ReceiverAgnosticCfoSearchReceiptV0_6
+    pattern_qam: tuple[ReceiverAgnosticPatternQamEvidenceV0_6, ...]
+    provenance: Provenance
+    candidates_only: bool
+    calibrated_detection_count: None
+    disclosures: tuple[str, ...]
+
+    SCHEMA_ID = "org.leo-flow.receiver-agnostic-cfo-qam-window-bundle"
+
+    def __post_init__(self) -> None:
+        required = {
+            "candidate-evidence-not-calibrated-detection",
+            "identical-raw-iq-window-for-every-pattern",
+            "known-pattern-qam-at-independent-pattern-winner",
+            "no-lnb-label-center-or-receiver-correction",
+            "retro-and-j1-are-conditioned-numerical-canaries-only",
+        }
+        expected_inputs = (
+            self.window.recording_identity_digest,
+            self.window.source_recording_ref.digest,
+            self.window.source_window_ref.digest,
+        )
+        expected_dependencies = (
+            self.search_algorithm_ref.digest,
+            self.scorer_algorithm_ref.digest,
+            self.qam_algorithm_ref.digest,
+            self.config_ref.digest,
+            *(item.template_ref.digest for item in self.pattern_qam),
+            *(item.control_template_ref.digest for item in self.pattern_qam),
+        )
+        if (
+            self.schema != SchemaRef(self.SCHEMA_ID, V0_6)
+            or not self.analysis_id.startswith("slcfoqam6_")
+            or self.config_ref.digest != self.search_receipt.plan.digest
+            or tuple(item.pattern_index for item in self.pattern_qam)
+            != tuple(range(len(self.search_receipt.patterns)))
+            or len(self.pattern_qam) != len(self.search_receipt.patterns)
+            or any(
+                evidence.template_ref.digest != pattern.template_digest
+                or evidence.role is not pattern.role
+                or evidence.winner != winner
+                for evidence, pattern, winner in zip(
+                    self.pattern_qam,
+                    self.search_receipt.patterns,
+                    self.search_receipt.winners,
+                    strict=True,
+                )
+            )
+            or self.provenance.normalized_config_digest != self.config_ref.digest
+            or self.provenance.input_digests != expected_inputs
+            or self.provenance.dependency_digests != expected_dependencies
+            or not self.candidates_only
+            or self.calibrated_detection_count is not None
+            or not required <= set(self.disclosures)
+        ):
+            raise ValueError("receiver-agnostic CFO/QAM window bundle is invalid")
+
+    @property
+    def digest(self) -> Digest:
+        return canonical_digest(self)
+
+    @property
+    def ref(self) -> ArtifactRef:
+        return ArtifactRef(self.analysis_id, self.digest, self.schema)
