@@ -297,3 +297,26 @@ the renewal loop stops cleanly; a failed or stale heartbeat prevents publication
 This does not weaken idempotency or permit another worker to publish against an
 expired generation. Interrupted processes remain recoverable through normal lease
 expiry and exact-scope redispatch.
+
+## 2026-08-18 — Two-minute capture cadence and diagnostic QAM goodness
+
+**Status:** accepted for the single-station development dashboard.
+
+Each CH4-lower dwell remains 60 seconds, but requested dwell starts are paced at
+approximately 120-second intervals. Analysis stays asynchronous and FIFO; cadence
+does not discard queued analysis or make capture wait for an analysis slot.
+
+The recording dashboard derives a bounded `qam-goodness-v0.1` presentation score
+from already-published acquired-QAM evidence. For known-symbol hard accuracy `a`
+and RMS EVM `e`, the score is
+`sqrt(clamp((a - 0.25) / 0.75, 0, 1) * (1 / (1 + e^2)))`. Thus chance-level
+4QAM decisions score zero even if a selected window looks structured, while a
+compact, correctly separated four-state constellation approaches one. The frozen
+RETRO QAM RX0 example scores about 0.593; chance-level noise with large EVM scores
+zero.
+
+This score ranks diagnostic constellation quality only. It is not persisted as
+detector evidence, does not alter any published QAM contract, and is not a
+calibrated Starlink detection or false-alarm probability. Overall mode uses the
+published support-weighted accuracy/EVM; window mode uses each window's metrics.
+Radios, LNBs, receiver chains, and windows remain unpooled.

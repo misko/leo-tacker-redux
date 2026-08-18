@@ -72,6 +72,28 @@
   width: 0.65rem;
 }
 
+.qam-goodness-list {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  margin: 0.75rem 0;
+}
+
+.qam-goodness-entry {
+  border: 1px solid var(--line, #294137);
+  border-radius: 0.45rem;
+  padding: 0.7rem;
+}
+
+.qam-goodness-entry small {
+  color: var(--muted);
+  display: block;
+  font: 0.72rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-top: 0.35rem;
+}
+
+.qam-goodness-list .availability-note { grid-column: 1 / -1; margin: 0; }
+
 .capture-doppler-summary[data-state="pending"] { color: var(--warning); }
 .capture-doppler-summary[data-state="error"] { color: var(--danger); }
 .capture-doppler-summary[data-state="unavailable"] { color: var(--muted); }

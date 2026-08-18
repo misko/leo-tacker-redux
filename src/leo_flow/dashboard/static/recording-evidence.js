@@ -168,6 +168,41 @@
     canvas.setAttribute("aria-label", `Known pilot QAM candidate evidence; ${series.length} unpooled series and ${all.length} coefficients`);
   }
 
+  function qamGoodness(accuracy, rmsEvm) {
+    const measuredAccuracy = Number(accuracy);
+    const measuredEvm = Number(rmsEvm);
+    if (!Number.isFinite(measuredAccuracy) || !Number.isFinite(measuredEvm) || measuredEvm < 0) return null;
+    const chanceCorrectedAccuracy = Math.max(0, Math.min(1, (measuredAccuracy - 0.25) / 0.75));
+    const compactness = 1 / (1 + measuredEvm * measuredEvm);
+    return Math.sqrt(chanceCorrectedAccuracy * compactness);
+  }
+
+  function renderQamGoodness(entries) {
+    const target = node("evidence-qam-goodness");
+    target.replaceChildren();
+    for (const entry of entries) {
+      const card = document.createElement("div");
+      card.className = "qam-goodness-entry";
+      card.dataset.goodness = entry.goodness.toFixed(6);
+      const label = document.createElement("span");
+      label.className = "metric-label";
+      label.textContent = entry.label;
+      const value = document.createElement("strong");
+      value.className = "metric-value";
+      value.textContent = entry.goodness.toFixed(3);
+      const detail = document.createElement("small");
+      detail.textContent = `accuracy ${(entry.accuracy * 100).toFixed(2)}% · RMS EVM ${entry.rmsEvm.toFixed(3)}`;
+      card.append(label, value, detail);
+      target.append(card);
+    }
+    if (entries.length) {
+      const explanation = document.createElement("p");
+      explanation.className = "availability-note";
+      explanation.textContent = "QAM goodness v0.1: geometric mean of chance-corrected known-symbol accuracy and 1/(1+RMS EVM²). 0 is random/collapsed; 1 is compact ideal separation. Diagnostic only—not a calibrated detection.";
+      target.append(explanation);
+    }
+  }
+
   function queryFilters(parameters) {
     const radios = selectedRecordings().map((item) => item.radio_id);
     const lnbs = checked("lnb");
@@ -183,7 +218,7 @@
     state("qam", "pending", "Loading bounded acquired-QAM evidence…");
     try {
       if (!selectedRecordings().length || !checked("lnb").length || !checked("receiver").length || !checked("edge").length) {
-        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
+        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); return;
       }
       const mode = node("evidence-mode").value;
       const fetched = await availablePayloads(selectedRecordings().map((recording) => {
@@ -193,11 +228,11 @@
       }));
       if (current !== generation) return;
       if (!fetched.payloads.length) {
-        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren();
+        node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
         state("qam", "pending", "Acquired-QAM evidence is pending for every selected recording."); return;
       }
       const lnbSet = new Set(checked("lnb")); const receiverSet = new Set(checked("receiver")); const edgeSet = new Set(checked("edge"));
-      const series = [];
+      const series = []; const goodnessEntries = [];
       for (const payload of fetched.payloads) {
         if (payload.candidate_only !== true || payload.calibration_required !== true) throw new Error("unsafe acquired-QAM semantics");
         for (const stream of payload.streams || []) {
@@ -206,19 +241,24 @@
           windows.forEach((window, index) => {
             const points = window.display_points || window.points || [];
             if (!points.length) return;
+            const label = identity([stream.recording_id || payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, mode === "windows" ? `window ${window.window_index ?? index}` : "overall"]);
             series.push({
-              label: identity([stream.recording_id || payload.recording_id, stream.radio_id, stream.lnb_id, stream.receiver_chain_id, stream.edge, mode === "windows" ? `window ${window.window_index ?? index}` : "overall"]),
+              label,
               points,
             });
+            const accuracy = mode === "windows" ? window.hard_symbol_accuracy : stream.overall?.support_weighted_hard_symbol_accuracy;
+            const rmsEvm = mode === "windows" ? window.rms_evm : stream.overall?.support_weighted_rms_evm;
+            const goodness = qamGoodness(accuracy, rmsEvm);
+            if (goodness !== null) goodnessEntries.push({label, goodness, accuracy: Number(accuracy), rmsEvm: Number(rmsEvm)});
           });
         }
       }
-      drawQam(series); seriesLegend("evidence-qam-legend", series);
+      drawQam(series); seriesLegend("evidence-qam-legend", series); renderQamGoodness(goodnessEntries);
       const partial = fetched.missingCount ? ` ${fetched.missingCount} selected recording(s) remain pending.` : "";
       state("qam", series.length ? "ready" : "missing", series.length ? `${series.length} unpooled ${mode === "windows" ? "window" : "overall"} QAM series.${partial}` : "No acquired-QAM series match the selected hardware scope.");
     } catch (error) {
       if (current !== generation) return;
-      node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren();
+      node("evidence-qam-canvas").hidden = true; node("evidence-qam-legend").replaceChildren(); renderQamGoodness([]);
       state("qam", error.status === 404 ? "pending" : "error", error.status === 404 ? "Acquired-QAM evidence is pending or unavailable for this recording." : `QAM evidence failed: ${error.message}`);
     }
   }

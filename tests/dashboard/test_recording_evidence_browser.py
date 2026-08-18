@@ -58,6 +58,8 @@ def _qam(mode: str) -> dict[str, object]:
             "stop_sample": index * 100 + 100,
             "interval_start_utc_ns": 1_000_000_000 + index * 100_000_000,
             "interval_stop_utc_ns": 1_100_000_000 + index * 100_000_000,
+            "hard_symbol_accuracy": 0.7483333333333333 if index == 0 else 0.25,
+            "rms_evm": 0.942548533 if index == 0 else 18.0,
             "display_points": [point],
         }
         for index in range(2 if mode == "windows" else 1)
@@ -74,7 +76,11 @@ def _qam(mode: str) -> dict[str, object]:
                 "segment_id": "seg_a",
                 "receiver_chain_id": "rx_a",
                 "edge": "lower",
-                "overall": {"selected_display_window_index": 0},
+                "overall": {
+                    "selected_display_window_index": 0,
+                    "support_weighted_hard_symbol_accuracy": 0.7483333333333333,
+                    "support_weighted_rms_evm": 0.942548533,
+                },
                 "windows": windows,
             }
         ],
@@ -255,6 +261,9 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
             expect(page.locator("#evidence-qam-canvas")).to_have_attribute(
                 "data-series-count", "1"
             )
+            goodness = page.locator("#evidence-qam-goodness .qam-goodness-entry")
+            expect(goodness).to_have_count(1)
+            expect(goodness).to_have_attribute("data-goodness", "0.593175")
             expect(page.locator("#evidence-detector-canvas")).to_have_attribute(
                 "data-series-count", "2"
             )
@@ -267,6 +276,14 @@ def test_unified_workspace_switches_real_overall_windows_and_never_pools() -> No
             page.locator("#evidence-mode").select_option("windows")
             expect(page.locator("#evidence-qam-canvas")).to_have_attribute(
                 "data-series-count", "2"
+            )
+            window_goodness = page.locator("#evidence-qam-goodness .qam-goodness-entry")
+            expect(window_goodness).to_have_count(2)
+            expect(window_goodness.nth(0)).to_have_attribute(
+                "data-goodness", "0.593175"
+            )
+            expect(window_goodness.nth(1)).to_have_attribute(
+                "data-goodness", "0.000000"
             )
             expect(page.locator("#evidence-doppler-canvas")).to_have_attribute(
                 "data-point-count", "4"
