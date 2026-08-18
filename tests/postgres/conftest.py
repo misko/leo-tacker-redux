@@ -64,6 +64,7 @@ _EXPECTED_MIGRATIONS = (
     "0045_prompt_timeline_source_acl.sql",
     "0046_starlink_adaptive_response_v0_1.sql",
     "0047_starlink_adaptive_qam_v0_4.sql",
+    "0048_starlink_pilot_prescreen_v0_1.sql",
 )
 
 

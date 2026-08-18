@@ -16,10 +16,16 @@ from leo_flow.adapters.full_dwell_timeline_postgres import (
     PostgresFullDwellTimelineCatalogV0_1,
     PostgresFullDwellTimelineWorkRepositoryV0_1,
 )
+from leo_flow.adapters.starlink_pilot_prescreen_postgres import (
+    PostgresStarlinkPilotPrescreenCatalogV0_1,
+)
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
 from leo_flow.analysis.recording.api import AnalysisExecutionContext
 from leo_flow.analysis.recording.starlink_full_dwell_timeline_persistence import (
     DurableFullDwellTimelineStoreV0_1,
+)
+from leo_flow.analysis.recording.starlink_pilot_prescreen_persistence import (
+    DurableStarlinkPilotPrescreenStoreV0_1,
 )
 from leo_flow.contracts.core import RecordingId, UtcNs, canonical_digest
 from leo_flow.contracts.starlink import StarlinkEdge
@@ -225,6 +231,9 @@ def build_cycle(
             reader,
             DurableFullDwellTimelineStoreV0_1(blobs, catalog),
             execution,
+            DurableStarlinkPilotPrescreenStoreV0_1(
+                blobs, PostgresStarlinkPilotPrescreenCatalogV0_1(connect)
+            ),
         ),
         PostgresFullDwellRefinementDispatchV0_1(connect),
         worker_id=worker_id,

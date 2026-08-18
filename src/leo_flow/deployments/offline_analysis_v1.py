@@ -132,6 +132,7 @@ EXPECTED_MIGRATIONS = tuple(
         (45, "prompt_timeline_source_acl"),
         (46, "starlink_adaptive_response_v0_1"),
         (47, "starlink_adaptive_qam_v0_4"),
+        (48, "starlink_pilot_prescreen_v0_1"),
     )
 )
 
