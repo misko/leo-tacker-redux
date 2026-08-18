@@ -250,7 +250,9 @@ class CombinedStarlinkSuiteDwellAnalysisJobPreparerV0_3:
                 windows = []
                 for index, start in enumerate(starts):
                     raw = recording.read_iq_bytes(
-                        source_suite.segment_id, start, self._window_sample_count
+                        source_suite.segment_id,
+                        start,
+                        start + self._window_sample_count,
                     )
                     values, count = decode_ci16(
                         raw, len(segment.requested.receiver_chain_ids)

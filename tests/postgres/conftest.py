@@ -189,6 +189,7 @@ def clean_database(postgres_dsn: str) -> None:
         connection.execute(
             """
             TRUNCATE recording_starlink_acquired_constellation_v0_3,
+                     starlink_full_dwell_work_v0_1,
                      recording_starlink_full_dwell_point_v0_1,
                      recording_starlink_full_dwell_v0_1,
                      focused_analysis_pair_job_scope,
