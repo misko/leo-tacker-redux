@@ -16,6 +16,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV16,
     DashboardJsonApplicationV17,
     DashboardJsonApplicationV18,
+    DashboardJsonApplicationV22,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
 from tests.dashboard._fixtures import repository
@@ -91,6 +92,52 @@ class _MasterEvidencePorts:
             ],
         }
 
+    def capture_qam_summaries(self, query: Any) -> dict[str, object]:
+        assert query.maximum_recordings == 100
+        return {
+            "schema_version": 1,
+            "start_utc_ns": query.start_utc_ns,
+            "stop_utc_ns": query.stop_utc_ns,
+            "candidate_only": True,
+            "calibration_required": True,
+            "calibrated_detection_count": None,
+            "recordings": [
+                {
+                    "recording_id": "rec_ready_a",
+                    "radio_id": "radio_a",
+                    "analysis_state": "complete",
+                    "state": "complete",
+                    "candidates": [
+                        {
+                            "recording_id": "rec_ready_a",
+                            "radio_id": "radio_a",
+                            "lnb_id": "lnb-current-01",
+                            "receiver_chain_id": "rx_current_01",
+                            "segment_id": "seg_current_01",
+                            "edge": "lower",
+                            "qam_goodness": 0.81,
+                            "hard_symbol_accuracy": 0.88,
+                            "rms_evm": 0.65,
+                            "window_count": 32,
+                            "analysis_id": "slqam3rec_ready_a",
+                            "selection": (
+                                "highest-qam-goodness-per-recording-radio-lnb-receiver"
+                            ),
+                        }
+                    ],
+                    "reason_codes": [],
+                }
+            ],
+            "original_recording_count": 1,
+            "truncated": False,
+            "warnings": [
+                "candidate-only-qam-goodness-not-starlink-detection",
+                "highest-goodness-selected-independently-per-authoritative-lnb-receiver",
+                "best-analyzed-window-not-support-weighted-dwell-mean",
+                "radio-lnb-receiver-series-are-never-pooled",
+            ],
+        }
+
 
 @contextmanager
 def _running_master_dashboard() -> Iterator[str]:
@@ -98,7 +145,8 @@ def _running_master_dashboard() -> Iterator[str]:
     ports = _MasterEvidencePorts()
     v3 = DashboardJsonApplicationV3(queries, queries, ports, ports, ports)
     v17 = DashboardJsonApplicationV17(cast(DashboardJsonApplicationV16, v3), ports)
-    app = DashboardUiApplication(DashboardJsonApplicationV18(v17, ports))
+    v18 = DashboardJsonApplicationV18(v17, ports)
+    app = DashboardUiApplication(DashboardJsonApplicationV22(v18, ports))
     server = StdlibDashboardServer(request_timeout_s=0.01)
     server.preflight("127.0.0.1", 0)
     stopped = threading.Event()

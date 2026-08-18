@@ -47,9 +47,9 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
                 view = self._acquired_qam.recording_starlink_acquired_constellation(
                     StarlinkAcquiredConstellationQueryV0_3(
                         scoped.recording_id,
-                        StarlinkAcquiredConstellationViewMode.OVERALL,
+                        StarlinkAcquiredConstellationViewMode.WINDOWS,
                         maximum_streams=MAX_ACQUIRED_QAM_QUERY_STREAMS,
-                        maximum_windows_per_stream=1,
+                        maximum_windows_per_stream=32,
                         maximum_points_per_constellation=1,
                     )
                 )
@@ -70,10 +70,20 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
                         or stream.lnb_id != expected_lnb
                     ):
                         raise RuntimeError("acquired-QAM stream scope is inconsistent")
-                    overall = stream.overall
+                    if not stream.windows:
+                        continue
+                    best = max(
+                        stream.windows,
+                        key=lambda window: (
+                            qam_goodness_v0_2(
+                                window.hard_symbol_accuracy, window.rms_evm
+                            ),
+                            window.verify_minus_control_margin,
+                            -window.window_index,
+                        ),
+                    )
                     goodness = qam_goodness_v0_2(
-                        overall.support_weighted_hard_symbol_accuracy,
-                        overall.support_weighted_rms_evm,
+                        best.hard_symbol_accuracy, best.rms_evm
                     )
                     candidate = CaptureQamCandidateSummaryV0_1(
                         scoped.recording_id,
@@ -83,9 +93,9 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
                         stream.segment_id,
                         stream.edge,
                         goodness,
-                        overall.support_weighted_hard_symbol_accuracy,
-                        overall.support_weighted_rms_evm,
-                        overall.window_count,
+                        best.hard_symbol_accuracy,
+                        best.rms_evm,
+                        stream.overall.window_count,
                         view.analysis_ref.artifact_id,
                     )
                     key = (stream.lnb_id, str(stream.receiver_chain_id))
@@ -133,6 +143,7 @@ class CaptureQamSummaryQueryServiceV0_1(CaptureQamSummaryQueryPortV0_1):
             (
                 "candidate-only-qam-goodness-not-starlink-detection",
                 "highest-goodness-selected-independently-per-authoritative-lnb-receiver",
+                "best-analyzed-window-not-support-weighted-dwell-mean",
                 "radio-lnb-receiver-series-are-never-pooled",
             ),
         )

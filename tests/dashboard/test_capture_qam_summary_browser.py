@@ -12,41 +12,21 @@ from tests.dashboard.test_doppler_visualization_browser import (
 from tests.e2e.test_dashboard_browser import _freeze_browser_clock
 
 
-def _payload(recording: str) -> dict[str, object]:
+def _candidate(
+    recording: str, lnb: str, receiver: str, goodness: float
+) -> dict[str, object]:
     return {
         "recording_id": recording,
-        "mode": "overall",
-        "candidate_only": True,
-        "calibration_required": True,
-        "analysis_ref": {"artifact_id": f"qam_{recording}"},
-        "streams": [
-            {
-                "radio_id": "radio_a",
-                "lnb_id": "lnb_a1",
-                "receiver_chain_id": "rx_a1",
-                "segment_id": "seg_a1",
-                "edge": "lower",
-                "overall": {
-                    "support_weighted_hard_symbol_accuracy": 0.80,
-                    "support_weighted_rms_evm": 0.78,
-                    "window_count": 32,
-                },
-                "windows": [],
-            },
-            {
-                "radio_id": "radio_a",
-                "lnb_id": "lnb_a2",
-                "receiver_chain_id": "rx_a2",
-                "segment_id": "seg_a2",
-                "edge": "lower",
-                "overall": {
-                    "support_weighted_hard_symbol_accuracy": 0.26,
-                    "support_weighted_rms_evm": 4.0,
-                    "window_count": 32,
-                },
-                "windows": [],
-            },
-        ],
+        "radio_id": "radio_a",
+        "lnb_id": lnb,
+        "receiver_chain_id": receiver,
+        "segment_id": f"seg_{receiver}",
+        "edge": "lower",
+        "qam_goodness": goodness,
+        "hard_symbol_accuracy": 0.80 if goodness > 0.5 else 0.26,
+        "rms_evm": 0.78 if goodness > 0.5 else 4.0,
+        "window_count": 32,
+        "analysis_id": f"qam_{recording}",
     }
 
 
@@ -62,30 +42,43 @@ def test_master_table_progressively_loads_qam_and_links_every_recording_detail()
 
             def fulfill(route):
                 requests.append(route.request.url)
-                recording = route.request.url.split("/recordings/")[1].split("/")[0]
                 query = parse_qs(urlparse(route.request.url).query)
-                assert query == {
-                    "mode": ["overall"],
-                    "maximum_streams": ["16"],
-                    "maximum_windows_per_stream": ["1"],
-                    "maximum_points_per_constellation": ["1"],
-                }
-                if recording == "rec_pending_a":
-                    route.fulfill(
-                        status=404,
-                        content_type="application/json",
-                        body=json.dumps({"error": {"message": "pending"}}),
-                    )
-                    return
+                assert query["maximum_recordings"] == ["100"]
                 route.fulfill(
                     status=200,
                     content_type="application/json",
-                    body=json.dumps(_payload(recording)),
+                    body=json.dumps(
+                        {
+                            "candidate_only": True,
+                            "calibration_required": True,
+                            "calibrated_detection_count": None,
+                            "truncated": False,
+                            "recordings": [
+                                {
+                                    "recording_id": "rec_ready_a",
+                                    "state": "complete",
+                                    "candidates": [
+                                        _candidate(
+                                            "rec_ready_a", "lnb_a1", "rx_a1", 0.8
+                                        ),
+                                        _candidate(
+                                            "rec_ready_a", "lnb_a2", "rx_a2", 0.02
+                                        ),
+                                    ],
+                                    "reason_codes": [],
+                                },
+                                {
+                                    "recording_id": "rec_pending_a",
+                                    "state": "pending",
+                                    "candidates": [],
+                                    "reason_codes": ["acquired-qam-analysis-pending"],
+                                },
+                            ],
+                        }
+                    ),
                 )
 
-            page.route(
-                "**/api/v17/recordings/*/starlink-acquired-constellation?*", fulfill
-            )
+            page.route("**/api/v22/capture-qam-summaries?*", fulfill)
             page.goto(base_url)
             ready = page.locator(
                 '[data-recording-id="rec_ready_a"] .capture-qam-summary'
@@ -105,10 +98,6 @@ def test_master_table_progressively_loads_qam_and_links_every_recording_detail()
             expect(pending.locator(".qam-detail-link")).to_have_attribute(
                 "href", "/recordings/rec_pending_a#evidence-qam"
             )
-            assert len(requests) == 3
-            assert (
-                len({url.split("/recordings/")[1].split("/")[0] for url in requests})
-                == 3
-            )
+            assert len(requests) == 1
         finally:
             browser.close()
