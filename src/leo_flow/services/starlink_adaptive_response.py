@@ -50,13 +50,18 @@ class StaleAdaptiveResponseLeaseError(RuntimeError):
     pass
 
 
-ADAPTIVE_SENTINEL_STRIDE_SECONDS = 3.0
+# One exact sentinel per second is the production compromise between the legacy
+# 100 ms oracle cadence and the cost of running all eight methods for Qin plus
+# every precommitted surrogate.  The complete-IQ prescreen remains the 100%
+# coverage layer; these sentinels guarantee that exact evidence is distributed
+# across the dwell instead of clustering only at global score maxima.
+ADAPTIVE_SENTINEL_STRIDE_SECONDS = 1.0
 ADAPTIVE_LOCAL_RADIUS_SECONDS = 0.1
 ADAPTIVE_LOCAL_STRIDE_SECONDS = 0.1
 ADAPTIVE_CENTERS_PER_PATTERN = 1
 ADAPTIVE_MAXIMUM_POWER_SEEDS = 8
-ADAPTIVE_MAXIMUM_BASE_WINDOWS = 64
-ADAPTIVE_MAXIMUM_EXACT_WINDOWS = 64
+ADAPTIVE_MAXIMUM_BASE_WINDOWS = 128
+ADAPTIVE_MAXIMUM_EXACT_WINDOWS = 128
 
 
 @dataclass(frozen=True)

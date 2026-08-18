@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from leo_flow.analysis.recording.starlink_adaptive_refinement import (
+    adaptive_base_windows_v0_1,
+)
 from leo_flow.contracts.core import (
     ArtifactRef,
     Digest,
@@ -140,10 +143,24 @@ def test_adaptive_response_plan_spans_dwell_with_a_bounded_exact_union() -> None
     plan = adaptive_response_plan_v0_1(2_500_000.0)
 
     assert plan.probe_sample_count == 20_000
-    assert plan.sentinel_stride_samples == 7_500_000  # 3 seconds
+    assert plan.sentinel_stride_samples == 2_500_000  # 1 second
     assert plan.local_radius_samples == 250_000  # +/- 100 milliseconds
     assert plan.local_stride_samples == 250_000  # 100 milliseconds
     assert plan.candidate_centers_per_pattern == 1
     assert plan.maximum_power_seeds == 8
-    assert plan.maximum_base_windows == 64
-    assert plan.maximum_exact_windows == 64
+    assert plan.maximum_base_windows == 128
+    assert plan.maximum_exact_windows == 128
+
+
+def test_sixty_second_plan_places_exact_sentinels_through_the_entire_dwell() -> None:
+    sample_rate = 2_500_000
+    sample_count = sample_rate * 60
+    plan = adaptive_response_plan_v0_1(float(sample_rate))
+
+    windows = adaptive_base_windows_v0_1(sample_count, plan, ())
+    starts = tuple(item.start_sample for item in windows)
+
+    assert starts[:-1] == tuple(range(0, sample_count, sample_rate))
+    assert starts[-1] == sample_count - plan.probe_sample_count
+    assert len(windows) == 61
+    assert all(item.selection_reasons == ("fixed-sentinel",) for item in windows)
