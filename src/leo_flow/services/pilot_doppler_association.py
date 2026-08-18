@@ -158,7 +158,7 @@ class RecordingPilotDopplerAssociationServiceV0_1:
             (
                 "blind-path-frequency-must-overlap-acquired-pilot-frequency",
                 "candidate-only-no-calibrated-detection",
-                "pilot-fit-selects-top-qam-goodness-windows-diagnostic-only",
+                "pilot-fit-selects-qam-goodness-at-least-0.5-diagnostic-only",
             ),
         )
 
@@ -166,12 +166,15 @@ class RecordingPilotDopplerAssociationServiceV0_1:
 def _pilot_fit(
     windows: tuple[PilotQamFrequencyWindowV0_1, ...],
 ) -> PilotQamFrequencyFitV0_1:
+    ranked = sorted(
+        windows,
+        key=lambda item: (-item.qam_goodness, item.window_index),
+    )
+    separated = [item for item in ranked if item.qam_goodness >= 0.5]
+    chosen = separated[:8] if len(separated) >= 2 else ranked[:2]
     selected = tuple(
         sorted(
-            sorted(
-                windows,
-                key=lambda item: (-item.qam_goodness, item.window_index),
-            )[:8],
+            chosen,
             key=lambda item: int(item.interval_start_utc_ns),
         )
     )
@@ -214,7 +217,7 @@ def _pilot_fit(
         drift,
         residual,
         len(selected),
-        "top-qam-goodness-up-to-eight-diagnostic",
+        "qam-goodness-at-least-0.5-up-to-eight-diagnostic-with-top-two-fallback",
     )
 
 

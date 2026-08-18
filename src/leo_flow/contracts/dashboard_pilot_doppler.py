@@ -103,7 +103,9 @@ class PilotQamFrequencyFitV0_1:
             require_finite(getattr(self, name), name)
         if self.residual_rms_hz < 0 or not 2 <= self.support_count <= 8:
             raise ValueError("pilot QAM frequency fit support is invalid")
-        if self.selection != "top-qam-goodness-up-to-eight-diagnostic":
+        if self.selection != (
+            "qam-goodness-at-least-0.5-up-to-eight-diagnostic-with-top-two-fallback"
+        ):
             raise ValueError("pilot QAM frequency fit selection is unknown")
 
 
