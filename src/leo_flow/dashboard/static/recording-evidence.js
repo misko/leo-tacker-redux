@@ -14,6 +14,7 @@
   let context = null;
   let generation = 0;
   let extendedLoaded = false;
+  const analysisProducts = new Map();
   const approachRows = new Map();
   const colors = ["#80d8ff", "#fff176", "#ff8a80", "#69f0ae", "#ce93d8", "#ffb74d", "#90caf9", "#a5d6a7"];
 
@@ -40,28 +41,72 @@
     return body;
   }
 
-  async function availablePayloads(paths) {
-    const results = await Promise.all(paths.map(async (path) => {
-      try { return {payload: await json(path), missing: false}; }
-      catch (error) {
-        if (error.status === 404) return {payload: null, missing: true};
-        throw error;
-      }
-    }));
+  const productTargets = {
+    approaches: "approaches",
+    full_dwell_timeline: "timeline",
+    pilot_prescreen: "prescreen",
+    qam: "qam",
+    adaptive_detector_response: "detector",
+    pilot_refinement: "detector",
+    legacy_full_dwell: "detector",
+    basic_doppler: "doppler",
+    advanced_doppler: "doppler",
+    pilot_doppler_association: "pilot-doppler",
+  };
+
+  function exposeProductState(product, value) {
+    const target = node(`evidence-${productTargets[product]}-state`);
+    if (target) target.dataset.productState = value;
+  }
+
+  function productPayload(product, acceptedSources = []) {
+    const envelope = analysisProducts.get(product);
+    if (!envelope) return {payload: null, missing: true};
+    exposeProductState(product, envelope.state);
+    if (envelope.state !== "complete") return {payload: null, missing: true};
+    if (acceptedSources.length && !acceptedSources.includes(envelope.source)) return {payload: null, missing: true};
+    return {payload: envelope.payload, missing: false};
+  }
+
+  function availablePayloads(products) {
+    const results = products.map((product) => productPayload(product));
     return {
       payloads: results.flatMap((item) => item.payload ? [item.payload] : []),
       missingCount: results.filter((item) => item.missing).length,
     };
   }
 
-  async function preferredPayload(paths) {
-    for (const path of paths) {
-      try { return {payload: await json(path), path}; }
-      catch (error) {
-        if (error.status !== 404) throw error;
+  function preferredPayload(product, sources) {
+    const result = productPayload(product, sources);
+    return {payload: result.payload, path: result.payload ? analysisProducts.get(product).source : null};
+  }
+
+  function facadeParameters(sections) {
+    const parameters = new URLSearchParams({sections: sections.join(","), mode: node("evidence-mode").value});
+    if (context) queryFilters(parameters);
+    parameters.set("channel_numbers", checked("channel").join(","));
+    parameters.set("methods", checked("method").join(","));
+    parameters.set("qam_maximum_streams", "4");
+    parameters.set("qam_maximum_windows", "32");
+    parameters.set("qam_maximum_points", "128");
+    parameters.set("doppler_maximum_windows", "4096");
+    parameters.set("timeline_maximum_windows", "16384");
+    parameters.set("maximum_points", "4096");
+    return parameters;
+  }
+
+  async function fetchAnalysis(sections) {
+    const payload = await json(`/api/recordings/${encodeURIComponent(recordingId)}/analysis?${facadeParameters(sections)}`);
+    if (payload.schema !== "org.leo-flow.dashboard.recording-analysis-facade" || payload.recording_id !== recordingId) throw new Error("invalid recording-analysis facade response");
+    for (const section of payload.sections || []) {
+      for (const envelope of section.products || []) {
+        if (!["complete", "no_candidate", "pending", "failed", "not_analyzed"].includes(envelope.state)) throw new Error(`invalid ${envelope.product} availability state`);
+        analysisProducts.set(envelope.product, envelope);
+        exposeProductState(envelope.product, envelope.state);
       }
     }
-    return {payload: null, path: null};
+    document.dispatchEvent(new CustomEvent("leo:recording-analysis", {detail: payload}));
+    return payload;
   }
 
   function checked(name) {
@@ -142,7 +187,7 @@
 
   async function loadApproaches(current) {
     try {
-      const fetched = await availablePayloads(selectedRecordings().map((recording) => `/api/v23/recordings/${encodeURIComponent(recording.recording_id)}/analysis-approaches`));
+      const fetched = availablePayloads(["approaches"]);
       if (current !== generation) return;
       const rows = [];
       for (const payload of fetched.payloads) {
@@ -169,10 +214,7 @@
 
   async function loadAdaptiveQamApproaches(current) {
     try {
-      const fetched = await availablePayloads(selectedRecordings().map((recording) => {
-        const parameters = new URLSearchParams({mode: "windows", maximum_streams: "4", maximum_windows_per_stream: "32", maximum_points_per_constellation: "1"});
-        return `/api/v25/recordings/${encodeURIComponent(recording.recording_id)}/starlink-adaptive-qam?${parameters}`;
-      }));
+      const fetched = availablePayloads(["qam"]);
       if (current !== generation) return;
       const rows = [];
       for (const payload of fetched.payloads) {
@@ -429,10 +471,7 @@
       if (!recordings.length || !receivers.size || !lnbs.size || !edges.length || !channels.size) {
         node("evidence-timeline-canvas").hidden = true; node("evidence-timeline-legend").replaceChildren(); state("timeline", "missing", "Select at least one radio, LNB, receiver, channel, and edge."); return;
       }
-      const fetched = await availablePayloads(recordings.map((recording) => {
-        const parameters = new URLSearchParams({radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_windows: "16384"});
-        return `/api/v20/recordings/${encodeURIComponent(recording.recording_id)}/full-dwell-timeline?${parameters}`;
-      }));
+      const fetched = availablePayloads(["full_dwell_timeline"]);
       if (current !== generation) return;
       if (!fetched.payloads.length) {
         node("evidence-timeline-canvas").hidden = true; node("evidence-timeline-legend").replaceChildren(); state("timeline", "pending", "The complete IQ tile timeline is pending for every selected recording."); return;
@@ -481,10 +520,7 @@
       if (!recordings.length || !receivers.length || !lnbs.length || !edges.length || !channels.size) {
         node("evidence-prescreen-canvas").hidden = true; node("evidence-prescreen-legend").replaceChildren(); state("prescreen", "missing", "Select at least one radio, LNB, receiver, channel, and edge."); return;
       }
-      const fetched = await availablePayloads(recordings.map((recording) => {
-        const parameters = new URLSearchParams({radio_ids: recording.radio_id, lnb_ids: lnbs.join(","), receiver_chain_ids: receivers.join(","), edges: edges.join(","), maximum_points: "8192"});
-        return `/api/v27/recordings/${encodeURIComponent(recording.recording_id)}/starlink-pilot-prescreen?${parameters}`;
-      }));
+      const fetched = availablePayloads(["pilot_prescreen"]);
       if (current !== generation) return;
       if (!fetched.payloads.length) {
         node("evidence-prescreen-canvas").hidden = true; node("evidence-prescreen-legend").replaceChildren(); state("prescreen", "pending", "The complete-IQ OFDM prescreen is pending for every selected recording.");
@@ -524,15 +560,7 @@
         renderQamGoodness([]); state("qam", "missing", "Select at least one radio, LNB, receiver, and edge."); state("qam-combined", "missing", "Select at least two receiver ports from one recording."); return;
       }
       const mode = node("evidence-mode").value;
-      const fetchedResults = await Promise.all(selectedRecordings().map((recording) => {
-        const parameters = new URLSearchParams({mode, maximum_streams: "4", maximum_windows_per_stream: "32", maximum_points_per_constellation: "128"});
-        queryFilters(parameters);
-        const encoded = encodeURIComponent(recording.recording_id);
-        return preferredPayload([
-          `/api/v25/recordings/${encoded}/starlink-adaptive-qam?${parameters}`,
-          `/api/v17/recordings/${encoded}/starlink-acquired-constellation?${parameters}`,
-        ]);
-      }));
+      const fetchedResults = [preferredPayload("qam", ["adaptive-qam-v0.4", "acquired-qam-v0.3"])];
       const fetched = {
         payloads: fetchedResults.flatMap((item) => item.payload ? [item.payload] : []),
         missingCount: fetchedResults.filter((item) => !item.payload).length,
@@ -618,32 +646,23 @@
         "adaptive-time-diverse": {
           product: "adaptive",
           label: "time-diverse adaptive",
-          paths: selectedRecordings().map((recording) => {
-          const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, lnb_ids: [...lnbs].join(","), receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
-          return `/api/v24/recordings/${encodeURIComponent(recording.recording_id)}/starlink-adaptive-response?${parameters}`;
-          }),
+          products: ["adaptive_detector_response"],
         },
         "prescreen-global": {
           product: "prescreen-selected",
           label: "global OFDM / power refinement",
-          paths: selectedRecordings().map((recording) => {
-            const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, lnb_ids: [...lnbs].join(","), receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
-            return `/api/v28/recordings/${encodeURIComponent(recording.recording_id)}/starlink-pilot-refinement?${parameters}`;
-          }),
+          products: ["pilot_refinement"],
         },
         "legacy-sparse": {
           product: "legacy",
           label: "legacy sparse fallback",
-          paths: selectedRecordings().map((recording) => {
-          const parameters = new URLSearchParams({methods: methods.join(","), radio_ids: recording.radio_id, receiver_chain_ids: [...receivers].join(","), edges: edges.join(","), maximum_points: "4096"});
-          return `/api/v15/recordings/${encodeURIComponent(recording.recording_id)}/starlink-full-dwell?${parameters}`;
-          }),
+          products: ["legacy_full_dwell"],
         },
       };
       const fetchedApproaches = await Promise.all(selectedApproaches.map(async (name) => {
         const definition = definitions[name];
         if (!definition) throw new Error(`unknown detector windowing approach: ${name}`);
-        return {...definition, fetched: await availablePayloads(definition.paths)};
+        return {...definition, fetched: availablePayloads(definition.products)};
       }));
       if (current !== generation) return;
       const available = fetchedApproaches.flatMap((item) => item.fetched.payloads.map((payload) => ({...item, payload})));
@@ -725,18 +744,11 @@
       if (!selectedRecordings().length || !checked("lnb").length || !checked("receiver").length) {
         node("evidence-doppler-canvas").hidden = true; node("evidence-doppler-legend").replaceChildren(); state("doppler", "missing", "Select at least one radio, LNB, and receiver."); return;
       }
-      const parameters = new URLSearchParams({maximum_windows: "4096"}); queryFilters(parameters); parameters.delete("edges");
-      const associationPaths = checked("edge").length ? selectedRecordings().map((recording) => {
-        const associationParameters = new URLSearchParams({maximum_windows_per_stream: "32"});
-        queryFilters(associationParameters);
-        associationParameters.set("radio_ids", recording.radio_id);
-        return `/api/v26/recordings/${encodeURIComponent(recording.recording_id)}/pilot-doppler-association?${associationParameters}`;
-      }) : [];
-      const [payload, advancedPayload, associationPayloads] = await Promise.all([
-        json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-doppler?${parameters}`),
-        json(`/api/v19/recordings/${encodeURIComponent(recordingId)}/evidence-advanced-doppler?${parameters}`),
-        availablePayloads(associationPaths),
-      ]);
+      const basic = productPayload("basic_doppler");
+      const advanced = productPayload("advanced_doppler");
+      const payload = basic.payload || {state: analysisProducts.get("basic_doppler")?.state, series: [], candidate_only: true, calibrated_detection_count: null};
+      const advancedPayload = advanced.payload || {state: analysisProducts.get("advanced_doppler")?.state, series: [], candidate_only: true, calibrated_detection_count: null};
+      const associationPayloads = checked("edge").length ? availablePayloads(["pilot_doppler_association"]) : {payloads: [], missingCount: 0};
       if (current !== generation) return;
       if (payload.candidate_only !== true || payload.calibrated_detection_count !== null || advancedPayload.candidate_only !== true || advancedPayload.calibrated_detection_count !== null) throw new Error("unsafe Doppler semantics");
       const mode = node("evidence-mode").value;
@@ -801,7 +813,7 @@
     }
   }
 
-  function reload() {
+  function renderLoadedAnalysis() {
     if (!context) return;
     generation += 1;
     const current = generation;
@@ -818,47 +830,69 @@
     }
   }
 
-  function loadExtended() {
+  async function reload() {
+    if (!context) return;
+    try {
+      await fetchAnalysis(extendedLoaded ? ["primary", "extended"] : ["primary"]);
+      renderLoadedAnalysis();
+    } catch (error) {
+      const target = node("evidence-context-state"); target.dataset.state = "error"; target.textContent = `Recording analysis refresh failed: ${error.message}`;
+    }
+  }
+
+  async function loadExtended() {
     if (extendedLoaded) return;
     extendedLoaded = true;
     const button = node("evidence-load-extended");
     button.disabled = true;
     button.textContent = "Extended analysis loading…";
-    document.dispatchEvent(new CustomEvent("leo:load-extended-recording-analysis"));
     if (!context) {
       button.textContent = "Extended recording analysis loaded";
       return;
     }
-    const current = generation;
-    void Promise.all([
-      loadApproaches(current),
-      loadAdaptiveQamApproaches(current),
-      loadTimeline(current),
-      loadPilotPrescreen(current),
-      loadDoppler(current),
-    ]).finally(() => { button.textContent = "Extended analysis loaded"; });
+    try {
+      await fetchAnalysis(["extended"]);
+      const current = generation;
+      await Promise.all([loadApproaches(current), loadAdaptiveQamApproaches(current), loadTimeline(current), loadPilotPrescreen(current), loadDoppler(current)]);
+      document.dispatchEvent(new CustomEvent("leo:load-extended-recording-analysis"));
+      button.textContent = "Extended analysis loaded";
+    } catch (error) {
+      button.textContent = "Extended analysis failed";
+      state("timeline", "error", `Extended recording analysis failed: ${error.message}`);
+    }
   }
 
   async function initialize() {
     try {
-      context = await json(`/api/v16/recordings/${encodeURIComponent(recordingId)}/evidence-context`);
+      await fetchAnalysis(["primary"]);
+      const contextEnvelope = analysisProducts.get("evidence_context");
+      exposeProductState("evidence_context", contextEnvelope?.state || "failed");
+      if (contextEnvelope?.state !== "complete") {
+        const terminal = contextEnvelope?.state || "failed";
+        throw new Error(`evidence context is ${terminal.replace("_", " ")}`);
+      }
+      context = contextEnvelope.payload;
       if (context.candidate_only !== true || context.calibrated_detection_count !== null) throw new Error("unsafe evidence context semantics");
-      addChecks(node("evidence-radios"), "radio", context.recordings || [], (item) => `${item.radio_id} / ${item.recording_id}${item.requested ? " (this page)" : " (batch companion)"}`);
+      const recordings = (context.recordings || []).filter((item) => item.recording_id === recordingId);
+      const receivers = (context.receivers || []).filter((item) => item.recording_id === recordingId);
+      context = {...context, recordings, receivers};
+      addChecks(node("evidence-radios"), "radio", recordings, (item) => `${item.radio_id} / ${item.recording_id} (this page)`);
       node("evidence-radios").querySelectorAll("input").forEach((input, index) => {
-        input.value = context.recordings[index].recording_id;
-        input.dataset.radioId = context.recordings[index].radio_id;
-        input.checked = context.recordings[index].requested === true;
+        input.value = recordings[index].recording_id;
+        input.dataset.radioId = recordings[index].radio_id;
+        input.checked = true;
       });
-      const lnbValues = [...new Set((context.receivers || []).map((item) => item.lnb_id))].map((value) => ({value}));
-      const receiverValues = [...new Set((context.receivers || []).map((item) => item.receiver_chain_id))].map((value) => ({value}));
+      const lnbValues = [...new Set(receivers.map((item) => item.lnb_id))].map((value) => ({value}));
+      const receiverValues = [...new Set(receivers.map((item) => item.receiver_chain_id))].map((value) => ({value}));
       addChecks(node("evidence-lnbs"), "lnb", lnbValues, (item) => item.value);
       addChecks(node("evidence-receivers"), "receiver", receiverValues, (item) => item.value);
       const contextState = node("evidence-context-state"); contextState.dataset.state = "ready";
-      contextState.textContent = `${context.recordings.length} recording scope${context.capture_batch_id ? ` from ${context.capture_batch_id}` : " (no authoritative companion batch)"}; ${(context.receivers || []).length} effective-dated receiver/LNB assignments.`;
+      contextState.dataset.productState = "complete";
+      contextState.textContent = `${recordings.length} exact recording scope; ${receivers.length} effective-dated receiver/LNB assignments. Batch companions are excluded.`;
       node("evidence-limitations").textContent = (context.limitations || []).length ? `Limitations: ${context.limitations.join(", ")}. Unresolved assignments are excluded, never inferred from RX names.` : "Hardware selectors use the immutable assignment effective at capture time.";
       node("evidence-controls").addEventListener("change", reload);
       node("evidence-mode").addEventListener("change", reload);
-      reload();
+      renderLoadedAnalysis();
     } catch (error) {
       const target = node("evidence-context-state"); target.dataset.state = "error"; target.textContent = `Evidence context unavailable: ${error.message}`;
       ["timeline", "qam", "detector", "doppler"].forEach((product) => state(product, "missing", "Authoritative hardware context is required before evidence can be displayed."));
