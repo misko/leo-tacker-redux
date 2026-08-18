@@ -223,12 +223,30 @@ def test_complete_plugin_assembles_without_database_or_network_io(
     )
 
     class FakeMasterCaptureRepository:
-        def __init__(self, connect, canary) -> None:
+        def __init__(self, connect, canary, **kwargs) -> None:
             self.connect = connect
             self.canary = canary
+            self.kwargs = kwargs
 
     master_capture_adapter.PostgresMasterCaptureSnapshotRepositoryV0_1 = (
         FakeMasterCaptureRepository
+    )
+    doppler_snapshot_adapter = ModuleType(
+        "leo_flow.adapters.dashboard_capture_doppler_postgres"
+    )
+    qam_snapshot_adapter = ModuleType(
+        "leo_flow.adapters.dashboard_capture_qam_snapshot_postgres"
+    )
+
+    class FakeSnapshotRepository:
+        def __init__(self, connect) -> None:
+            self.connect = connect
+
+    doppler_snapshot_adapter.PostgresCaptureDopplerSnapshotRepositoryV0_1 = (
+        FakeSnapshotRepository
+    )
+    qam_snapshot_adapter.PostgresCaptureQamSnapshotRepositoryV0_1 = (
+        FakeSnapshotRepository
     )
     monkeypatch.setitem(sys.modules, "psycopg", psycopg)
     monkeypatch.setitem(sys.modules, "psycopg.rows", rows)
@@ -239,6 +257,16 @@ def test_complete_plugin_assembles_without_database_or_network_io(
         sys.modules,
         "leo_flow.adapters.dashboard_master_capture_postgres",
         master_capture_adapter,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "leo_flow.adapters.dashboard_capture_doppler_postgres",
+        doppler_snapshot_adapter,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "leo_flow.adapters.dashboard_capture_qam_snapshot_postgres",
+        qam_snapshot_adapter,
     )
 
     service = assemble_service(
