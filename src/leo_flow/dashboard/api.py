@@ -56,6 +56,11 @@ from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.ports import DashboardQueryPort
 from leo_flow.contracts.radio_lifecycle import CaptureLifecycleDashboardQueryPortV0_1
 from leo_flow.contracts.starlink import StarlinkEdge
+from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
+    RecordingStarlinkAcquiredConstellationQueryPortV0_3,
+    StarlinkAcquiredConstellationQueryV0_3,
+    StarlinkAcquiredConstellationViewMode,
+)
 from leo_flow.contracts.starlink_detector_suite import (
     REPORT_METHOD_ORDER,
     StarlinkDetectorMethod,
@@ -818,6 +823,54 @@ class DashboardJsonApplicationV16:
         )
 
 
+class DashboardJsonApplicationV17:
+    """Add bounded windowed/overall acquired-QAM without changing V1--V16."""
+
+    _PREFIX = "/api/v17/recordings/"
+    _MAX_QUERY_BYTES = 16_384
+    _MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+    def __init__(
+        self,
+        v16: DashboardJsonApplicationV16,
+        acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3,
+    ) -> None:
+        self._v16, self._acquired_qam = v16, acquired_qam
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._v16.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "starlink-acquired-constellation":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._acquired_qam.recording_starlink_acquired_constellation(
+                _starlink_acquired_constellation_query(
+                    RecordingId(unquote(parts[0])),
+                    request.query,
+                    self._MAX_QUERY_BYTES,
+                )
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("acquired-QAM response exceeds its byte bound")
+        except (ValueError, InvalidCursor) as error:
+            return _error(400, "invalid_request", str(error))
+        except DashboardNotFound as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
 def _recording_evidence_doppler_query(
     recording_id: RecordingId, query: dict[str, str]
 ) -> RecordingEvidenceDopplerQueryV0_1:
@@ -837,6 +890,59 @@ def _recording_evidence_doppler_query(
             query, "maximum_windows", MAXIMUM_DOPPLER_WINDOW_ESTIMATES
         ),
     )
+
+
+def _starlink_acquired_constellation_query(
+    recording_id: RecordingId,
+    query: dict[str, str],
+    maximum_query_bytes: int,
+) -> StarlinkAcquiredConstellationQueryV0_3:
+    allowed = {
+        "mode",
+        "radio_ids",
+        "lnb_ids",
+        "segment_ids",
+        "receiver_chain_ids",
+        "edges",
+        "maximum_streams",
+        "maximum_windows_per_stream",
+        "maximum_points_per_constellation",
+    }
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    if (
+        sum(len(key.encode()) + len(value.encode()) for key, value in query.items())
+        > maximum_query_bytes
+    ):
+        raise ValueError("acquired-QAM query text exceeds its bound")
+    try:
+        return StarlinkAcquiredConstellationQueryV0_3(
+            recording_id,
+            StarlinkAcquiredConstellationViewMode(query.get("mode", "overall")),
+            tuple(
+                RadioId(value)
+                for value in (_comma_values(query, "radio_ids", 64) or ())
+            ),
+            _comma_values(query, "lnb_ids", 64) or (),
+            tuple(
+                SegmentId(value)
+                for value in (_comma_values(query, "segment_ids", 64) or ())
+            ),
+            tuple(
+                ReceiverChainId(value)
+                for value in (_comma_values(query, "receiver_chain_ids", 32) or ())
+            ),
+            tuple(
+                StarlinkEdge(value)
+                for value in (_comma_values(query, "edges", 2) or ())
+            ),
+            int(query.get("maximum_streams", "4")),
+            int(query.get("maximum_windows_per_stream", "8")),
+            int(query.get("maximum_points_per_constellation", "1200")),
+        )
+    except ValueError as error:
+        raise ValueError("invalid acquired-QAM query value") from error
 
 
 def _starlink_full_dwell_query(
