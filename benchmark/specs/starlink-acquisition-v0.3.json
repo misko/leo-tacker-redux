@@ -1,0 +1,58 @@
+{
+  "schema": "org.leo-flow.starlink-acquisition-science-inventory/v0.3",
+  "decision_semantics": "candidate-only-whole-revised-time-epoch-cfo-maximum-calibration-required",
+  "algorithm_ref": {
+    "artifact_id": "starlink-edge-pilot-multibasin-acquisition-v0.3",
+    "digest": "sha256:8cf638c099f6976e1172dafbf303d6f21ff56eb75ecbcf4c730e532d1bcce231",
+    "schema": "org.leo-flow.recording-algorithm/v0.3"
+  },
+  "acquired_qam_algorithm_ref": {
+    "artifact_id": "starlink-acquired-pilot-constellation-v0.3",
+    "digest": "sha256:20f3f6464ea3d52e8d04657959a6d555b309cd1eedf0a7daa068cee72095ea42",
+    "schema": "org.leo-flow.recording-algorithm/v0.3"
+  },
+  "profiles": [
+    {
+      "receiver_chain_id": "rx_lnb_a",
+      "receiver_cfo_profile_id": "gauss-rx-lnb-a-v0.3",
+      "config_digest": "sha256:9479c26e420edf85e08ecf4e4535685a6f8367d24f19880bb854f197b197908a"
+    },
+    {
+      "receiver_chain_id": "rx_lnb_b",
+      "receiver_cfo_profile_id": "gauss-rx-lnb-b-v0.3",
+      "config_digest": "sha256:53afa3f5bdacd3bb7c643c19086d40cea54aacaca0e3613804fcc9431077b78f"
+    }
+  ],
+  "config": {
+    "cfo_min_hz": -400000.0,
+    "cfo_max_hz": 400000.0,
+    "coarse_cfo_step_hz": 80000.0,
+    "fine_cfo_radius_hz": 80000.0,
+    "fine_cfo_step_hz": 500.0,
+    "retained_candidate_count": 8,
+    "candidate_epoch_separation_samples": 20,
+    "candidate_cfo_separation_hz": 80000.0,
+    "epoch_refinement_radius_samples": 1,
+    "minimum_frame_support": 2,
+    "maximum_probe_samples": 50000,
+    "maximum_coarse_search_cells": 100000,
+    "maximum_refinement_search_cells": 100000,
+    "maximum_working_bytes": 67108864,
+    "anchor_symbols": [2, 28, 54, 80, 106, 132, 158, 184, 210, 236, 262, 288],
+    "acquire_symbols": "even-symbols-2-through-300",
+    "verify_symbols": "odd-symbols-3-through-301"
+  },
+  "calibration": {
+    "identity_schema": "org.leo-flow.starlink-revised-search-calibration-identity/v0.3",
+    "maximum_dimensions": ["time_window", "epoch", "coarse_cfo", "retained_basin_refinement"],
+    "threshold_state": "blocked-pending-whole-revised-search",
+    "calibrated_threshold": null,
+    "required_partitions": ["TRAIN", "VALIDATION", "TEST"],
+    "test_partition_use": "acceptance-only-never-threshold-selection"
+  },
+  "compatibility": {
+    "starlink_detector_suite_v0.2": "unchanged-and-replay-compatible",
+    "pilot_constellation_v0.1": "unchanged-and-replay-compatible",
+    "leo_tracker_runtime_dependency": false
+  }
+}
