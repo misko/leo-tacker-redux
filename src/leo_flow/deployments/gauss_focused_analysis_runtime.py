@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from leo_flow.adapters.campaign_scoped_claims_postgres import (
     PostgresCampaignAnalysisLaneStateReaderV1,
@@ -15,11 +15,17 @@ from leo_flow.adapters.dashboard_batch_postgres import (
 from leo_flow.adapters.focused_analysis_postgres import (
     PostgresFocusedAnalysisPairScopeRegistrarV0_1,
 )
+from leo_flow.adapters.hardware_link_postgres import (
+    PostgresRecordingHardwareLinkCatalog,
+)
+from leo_flow.adapters.hardware_postgres_catalog import (
+    PostgresHardwareSnapshotCatalog,
+)
 from leo_flow.adapters.systemd_credentials import SystemdCredentialProvider
 from leo_flow.application.capture_batch_dashboard import CaptureBatchDashboardPublisher
 from leo_flow.capture.campaign import CampaignAnalysisReceipt
 from leo_flow.contracts.capture_batch import CaptureBatchSnapshot
-from leo_flow.contracts.core import Digest, JobId, SchemaRef, UtcNs
+from leo_flow.contracts.core import Digest, JobId, RecordingId, SchemaRef, UtcNs
 from leo_flow.contracts.deferred_analysis import (
     DeferredAnalysisLaneState,
     DeferredAnalysisStage,
@@ -38,6 +44,8 @@ from leo_flow.deployments.recording_submission_v1 import analysis_connection_fac
 from leo_flow.deployments.staged_analysis_pool import (
     BoundedSpawnDeferredAnalysisLaneV1,
 )
+from leo_flow.hardware.linkage import RecordingHardwareLinker
+from leo_flow.hardware.persistence import DurableHardwareMetadataRepository
 from leo_flow.jobs.postgres_repository import PostgresJobLeaseRepository
 from leo_flow.services.capture_batch_analysis import (
     ClosedBatchAnalysisSelection,
@@ -70,6 +78,10 @@ from leo_station.analysis_v1 import (
 
 MAXIMUM_FOCUSED_COMPUTE_WORKERS = 8
 MAXIMUM_FOCUSED_PROJECTION_WORKERS = 1
+
+
+class _RecordingHardwareLinkerPort(Protocol):
+    def link(self, recording_id: RecordingId) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +185,18 @@ def _prepare_scope(
     connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
     jobs = PostgresJobLeaseRepository(connect)
     recordings = PostgresRecordingCatalog(connect)
+    blobs = FileSystemBlobStore(CAS_ROOT)
+    reader = SigMFRecordingObjectReader(blobs)
+    hardware = DurableHardwareMetadataRepository(
+        blobs, PostgresHardwareSnapshotCatalog(connect)
+    )
+    hardware_linker = RecordingHardwareLinker(
+        recordings,
+        reader,
+        hardware,
+        hardware,
+        PostgresRecordingHardwareLinkCatalog(connect),
+    )
     CaptureBatchDashboardPublisher(
         PostgresCaptureBatchProjectionWriter(connect)
     ).publish_initial(snapshot)
@@ -185,6 +209,12 @@ def _prepare_scope(
         RECORDING_DEPENDENCY_REFS,
         SchemaRef(FeatureSetBundle.SCHEMA_ID),
     )
+    ordered_recordings = tuple(
+        sorted(snapshot.successful_recordings, key=lambda item: str(item.recording_id))
+    )
+    _link_focused_recording_hardware(
+        tuple(item.recording_id for item in ordered_recordings), hardware_linker
+    )
     submitted = feature_submission.submit(snapshot, selection)
     feature_by_recording = {
         item.request.recording_id: item.job_id for item in submitted.recording_jobs
@@ -192,10 +222,7 @@ def _prepare_scope(
     feature: list[JobId] = []
     waterfalls: list[JobId] = []
     suites: list[JobId] = []
-    reader = SigMFRecordingObjectReader(FileSystemBlobStore(CAS_ROOT))
-    for recording in sorted(
-        snapshot.successful_recordings, key=lambda item: str(item.recording_id)
-    ):
+    for recording in ordered_recordings:
         recording_id = recording.recording_id
         feature.append(feature_by_recording[recording_id])
         waterfalls.append(
@@ -256,6 +283,18 @@ def _prepare_scope(
             )
         )
     return scope
+
+
+def _link_focused_recording_hardware(
+    recording_ids: tuple[RecordingId, ...],
+    linker: _RecordingHardwareLinkerPort,
+) -> None:
+    """Freeze each focused recording's exact manifest hardware before jobs exist."""
+
+    if len(recording_ids) != 2 or len(set(recording_ids)) != 2:
+        raise RuntimeError("focused hardware linkage requires two recordings")
+    for recording_id in sorted(recording_ids, key=str):
+        linker.link(recording_id)
 
 
 def _pair(values: list[JobId], name: str) -> tuple[JobId, JobId]:

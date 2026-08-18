@@ -109,12 +109,7 @@ class PostgresRecordingEvidenceContextRepositoryV0_1:
         with self._connect() as connection:
             connection.execute("SET TRANSACTION READ ONLY")
             rows = connection.execute(
-                """
-                SELECT batch_id
-                  FROM public.resolve_dashboard_capture_batches_for_recording(
-                       %(recording_id)s)
-                 ORDER BY batch_id
-                """,
+                _BATCH_IDS_SQL,
                 {"recording_id": str(recording_id)},
             ).fetchall()
         return tuple(CaptureBatchId(str(row["batch_id"])) for row in rows)
@@ -187,3 +182,24 @@ def _integer(value: object, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"database {name} is not an integer")
     return value
+
+
+# The V16 context read runs as ``leo_dashboard``.  That role deliberately has
+# SELECT on these public projections but not EXECUTE on the analysis-owned
+# resolver used when converging analysis results.  Two rows are sufficient to
+# distinguish the contract's unavailable, exact, and ambiguous batch states.
+_BATCH_IDS_SQL = """
+WITH latest_batch AS (
+    SELECT DISTINCT ON (batch.batch_id)
+           batch.projection_sequence, batch.batch_id
+      FROM public.dashboard_capture_batch_projection AS batch
+     ORDER BY batch.batch_id, batch.projection_sequence DESC
+)
+SELECT latest.batch_id
+  FROM latest_batch AS latest
+  JOIN public.dashboard_capture_attempt_projection AS attempt
+    ON attempt.projection_sequence = latest.projection_sequence
+ WHERE attempt.recording_id = %(recording_id)s
+ ORDER BY latest.batch_id
+ LIMIT 2
+"""
