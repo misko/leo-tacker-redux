@@ -42,7 +42,10 @@ class PostgresFullDwellWorkRepositoryV0_1:
     def admit(
         self, *, maximum_new: int, maximum_active: int
     ) -> FullDwellAdmissionResultV0_1:
-        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
             rows = cursor.execute(
                 "SELECT * FROM public.admit_starlink_full_dwell_work_v0_1(%s,%s)",
                 (maximum_new, maximum_active),
@@ -62,7 +65,10 @@ class PostgresFullDwellWorkRepositoryV0_1:
         if not worker_id or lease_ttl_s <= 0:
             raise ValueError("full-dwell claim bounds are invalid")
         token = f"{worker_id}:{self._token()}"
-        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
             rows = cursor.execute(
                 "SELECT * FROM public.claim_starlink_full_dwell_work_v0_1(%s,%s)",
                 (token, timedelta(seconds=lease_ttl_s)),
@@ -124,7 +130,10 @@ class PostgresFullDwellWorkRepositoryV0_1:
         self, function: str, lease: FullDwellWorkLeaseV0_1, *extra: object
     ) -> None:
         placeholders = ",%s" * len(extra)
-        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+        with (
+            self._connect() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
             row = cursor.execute(
                 f"SELECT public.{function}(%s,%s,%s{placeholders}) AS changed",
                 (

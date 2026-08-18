@@ -80,11 +80,14 @@ def test_failure_is_sanitized() -> None:
     def fail(*args, **kwargs):
         raise RuntimeError("dsn secret")
 
-    assert full_dwell_operator.main(
-        ["--credential-directory", "/credentials", "--once"],
-        stdout=StringIO(),
-        stderr=stderr,
-        service_builder=fail,
-    ) == 4
+    assert (
+        full_dwell_operator.main(
+            ["--credential-directory", "/credentials", "--once"],
+            stdout=StringIO(),
+            stderr=stderr,
+            service_builder=fail,
+        )
+        == 4
+    )
     assert stderr.getvalue() == '{"event":"full_dwell_cycle_failed"}\n'
     assert "secret" not in stderr.getvalue()

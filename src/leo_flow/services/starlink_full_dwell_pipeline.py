@@ -55,7 +55,9 @@ class DurableFullDwellLeaseProducerV0_1:
         products: DurableStarlinkFullDwellStoreV0_1,
         profiles: tuple[FullDwellAnalysisProfileV0_1, ...],
     ) -> None:
-        refs = tuple(starlink_detector_suite_config_ref_v0_2(p.config) for p in profiles)
+        refs = tuple(
+            starlink_detector_suite_config_ref_v0_2(p.config) for p in profiles
+        )
         if not profiles or len(refs) != len(set(refs)):
             raise ValueError("full-dwell profiles must be nonempty and unique")
         self._recordings = recordings
@@ -97,7 +99,9 @@ class DurableFullDwellLeaseProducerV0_1:
     ) -> FullDwellAnalysisProfileV0_1:
         if not bundle.suites:
             raise ValueError("full-dwell source suite has no eligible streams")
-        refs = {method.config_ref for suite in bundle.suites for method in suite.methods}
+        refs = {
+            method.config_ref for suite in bundle.suites for method in suite.methods
+        }
         matches = tuple(
             profile
             for profile in self._profiles
@@ -126,7 +130,10 @@ def full_dwell_request_v0_1(
     selections = []
     for suite in suite_bundle.suites:
         segment = segments.get(suite.segment_id)
-        if segment is None or suite.receiver_chain_id not in segment.requested.receiver_chain_ids:
+        if (
+            segment is None
+            or suite.receiver_chain_id not in segment.requested.receiver_chain_ids
+        ):
             raise ValueError("full-dwell source stream is unavailable")
         if suite.sample_rate_hz != segment.actual_sample_rate_hz:
             raise ValueError("full-dwell source sample rate differs")
@@ -139,7 +146,11 @@ def full_dwell_request_v0_1(
                 segment.sample_count,
             )
         )
-    selections.sort(key=lambda item: tuple(map(str, (item.segment_id, item.receiver_chain_id, item.edge))))
+    selections.sort(
+        key=lambda item: tuple(
+            map(str, (item.segment_id, item.receiver_chain_id, item.edge))
+        )
+    )
     window_samples = round(suite_bundle.suites[0].sample_rate_hz * 0.008)
     plan = StarlinkFullDwellPlanV0_1(
         window_samples, window_samples, window_samples, 16_384, 32, 4

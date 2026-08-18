@@ -16,7 +16,9 @@ from leo_flow.services.starlink_full_dwell_producer import (
 
 
 def _lease(attempt: int = 1) -> FullDwellWorkLeaseV0_1:
-    blob = ObjectRef(Digest.sha256(b"suite"), 5, "application/json", "suite", "cas:suite")
+    blob = ObjectRef(
+        Digest.sha256(b"suite"), 5, "application/json", "suite", "cas:suite"
+    )
     return FullDwellWorkLeaseV0_1(
         StarlinkDetectorSuiteProductRefV0_2(
             "slsuite_" + "1" * 32, RecordingId("rec_fd"), blob
@@ -41,9 +43,14 @@ class Work:
         self.calls.append(("claim", worker_id, lease_ttl_s))
         return self.lease
 
-    def complete(self, lease, result): self.calls.append(("complete", lease, result))
-    def retry(self, lease, reason, retry_at_utc_ns): self.calls.append(("retry", lease, reason, retry_at_utc_ns))
-    def park(self, lease, reason): self.calls.append(("park", lease, reason))
+    def complete(self, lease, result):
+        self.calls.append(("complete", lease, result))
+
+    def retry(self, lease, reason, retry_at_utc_ns):
+        self.calls.append(("retry", lease, reason, retry_at_utc_ns))
+
+    def park(self, lease, reason):
+        self.calls.append(("park", lease, reason))
 
 
 class StaleCompleteWork(Work):
@@ -58,13 +65,19 @@ class Producer:
     def produce(self, lease: FullDwellWorkLeaseV0_1) -> ArtifactRef:
         if self.error is not None:
             raise self.error
-        return ArtifactRef("slfd_" + "2" * 32, Digest.sha256(b"result"), SchemaRef("fd"))
+        return ArtifactRef(
+            "slfd_" + "2" * 32, Digest.sha256(b"result"), SchemaRef("fd")
+        )
 
 
 def test_cycle_admits_with_hard_bounds_then_fenced_completes() -> None:
     work = Work(_lease())
     admission, progressed = BoundedFullDwellProducerServiceV0_1(
-        work, Producer(), worker_id="worker", maximum_active=8, maximum_admissions_per_cycle=2
+        work,
+        Producer(),
+        worker_id="worker",
+        maximum_active=8,
+        maximum_admissions_per_cycle=2,
     ).run_once()
     assert progressed and admission.admitted == 1
     assert work.calls[0] == ("admit", 2, 8)
@@ -74,7 +87,9 @@ def test_cycle_admits_with_hard_bounds_then_fenced_completes() -> None:
 
 def test_empty_cycle_is_nonblocking_and_does_not_execute() -> None:
     work = Work(None)
-    _, progressed = BoundedFullDwellProducerServiceV0_1(work, Producer(), worker_id="worker").run_once()
+    _, progressed = BoundedFullDwellProducerServiceV0_1(
+        work, Producer(), worker_id="worker"
+    ).run_once()
     assert not progressed
     assert [call[0] for call in work.calls] == ["admit", "claim"]
 
@@ -91,12 +106,20 @@ def test_transient_failure_retries_at_bounded_delay() -> None:
 
 def test_invalid_or_exhausted_work_parks_with_sanitized_reason() -> None:
     invalid = Work(_lease())
-    BoundedFullDwellProducerServiceV0_1(invalid, Producer(ValueError("bad")), worker_id="worker").run_once()
+    BoundedFullDwellProducerServiceV0_1(
+        invalid, Producer(ValueError("bad")), worker_id="worker"
+    ).run_once()
     assert invalid.calls[-1][0:] == ("park", _lease(), "full-dwell-invalid-input")
 
     exhausted = Work(_lease(3))
-    BoundedFullDwellProducerServiceV0_1(exhausted, Producer(RuntimeError("bad")), worker_id="worker").run_once()
-    assert exhausted.calls[-1][0:] == ("park", _lease(3), "full-dwell-attempts-exhausted")
+    BoundedFullDwellProducerServiceV0_1(
+        exhausted, Producer(RuntimeError("bad")), worker_id="worker"
+    ).run_once()
+    assert exhausted.calls[-1][0:] == (
+        "park",
+        _lease(3),
+        "full-dwell-attempts-exhausted",
+    )
 
 
 def test_stale_completion_does_not_attempt_a_second_transition() -> None:

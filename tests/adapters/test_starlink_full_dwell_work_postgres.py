@@ -25,7 +25,9 @@ from tests.adapters.test_starlink_pilot_constellation_postgres_integration impor
 
 
 def _object(label: bytes, locator: str) -> ObjectRef:
-    return ObjectRef(Digest.sha256(label), len(label), "application/json", "test", locator)
+    return ObjectRef(
+        Digest.sha256(label), len(label), "application/json", "test", locator
+    )
 
 
 def _source(dsn: str, suffix: str) -> str:
@@ -39,7 +41,9 @@ def _source(dsn: str, suffix: str) -> str:
         recording, idempotency_key=f"fd-work:recording:{suffix}"
     )
     analysis_id = "slsuite_" + suffix * 32
-    PostgresStarlinkSuiteCatalogV0_2(_connect(dsn, "leo_analysis")).publish_starlink_suite(
+    PostgresStarlinkSuiteCatalogV0_2(
+        _connect(dsn, "leo_analysis")
+    ).publish_starlink_suite(
         StarlinkSuiteCatalogProjectionV0_2(
             analysis_id,
             str(recording.recording_id),
@@ -66,7 +70,11 @@ def test_pg16_admission_is_bounded_and_leases_are_fenced(
         token_factory=lambda: "fixed",
     )
     admitted = repository.admit(maximum_new=1, maximum_active=1)
-    assert (admitted.admitted, admitted.active_backlog, admitted.saturated) == (1, 1, True)
+    assert (admitted.admitted, admitted.active_backlog, admitted.saturated) == (
+        1,
+        1,
+        True,
+    )
     assert repository.admit(maximum_new=1, maximum_active=1).admitted == 0
 
     lease = repository.claim("worker", 60)

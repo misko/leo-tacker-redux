@@ -587,9 +587,7 @@ def starlink_temporal_pilot_preparers_v0_1() -> tuple[
     )
 
 
-def starlink_full_dwell_profiles_v0_1() -> tuple[
-    FullDwellAnalysisProfileV0_1, ...
-]:
+def starlink_full_dwell_profiles_v0_1() -> tuple[FullDwellAnalysisProfileV0_1, ...]:
     """Return the exact approved configs and immutable execution identity."""
     from leo_flow.services.starlink_full_dwell_pipeline import (
         FullDwellAnalysisProfileV0_1,
