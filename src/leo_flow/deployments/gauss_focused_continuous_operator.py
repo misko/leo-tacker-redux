@@ -35,6 +35,7 @@ MAXIMUM_IN_FLIGHT_ANALYSES = 8
 DEFAULT_POLL_INTERVAL_S = 0.25
 DEFAULT_MINIMUM_FREE_BYTES = 10 * 1024**3
 DEFAULT_LEAD_SECONDS = MINIMUM_LEAD_NS // 1_000_000_000 + 15
+DEFAULT_ANALYSIS_NICE = 15
 
 
 @dataclass(slots=True)
@@ -97,6 +98,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--analysis-credential-directory", type=Path, required=True)
     parser.add_argument("--dashboard-credential-directory", type=Path, required=True)
     parser.add_argument("--compute-workers", type=int, default=8)
+    parser.add_argument(
+        "--analysis-nice",
+        type=int,
+        default=DEFAULT_ANALYSIS_NICE,
+        help="lower CPU scheduling priority for analysis so capture retains priority",
+    )
     parser.add_argument(
         "--maximum-in-flight-analyses",
         type=int,
@@ -231,6 +238,7 @@ def _valid_args(args: argparse.Namespace) -> bool:
         and args.station_b.is_file()
         and args.analysis_config.is_file()
         and 1 <= args.compute_workers <= 8
+        and 0 <= args.analysis_nice <= 19
         and 1 <= args.maximum_in_flight_analyses <= MAXIMUM_IN_FLIGHT_ANALYSES
         and args.lead_seconds * 1_000_000_000 >= MINIMUM_LEAD_NS
         and 1 <= args.duration_seconds <= 300
@@ -384,6 +392,7 @@ def _dispatch(
     command = _analysis_command(args, record)
     process = subprocess.Popen(command, text=True)
     try:
+        _set_analysis_nice(process.pid, args.analysis_nice)
         start_ticks = _pid_start_ticks(process.pid)
         if start_ticks is None:
             raise RuntimeError("analysis child process identity is unavailable")
@@ -415,10 +424,19 @@ def _dispatch(
     )
 
 
+def _set_analysis_nice(pid: int, nice: int) -> None:
+    try:
+        os.setpriority(os.PRIO_PROCESS, pid, nice)
+    except ProcessLookupError:
+        pass
+
+
 def _captured_work(
     journal: SQLiteFocusedContinuousJournalV0_1,
 ) -> tuple[FocusedContinuousRecordV0_1, ...]:
-    return tuple(record for record in journal.incomplete() if record.state == "captured")
+    return tuple(
+        record for record in journal.incomplete() if record.state == "captured"
+    )
 
 
 def _dispatch_captured_available(
@@ -565,6 +583,7 @@ def _recover(
                     return False
                 assert record.analysis_pid is not None
                 assert record.analysis_process_start_ticks is not None
+                _set_analysis_nice(record.analysis_pid, args.analysis_nice)
                 children[record.sequence] = _AnalysisChild(
                     record,
                     _RecoveredProcess(

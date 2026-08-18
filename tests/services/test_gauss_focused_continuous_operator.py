@@ -133,6 +133,7 @@ def test_user_service_is_one_continuous_loop_without_timer_or_shell_engine() -> 
     assert "leo-gauss-focused-continuous" in unit
     assert "--maximum-in-flight-analyses 8" in unit
     assert "--compute-workers 8" in unit
+    assert "--analysis-nice 15" in unit
     assert "--duration-seconds 60" in unit
     assert "Restart=no" in unit
     assert "KillMode=process" in unit
