@@ -277,3 +277,23 @@ retains separated timing/CFO basins, refines each at sample-level timing and fin
 CFO resolution, then selects on held-out pilot symbols. Any future change to the
 search space requires a new identity and re-evaluation of its whole-search null
 distribution.
+
+## 2026-08-18 — Capture-first continuous analysis and renewable suite leases
+
+**Status:** accepted for the single-station development deployment.
+
+Continuous 60-second CH4-lower capture must never await analysis admission or
+completion. Captured pairs remain in the durable SQLite journal and are dispatched
+FIFO as bounded analysis capacity becomes available. Analysis processes run at
+nice level 15; capture remains at normal priority. The development host permits at
+most eight pair analyses at once, while the independent full-dwell workers use the
+same lower priority. This preserves CPU preemption for radio capture without
+discarding requested QAM, surrogate-null, temporal, waterfall, or Doppler evidence.
+
+A detector-suite job may take longer than its initial 15-minute PostgreSQL lease
+for a 60-second recording. Its fenced worker therefore renews the same lease token
+and generation every 30 seconds during preparation. Publication occurs only after
+the renewal loop stops cleanly; a failed or stale heartbeat prevents publication.
+This does not weaken idempotency or permit another worker to publish against an
+expired generation. Interrupted processes remain recoverable through normal lease
+expiry and exact-scope redispatch.
