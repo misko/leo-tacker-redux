@@ -76,6 +76,10 @@ from leo_flow.contracts.dashboard_score_distribution import (
 from leo_flow.contracts.dashboard_surrogate_distribution import (
     SurrogateScoreDistributionQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_symbolwise_replay import (
+    RecordingSymbolwiseReplayDashboardQueryPortV0_1,
+    RecordingSymbolwiseReplayDashboardQueryV0_1,
+)
 from leo_flow.contracts.dashboard_temporal_pilot import (
     TemporalPilotAggregateQueryPortV0_1,
 )
@@ -1410,6 +1414,79 @@ class DashboardJsonApplicationV28:
             (("content-type", "application/json; charset=utf-8"),),
             encoded,
         )
+
+
+class DashboardJsonApplicationV29:
+    """Expose complete durable symbolwise replay curves without changing V1--V28."""
+
+    _PREFIX = "/api/v29/recordings/"
+    _MAX_QUERY_BYTES = 8_192
+    _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+
+    def __init__(
+        self,
+        previous: JsonDashboardHandler,
+        symbolwise: RecordingSymbolwiseReplayDashboardQueryPortV0_1,
+    ) -> None:
+        self._previous, self._symbolwise = previous, symbolwise
+
+    def handle(self, request: JsonRequest) -> JsonResponse:
+        path = request.path.rstrip("/") or "/"
+        if not path.startswith(self._PREFIX):
+            return self._previous.handle(request)
+        if request.method.upper() != "GET":
+            return _error(405, "method_not_allowed", "only GET is supported")
+        try:
+            suffix = path.removeprefix(self._PREFIX)
+            parts = suffix.split("/")
+            if len(parts) != 2 or parts[1] != "symbolwise-replay":
+                raise DashboardNotFound(f"route {path} was not found")
+            payload = self._symbolwise.recording_symbolwise_replay_dashboard(
+                _symbolwise_replay_dashboard_query(
+                    RecordingId(unquote(parts[0])),
+                    request.query,
+                    self._MAX_QUERY_BYTES,
+                )
+            )
+            encoded = canonical_json_bytes(payload)
+            if len(encoded) > self._MAX_RESPONSE_BYTES:
+                raise RuntimeError("symbolwise replay response exceeds its byte bound")
+        except ValueError as error:
+            return _error(400, "invalid_request", str(error))
+        except (DashboardNotFound, LookupError) as error:
+            return _error(404, "not_found", str(error))
+        except Exception:  # noqa: BLE001 - fixed external error contract
+            return _error(500, "internal_error", "dashboard query failed")
+        return JsonResponse(
+            200,
+            (("content-type", "application/json; charset=utf-8"),),
+            encoded,
+        )
+
+
+def _symbolwise_replay_dashboard_query(
+    recording_id: RecordingId,
+    query: dict[str, str],
+    maximum_query_bytes: int,
+) -> RecordingSymbolwiseReplayDashboardQueryV0_1:
+    allowed = {"radio_ids", "lnb_ids", "receiver_chain_ids"}
+    unknown = sorted(set(query) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported query parameter {unknown[0]}")
+    if sum(len(key) + len(value) for key, value in query.items()) > maximum_query_bytes:
+        raise ValueError("symbolwise replay query is too large")
+    return RecordingSymbolwiseReplayDashboardQueryV0_1(
+        recording_id=recording_id,
+        radio_ids=tuple(
+            RadioId(value)
+            for value in (_comma_values(query, "radio_ids", 16) or ())
+        ),
+        lnb_ids=_comma_values(query, "lnb_ids", 16) or (),
+        receiver_chain_ids=tuple(
+            ReceiverChainId(value)
+            for value in (_comma_values(query, "receiver_chain_ids", 16) or ())
+        ),
+    )
 
 
 def _pilot_prescreen_query(

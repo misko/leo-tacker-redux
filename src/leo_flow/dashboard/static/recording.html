@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/assets/dashboard.css">
   <script src="/assets/recording-detail.js" defer></script>
   <script src="/assets/recording-evidence.js" defer></script>
+  <script src="/assets/symbolwise-replay.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#capture-detail-main">Skip to capture detail</a>
@@ -106,6 +107,30 @@
         </fieldset>
       </form>
       <div class="evidence-product-grid">
+        <article id="evidence-symbolwise" class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-symbolwise-heading">
+          <div class="decision-heading"><h3 id="evidence-symbolwise-heading">Durable 60 s symbolwise replay</h3><span id="evidence-symbolwise-badge" class="status-badge" data-tone="warning">Deferred</span></div>
+          <div id="evidence-symbolwise-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Full Qin and surrogate response curves are deferred until extended analysis is requested.</div>
+          <dl id="evidence-symbolwise-facts" class="fact-grid"></dl>
+          <canvas id="evidence-symbolwise-canvas" class="evidence-chart" width="1200" height="420" role="img" aria-label="Qin and selected surrogate candidate response scores across all 600 fixed-cadence windows" hidden></canvas>
+          <div id="evidence-symbolwise-legend" class="evidence-series-legend"></div>
+          <label for="evidence-symbolwise-window">Inspect exact window <output id="evidence-symbolwise-window-output">0</output></label>
+          <input id="evidence-symbolwise-window" type="range" min="0" max="599" value="0" disabled>
+          <div class="table-wrap">
+            <table id="evidence-symbolwise-window-table">
+              <caption>Exact 10 ms window candidate score and independently winning CFO / epoch</caption>
+              <thead><tr><th scope="col">Candidate-only pattern</th><th scope="col">Window</th><th scope="col">Sample interval</th><th scope="col">Time interval</th><th scope="col">Selection score</th><th scope="col">Winner CFO</th><th scope="col">Winner epoch</th></tr></thead>
+              <tbody id="evidence-symbolwise-window-body"></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table id="evidence-symbolwise-overall-table">
+              <caption>Explicit per-stream, per-pattern summaries over all 600 windows; hardware series are never pooled</caption>
+              <thead><tr><th scope="col">Candidate-only pattern</th><th scope="col">Mean score</th><th scope="col">Maximum score</th><th scope="col">Winning window / time</th><th scope="col">Winner CFO / epoch</th><th scope="col">Derivation</th></tr></thead>
+              <tbody id="evidence-symbolwise-overall-body"></tbody>
+            </table>
+          </div>
+          <p class="availability-note">Exactly 600 non-overlapping 10 ms analysis windows begin every 100 ms over the 60 s dwell. Their analyzed union is exactly 6 s (10%). Every label remains candidate-only; this replay does not report a calibrated detection.</p>
+        </article>
         <article class="detail-card evidence-product evidence-product-wide" aria-labelledby="evidence-approaches-heading">
           <div class="decision-heading"><h3 id="evidence-approaches-heading">Analysis approaches &amp; exact coverage</h3><span id="evidence-approaches-badge" class="status-badge" data-tone="warning">Loading</span></div>
           <div id="evidence-approaches-state" class="panel-state" data-state="pending" role="status" aria-live="polite">Loading exact persisted search and windowing facts…</div>

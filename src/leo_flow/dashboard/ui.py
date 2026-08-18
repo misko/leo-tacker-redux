@@ -81,6 +81,11 @@ class DashboardUiApplication:
                     "public, max-age=300",
                     (package / "recording-evidence.js").read_bytes(),
                 ),
+                "/assets/symbolwise-replay.js": (
+                    "text/javascript; charset=utf-8",
+                    "public, max-age=300",
+                    (package / "symbolwise-replay.js").read_bytes(),
+                ),
                 "/aggregate-stats": (
                     "text/html; charset=utf-8",
                     "no-store",
