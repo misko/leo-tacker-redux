@@ -85,9 +85,7 @@ class BoundedSpawnDeferredAnalysisLaneV1:
             # its supervisor exits. Exact-scope claims correctly return no
             # work in that case. Wait within the caller's deadline and retry;
             # the repository will reclaim only after the lease expires.
-            remaining_s = (
-                int(deadline_utc_ns) - time.time_ns()
-            ) / 1_000_000_000
+            remaining_s = (int(deadline_utc_ns) - time.time_ns()) / 1_000_000_000
             if remaining_s <= 0:
                 raise RuntimeError("deferred analysis lane deadline elapsed")
             time.sleep(min(retry_delay_s, remaining_s))

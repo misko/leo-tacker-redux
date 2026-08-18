@@ -65,9 +65,10 @@ def test_frozen_manifest_separates_conditioned_decode_from_future_search() -> No
     assert document["future_revised_search_acceptance"]["status"] == (
         "pending-revised-search"
     )
-    assert document["future_revised_search_acceptance"][
-        "asserted_by_current_regression"
-    ] is False
+    assert (
+        document["future_revised_search_acceptance"]["asserted_by_current_regression"]
+        is False
+    )
 
 
 @pytest.mark.integration
@@ -82,8 +83,7 @@ def test_archive_hashes_and_ci16_geometry_are_exact() -> None:
         for line in checksum_path.read_text(encoding="ascii").splitlines()
     }
     expected = {
-        item["relative_path"]: item["sha256"]
-        for item in document["archive_objects"]
+        item["relative_path"]: item["sha256"] for item in document["archive_objects"]
     }
     assert listed == expected
     for relative_path, digest in expected.items():
