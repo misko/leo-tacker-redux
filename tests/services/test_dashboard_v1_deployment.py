@@ -218,10 +218,27 @@ def test_complete_plugin_assembles_without_database_or_network_io(
             self.kwargs = kwargs
 
     postgres_adapter.PostgresDashboardRepository = FakeRepository
+    master_capture_adapter = ModuleType(
+        "leo_flow.adapters.dashboard_master_capture_postgres"
+    )
+
+    class FakeMasterCaptureRepository:
+        def __init__(self, connect, canary) -> None:
+            self.connect = connect
+            self.canary = canary
+
+    master_capture_adapter.PostgresMasterCaptureSnapshotRepositoryV0_1 = (
+        FakeMasterCaptureRepository
+    )
     monkeypatch.setitem(sys.modules, "psycopg", psycopg)
     monkeypatch.setitem(sys.modules, "psycopg.rows", rows)
     monkeypatch.setitem(
         sys.modules, "leo_flow.adapters.dashboard_postgres", postgres_adapter
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "leo_flow.adapters.dashboard_master_capture_postgres",
+        master_capture_adapter,
     )
 
     service = assemble_service(

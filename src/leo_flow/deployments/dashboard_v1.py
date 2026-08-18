@@ -32,12 +32,18 @@ from leo_flow.contracts.dashboard_doppler_aggregate import (
 from leo_flow.contracts.dashboard_full_dwell_timeline import (
     RecordingFullDwellTimelineQueryPortV0_1,
 )
+from leo_flow.contracts.dashboard_master_capture import (
+    MasterCaptureSnapshotQueryPortV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateQueryPortV0_1
 from leo_flow.contracts.dashboard_pilot_doppler import (
     RecordingPilotDopplerAssociationQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_recording import (
     RecordingCaptureDetailQueryPortV0_1,
+)
+from leo_flow.contracts.dashboard_recording_analysis import (
+    RecordingAnalysisProductAvailabilityQueryPortV0_1,
 )
 from leo_flow.contracts.dashboard_recording_analysis_approach import (
     RecordingAnalysisApproachQueryPortV0_1,
@@ -101,6 +107,7 @@ from leo_flow.contracts.starlink_temporal_pilot import (
     RecordingStarlinkTemporalPilotQueryPortV0_1,
 )
 from leo_flow.dashboard.api import (
+    DashboardJsonApplicationCaptures,
     DashboardJsonApplicationV3,
     DashboardJsonApplicationV4,
     DashboardJsonApplicationV5,
@@ -131,6 +138,7 @@ from leo_flow.dashboard.api import (
     DashboardJsonApplicationV30,
     DashboardPublicJsonApplication,
     JsonDashboardHandler,
+    RecordingAnalysisFacadeApplication,
 )
 from leo_flow.dashboard.ui import DashboardUiApplication
 from leo_flow.services.bootstrap import (
@@ -164,6 +172,17 @@ class DashboardRuntimeDependencyError(RuntimeError):
 class _UnavailableRetroQamCanary:
     def latest_retro_qam_canary(self) -> RetroQamCanaryDashboardViewV0_1:
         raise LookupError("historical QAM canary receipt is unavailable")
+
+
+def _retro_qam_canary() -> RetroQamCanaryDashboardQueryPortV0_1:
+    canary_path = os.environ.get("LEO_RETRO_QAM_CANARY_RECEIPT")
+    if canary_path is None:
+        return _UnavailableRetroQamCanary()
+    from leo_flow.adapters.dashboard_retro_qam_canary import (
+        FileRetroQamCanaryDashboardQueryV0_1,
+    )
+
+    return FileRetroQamCanaryDashboardQueryV0_1(Path(canary_path))
 
 
 class DashboardV3QueryPort(
@@ -359,6 +378,15 @@ class DashboardV30QueryPort(
     """Add receiver-agnostic wide-CFO/QAM diagnostic evidence."""
 
 
+class DashboardPublicQueryPort(
+    DashboardV30QueryPort,
+    MasterCaptureSnapshotQueryPortV0_1,
+    RecordingAnalysisProductAvailabilityQueryPortV0_1,
+    Protocol,
+):
+    """Compose stable public snapshots over immutable science contracts."""
+
+
 class _ReadinessCheckedDashboardServer:
     """Bind and prove the query capability before reporting process readiness."""
 
@@ -388,7 +416,7 @@ class _ReadinessCheckedDashboardServer:
         self._server.close(timeout_s)
 
 
-def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV30QueryPort:
+def _postgres_query_projection(context: AdapterBuildContext) -> DashboardPublicQueryPort:
     try:
         dsn = context.secrets[DATABASE_SECRET]
     except KeyError as error:
@@ -397,6 +425,9 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV30Quer
         import psycopg
         from psycopg.rows import dict_row
 
+        from leo_flow.adapters.dashboard_master_capture_postgres import (
+            PostgresMasterCaptureSnapshotRepositoryV0_1,
+        )
         from leo_flow.adapters.dashboard_postgres import PostgresDashboardRepository
     except ImportError as error:
         raise DashboardRuntimeDependencyError(
@@ -682,6 +713,9 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV30Quer
             ),
             receiver_agnostic_cfo_qam_catalog,
         )
+    master_captures = PostgresMasterCaptureSnapshotRepositoryV0_1(
+        connect, _retro_qam_canary()
+    )
     return PostgresDashboardRepository(
         connect,
         doppler=doppler,
@@ -701,6 +735,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardV30Quer
         pilot_refinements=pilot_refinements,
         symbolwise_replays=symbolwise_replays,
         receiver_agnostic_cfo_qam=receiver_agnostic_cfo_qam,
+        master_captures=master_captures,
     )
 
 
@@ -725,7 +760,7 @@ def _build_dashboard(
 ) -> ServiceLoop:
     if not isinstance(config, DashboardServiceConfig):
         raise TypeError("dashboard v1 requires dashboard configuration")
-    queries = cast(DashboardV30QueryPort, adapters[Capability.QUERY_PROJECTION])
+    queries = cast(DashboardPublicQueryPort, adapters[Capability.QUERY_PROJECTION])
     server = cast(ReadOnlyDashboardServer, adapters[Capability.DASHBOARD_SERVER])
     readiness_checked_server = _ReadinessCheckedDashboardServer(
         server,
@@ -750,16 +785,7 @@ def _build_dashboard(
     v18 = DashboardJsonApplicationV18(v17, queries)
     v19 = DashboardJsonApplicationV19(v18, queries)
     v20 = DashboardJsonApplicationV20(v19, queries)
-    canary_path = os.environ.get("LEO_RETRO_QAM_CANARY_RECEIPT")
-    canary: RetroQamCanaryDashboardQueryPortV0_1
-    if canary_path is None:
-        canary = _UnavailableRetroQamCanary()
-    else:
-        from leo_flow.adapters.dashboard_retro_qam_canary import (
-            FileRetroQamCanaryDashboardQueryV0_1,
-        )
-
-        canary = FileRetroQamCanaryDashboardQueryV0_1(Path(canary_path))
+    canary = _retro_qam_canary()
     v21 = DashboardJsonApplicationV21(v20, canary)
     v22 = DashboardJsonApplicationV22(v21, queries)
     v23 = DashboardJsonApplicationV23(v22, queries)
@@ -770,10 +796,12 @@ def _build_dashboard(
     v28 = DashboardJsonApplicationV28(v27, queries)
     v29 = DashboardJsonApplicationV29(v28, queries)
     v30 = DashboardJsonApplicationV30(v29, queries)
+    analysis = RecordingAnalysisFacadeApplication(v30, queries)
+    captures = DashboardJsonApplicationCaptures(analysis, queries)
     return build_dashboard_service(
         config,
         readiness_checked_server,
-        DashboardUiApplication(DashboardPublicJsonApplication(v30)),
+        DashboardUiApplication(DashboardPublicJsonApplication(captures)),
         diagnostics=diagnostics,
     )
 

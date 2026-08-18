@@ -280,9 +280,7 @@ def _batches(
                 CaptureBatchId(str(first["batch_id"])),
                 CaptureBatchMode(str(first["mode"])),
                 CoordinationClaim(str(first["coordination_claim"])),
-                cast(
-                    tuple[MasterCaptureAttemptV0_1, MasterCaptureAttemptV0_1], attempts
-                ),
+                attempts,
                 _integer(first["capture_revision"]),
                 _integer(first["requested_start_skew_ns"]),
                 _optional_integer(first["observed_start_skew_ns"]),

@@ -65,12 +65,21 @@ from leo_flow.contracts.dashboard_full_dwell_timeline import (
     RecordingFullDwellTimelineQueryPortV0_1,
     RecordingFullDwellTimelineViewV0_1,
 )
+from leo_flow.contracts.dashboard_master_capture import (
+    MasterCaptureSnapshotQueryPortV0_1,
+    MasterCaptureSnapshotQueryV0_1,
+    MasterCaptureSnapshotV0_1,
+)
 from leo_flow.contracts.dashboard_observation import ObservationAggregateViewV0_1
 from leo_flow.contracts.dashboard_pilot_doppler import (
     PilotDopplerAssociationQueryV0_1,
     RecordingPilotDopplerAssociationViewV0_1,
 )
 from leo_flow.contracts.dashboard_recording import RecordingCaptureDetailViewV0_1
+from leo_flow.contracts.dashboard_recording_analysis import (
+    RecordingAnalysisProduct,
+    RecordingAnalysisProductState,
+)
 from leo_flow.contracts.dashboard_recording_analysis_approach import (
     RecordingAnalysisApproachQueryPortV0_1,
     RecordingAnalysisApproachViewV0_1,
@@ -233,6 +242,7 @@ class PostgresDashboardRepository:
         symbolwise_replays: _RecordingSymbolwiseReplaySourcePort | None = None,
         receiver_agnostic_cfo_qam: RecordingReceiverAgnosticCfoQamQueryPortV0_6
         | None = None,
+        master_captures: MasterCaptureSnapshotQueryPortV0_1 | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -274,6 +284,7 @@ class PostgresDashboardRepository:
             )
         )
         self._receiver_agnostic_cfo_qam = receiver_agnostic_cfo_qam
+        self._master_captures = master_captures
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
@@ -295,6 +306,22 @@ class PostgresDashboardRepository:
                 self._recording_evidence_advanced_doppler,
             )
         )
+
+    def master_capture_snapshot(
+        self, query: MasterCaptureSnapshotQueryV0_1, cursor: str | None = None
+    ) -> MasterCaptureSnapshotV0_1:
+        if self._master_captures is None:
+            raise DashboardNotFound("master capture snapshot is unavailable")
+        return self._master_captures.master_capture_snapshot(query, cursor)
+
+    def recording_analysis_product_state(
+        self, recording_id: RecordingId, product: RecordingAnalysisProduct
+    ) -> RecordingAnalysisProductState:
+        del recording_id, product
+        # Product handlers are queried before this fallback.  Until a durable
+        # product-work status projection is supplied, absence is conservatively
+        # not analyzed; it is never reinterpreted as pending or no-candidate.
+        return RecordingAnalysisProductState.NOT_ANALYZED
 
     def capture_doppler_summaries(
         self, query: CaptureDopplerSummaryQueryV0_1
