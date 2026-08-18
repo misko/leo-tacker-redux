@@ -54,13 +54,14 @@ class TimelineCycle(Protocol):
     def run_cycle(self) -> tuple[int, bool]: ...
 
 
-class BoundedTimelineCycleV0_1:
+class BoundedTimelineAdmissionV0_1:
+    """Admit only an explicit bounded recording set; never claim IQ work."""
+
     def __init__(
         self,
         work: PostgresFullDwellTimelineWorkRepositoryV0_1,
         recordings: PostgresRecordingCatalog,
         reader: SigMFRecordingObjectReader,
-        service: IndependentFullDwellTimelineServiceV0_1,
         *,
         maximum_admissions: int,
         tile_sample_count: int,
@@ -69,11 +70,10 @@ class BoundedTimelineCycleV0_1:
     ) -> None:
         if not 1 <= maximum_admissions <= 64:
             raise ValueError("timeline admission bound is invalid")
-        self._work, self._recordings, self._reader, self._service = (
+        self._work, self._recordings, self._reader = (
             work,
             recordings,
             reader,
-            service,
         )
         self._maximum_admissions = maximum_admissions
         if len(recording_ids) > 64 or len(recording_ids) != len(set(recording_ids)):
@@ -84,7 +84,7 @@ class BoundedTimelineCycleV0_1:
             maximum_refinements_per_stream=maximum_refinements_per_stream,
         )
 
-    def run_cycle(self) -> tuple[int, bool]:
+    def admit(self) -> int:
         admitted = 0
         candidates = (
             self._recording_ids
@@ -145,7 +145,35 @@ class BoundedTimelineCycleV0_1:
                 tuple(streams),
             )
             admitted += int(self._work.admit(recording_ref, request))
-        return admitted, self._service.run_once()
+        return admitted
+
+
+class BoundedTimelineCycleV0_1:
+    def __init__(
+        self,
+        work: PostgresFullDwellTimelineWorkRepositoryV0_1,
+        recordings: PostgresRecordingCatalog,
+        reader: SigMFRecordingObjectReader,
+        service: IndependentFullDwellTimelineServiceV0_1,
+        *,
+        maximum_admissions: int,
+        tile_sample_count: int,
+        maximum_refinements_per_stream: int,
+        recording_ids: tuple[RecordingId, ...] = (),
+    ) -> None:
+        self._admission = BoundedTimelineAdmissionV0_1(
+            work,
+            recordings,
+            reader,
+            maximum_admissions=maximum_admissions,
+            tile_sample_count=tile_sample_count,
+            maximum_refinements_per_stream=maximum_refinements_per_stream,
+            recording_ids=recording_ids,
+        )
+        self._service = service
+
+    def run_cycle(self) -> tuple[int, bool]:
+        return self._admission.admit(), self._service.run_once()
 
 
 def _work_request(
@@ -249,6 +277,34 @@ def build_cycle(
         reader,
         service,
         maximum_admissions=maximum_admissions,
+        tile_sample_count=tile_sample_count,
+        maximum_refinements_per_stream=maximum_refinements_per_stream,
+        recording_ids=recording_ids,
+    )
+
+
+def build_targeted_admission(
+    credential_directory: Path,
+    *,
+    recording_ids: tuple[RecordingId, ...],
+    tile_sample_count: int = 20_000,
+    maximum_refinements_per_stream: int = 32,
+) -> BoundedTimelineAdmissionV0_1:
+    """Compose the cheap focused-path admitter without a producer or claim port."""
+
+    if not recording_ids:
+        raise ValueError("targeted timeline admission requires recordings")
+    from leo_flow.deployments.recording_submission_v1 import analysis_connection_factory
+    from leo_station.analysis_v1 import CAS_ROOT
+
+    credentials = SystemdCredentialProvider(credential_directory)
+    connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
+    blobs = FileSystemBlobStore(CAS_ROOT)
+    return BoundedTimelineAdmissionV0_1(
+        PostgresFullDwellTimelineWorkRepositoryV0_1(connect),
+        PostgresRecordingCatalog(connect),
+        SigMFRecordingObjectReader(blobs),
+        maximum_admissions=len(recording_ids),
         tile_sample_count=tile_sample_count,
         maximum_refinements_per_stream=maximum_refinements_per_stream,
         recording_ids=recording_ids,

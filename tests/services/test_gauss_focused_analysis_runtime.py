@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,7 @@ from leo_flow.contracts.deferred_analysis import DeferredAnalysisStage
 from leo_flow.deployments import gauss_focused_analysis_runtime
 from leo_flow.deployments.gauss_focused_analysis_runtime import (
     MAXIMUM_FOCUSED_COMPUTE_WORKERS,
+    _admit_focused_prompt_timelines,
     _link_focused_recording_hardware,
     focused_stage_worker_count,
 )
@@ -153,4 +155,46 @@ def test_focused_scope_invokes_authoritative_hardware_linkage_before_submission(
     source = inspect.getsource(gauss_focused_analysis_runtime._prepare_scope)
     assert source.index("_link_focused_recording_hardware") < source.index(
         "submitted = feature_submission.submit"
+    )
+
+
+def test_focused_prompt_timeline_admits_exact_pair_without_running_iq() -> None:
+    class Admitter:
+        calls = 0
+
+        def admit(self) -> int:
+            self.calls += 1
+            return 2
+
+    admitter = Admitter()
+    assert _admit_focused_prompt_timelines(
+        (RecordingId("rec_a"), RecordingId("rec_b")),
+        Path("/unused"),
+        admitter=admitter,
+    )
+    assert admitter.calls == 1
+
+
+def test_focused_prompt_timeline_failure_does_not_block_suite_qam(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FailedAdmitter:
+        def admit(self) -> int:
+            raise RuntimeError("catalog unavailable")
+
+    assert not _admit_focused_prompt_timelines(
+        (RecordingId("rec_a"), RecordingId("rec_b")),
+        Path("/unused"),
+        admitter=FailedAdmitter(),
+    )
+    assert "continuing primary analysis" in caplog.text
+
+
+def test_focused_prompt_admission_is_early_but_outside_required_stage_graph() -> None:
+    source = inspect.getsource(gauss_focused_analysis_runtime.analyze_focused_pair)
+    assert source.index("scope = _prepare_scope") < source.index(
+        "_admit_focused_prompt_timelines"
+    )
+    assert source.index("_admit_focused_prompt_timelines") < source.index(
+        "for stage in DeferredAnalysisStage"
     )

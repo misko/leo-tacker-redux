@@ -19,7 +19,6 @@ def test_every_optional_heavy_worker_shares_one_capture_aware_slot() -> None:
     )
     common = (
         "--capture-guard-status %t/leo-flow-optional-heavy/guard.json",
-        "--maximum-focused-backlog 0",
         "--host-cpu-cores 24",
         "--reserved-cpu-cores 8",
         "--estimated-claim-cpu-cores 3",
@@ -32,3 +31,8 @@ def test_every_optional_heavy_worker_shares_one_capture_aware_slot() -> None:
         unit = path.read_text(encoding="utf-8")
         for expected in common:
             assert expected in unit, f"{path} lacks {expected}"
+
+    prompt = units[1].read_text(encoding="utf-8")
+    assert "--maximum-focused-backlog 64" in prompt
+    for path in (units[0], units[2], units[3]):
+        assert "--maximum-focused-backlog 0" in path.read_text(encoding="utf-8")

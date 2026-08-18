@@ -89,6 +89,10 @@ class _RecordingHardwareLinkerPort(Protocol):
     def link(self, recording_id: RecordingId) -> object: ...
 
 
+class _FocusedTimelineAdmitterPort(Protocol):
+    def admit(self) -> int: ...
+
+
 @dataclass(frozen=True, slots=True)
 class FocusedAnalysisJobScopeV1:
     """The six exact durable jobs belonging to one synchronized radio pair."""
@@ -143,6 +147,16 @@ def analyze_focused_pair(
         analysis_credential_directory,
         capture_definition_digest=(capture_definition_digest if capture_safe else None),
     )
+    _admit_focused_prompt_timelines(
+        tuple(
+            item.recording_id
+            for item in sorted(
+                snapshot.successful_recordings,
+                key=lambda item: str(item.recording_id),
+            )
+        ),
+        analysis_credential_directory,
+    )
     credentials = SystemdCredentialProvider(analysis_credential_directory)
     connect = analysis_connection_factory(credentials.resolve("catalog-dsn"))
     lane = BoundedSpawnDeferredAnalysisLaneV1(
@@ -178,6 +192,45 @@ def analyze_focused_pair(
     finally:
         if lock is not None:
             lock.release()
+
+
+def _admit_focused_prompt_timelines(
+    recording_ids: tuple[RecordingId, ...],
+    credential_directory: Path,
+    *,
+    admitter: _FocusedTimelineAdmitterPort | None = None,
+) -> bool:
+    """Best-effort early admission; focused suite/QAM never depends on it."""
+
+    if len(recording_ids) != 2 or len(set(recording_ids)) != 2:
+        raise ValueError("focused timeline admission requires two recordings")
+    try:
+        if admitter is None:
+            from leo_station.full_dwell_timeline_operator import (
+                build_targeted_admission,
+            )
+
+            admitter = build_targeted_admission(
+                credential_directory,
+                recording_ids=recording_ids,
+            )
+        admitted = admitter.admit()
+    except Exception:  # noqa: BLE001 - optional product cannot stop primary analysis
+        _LOG.warning(
+            "focused prompt timeline admission failed; continuing primary analysis",
+            extra={"recording_ids": tuple(map(str, recording_ids))},
+        )
+        return False
+    if admitted != 2:
+        _LOG.warning(
+            "focused prompt timeline queue did not admit the complete pair",
+            extra={
+                "recording_ids": tuple(map(str, recording_ids)),
+                "admitted_count": admitted,
+            },
+        )
+        return False
+    return True
 
 
 def _prepare_scope(

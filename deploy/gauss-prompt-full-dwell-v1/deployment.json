@@ -1,0 +1,54 @@
+{
+  "schema_id": "org.leo-flow.gauss-prompt-full-dwell-deployment",
+  "schema_version": "0.1",
+  "required_migration": "0044_prompt_full_dwell_timeline.sql",
+  "enabled_by_default": true,
+  "admission": {
+    "mode": "focused-targeted-plus-newest-backfill",
+    "focused_admit_only": true,
+    "maximum_admissions_per_cycle": 2,
+    "maximum_optional_concurrency": 1,
+    "maximum_focused_backlog": 64,
+    "fresh_capture_guard_required": true,
+    "claims_during_capture_guard": false,
+    "host_cpu_cores": 24,
+    "reserved_cpu_cores": 8,
+    "estimated_claim_cpu_cores": 3,
+    "minimum_memory_available_bytes": 8589934592,
+    "maximum_io_pressure_avg10": 5.0
+  },
+  "timeline": {
+    "tile_sample_count": 20000,
+    "maximum_windows_per_stream": 16384,
+    "maximum_refinements_per_stream": 32,
+    "requires_complete_sample_union": true,
+    "retains_short_tail": true
+  },
+  "worker": {
+    "worker_id": "gauss-prompt-timeline-1",
+    "maximum_claims_per_cycle": 1,
+    "lease_ttl_seconds": 900,
+    "poll_seconds": 5,
+    "cpu_quota_percent": 300,
+    "memory_max_bytes": 3221225472,
+    "tasks_max": 8,
+    "nice": 12
+  },
+  "acceptance": {
+    "duration_seconds": 60,
+    "sample_rate_hz": 5000000,
+    "receiver_count": 2,
+    "maximum_elapsed_seconds": 120,
+    "measured_elapsed_seconds": 12.409013,
+    "measurement_utc_date": "2026-08-18",
+    "measurement_kind": "synthetic-zero-ci16-production-analyzer",
+    "tile_reads": 15000,
+    "windows_per_stream": 15000,
+    "covered_samples_per_stream": 300000000,
+    "coverage_fraction": 1.0,
+    "first_start_sample": 0,
+    "final_stop_sample": 300000000,
+    "includes_catalog_cas_io": false,
+    "status": "accepted"
+  }
+}
