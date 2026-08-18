@@ -69,6 +69,11 @@ from leo_flow.contracts.dashboard_temporal_pilot import (
 from leo_flow.contracts.dashboard_waterfall import RecordingWaterfallViewV0_1
 from leo_flow.contracts.evaluation import DetectorEvaluationView
 from leo_flow.contracts.radio_lifecycle import CaptureAttemptLifecycleDashboardViewV0_1
+from leo_flow.contracts.starlink_acquired_constellation_pipeline import (
+    RecordingStarlinkAcquiredConstellationQueryPortV0_3,
+    RecordingStarlinkAcquiredConstellationViewV0_3,
+    StarlinkAcquiredConstellationQueryV0_3,
+)
 from leo_flow.contracts.starlink_full_dwell_response import (
     RecordingStarlinkFullDwellQueryPortV0_1,
     RecordingStarlinkFullDwellViewV0_1,
@@ -131,6 +136,8 @@ class PostgresDashboardRepository:
         temporal_aggregate: TemporalPilotAggregateQueryPortV0_1 | None = None,
         doppler_aggregate: DopplerAggregateQueryPortV0_1 | None = None,
         full_dwell: RecordingStarlinkFullDwellQueryPortV0_1 | None = None,
+        acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3
+        | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
@@ -157,9 +164,24 @@ class PostgresDashboardRepository:
         self._temporal_aggregate = temporal_aggregate
         self._doppler_aggregate = doppler_aggregate
         self._full_dwell = full_dwell
+        self._acquired_qam = acquired_qam
         self._recording_evidence_doppler = RecordingEvidenceDopplerQueryServiceV0_1(
             self._recording_evidence, self._recording_pages, self
         )
+
+    def recording_starlink_acquired_constellation(
+        self, query: StarlinkAcquiredConstellationQueryV0_3
+    ) -> RecordingStarlinkAcquiredConstellationViewV0_3:
+        if self._acquired_qam is None:
+            raise DashboardNotFound(
+                f"acquired-QAM evidence for recording {query.recording_id} is unavailable"
+            )
+        try:
+            return self._acquired_qam.recording_starlink_acquired_constellation(query)
+        except LookupError as error:
+            raise DashboardNotFound(
+                f"acquired-QAM evidence for recording {query.recording_id} was not found"
+            ) from error
 
     def recording_evidence_context(
         self, recording_id: RecordingId

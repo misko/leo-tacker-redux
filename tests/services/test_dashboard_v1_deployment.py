@@ -464,6 +464,9 @@ def test_postgres_projection_composes_read_only_analysis_product_readers(
     tmp_path: Path,
 ) -> None:
     from leo_flow.adapters.dashboard_postgres import PostgresDashboardRepository
+    from leo_flow.analysis.recording.starlink_acquired_constellation_persistence import (
+        DurableRecordingStarlinkAcquiredConstellationQueryV0_3,
+    )
     from leo_flow.analysis.recording.starlink_pilot_constellation_persistence import (
         DurableRecordingStarlinkPilotConstellationQueryV0_1,
     )
@@ -499,6 +502,13 @@ def test_postgres_projection_composes_read_only_analysis_product_readers(
     constellation_store = projection._pilot_constellations._store
     assert isinstance(constellation_store._blobs, FileSystemBlobReader)
     assert not hasattr(constellation_store._blobs, "put")
+    assert isinstance(
+        projection._acquired_qam,
+        DurableRecordingStarlinkAcquiredConstellationQueryV0_3,
+    )
+    acquired_store = projection._acquired_qam._store
+    assert isinstance(acquired_store._blobs, FileSystemBlobReader)
+    assert not hasattr(acquired_store._blobs, "put")
 
 
 def test_checked_gauss_dashboard_is_a_frozen_all_interface_read_only_unit() -> None:
