@@ -173,15 +173,20 @@ class BoundedSpawnDeferredAnalysisLaneV1:
                         outcome = receiver.recv()
                     except (EOFError, OSError) as error:
                         raise RuntimeError("deferred analysis child failed") from error
-                    child.process.join(0.1)
                     if (
-                        child.process.is_alive()
-                        or child.process.exitcode != 0
-                        or not isinstance(outcome, tuple)
+                        not isinstance(outcome, tuple)
                         or len(outcome) != 2
                         or outcome[0] != "ok"
                         or not isinstance(outcome[1], int)
                     ):
+                        raise RuntimeError("deferred analysis child failed")
+                    remaining = (int(deadline) - time.time_ns()) / 1_000_000_000
+                    if remaining <= 0:
+                        raise RuntimeError("deferred analysis child deadline elapsed")
+                    child.process.join(remaining)
+                    if child.process.is_alive():
+                        raise RuntimeError("deferred analysis child deadline elapsed")
+                    if child.process.exitcode != 0:
                         raise RuntimeError("deferred analysis child failed")
         finally:
             _reap(children)

@@ -18,6 +18,7 @@ from leo_flow.deployments.gauss_staged_analysis_runtime import (
 )
 from leo_flow.deployments.staged_analysis_pool import (
     BoundedSpawnDeferredAnalysisLaneV1,
+    _Child,
 )
 
 
@@ -79,6 +80,12 @@ class _CrashWorker:
     def process_one(self, stage, window, worker_instance_id):
         del stage, window, worker_instance_id
         raise RuntimeError("private child failure")
+
+
+def _send_valid_outcome_then_delay(sender, delay_s):
+    sender.send(("ok", 0))
+    sender.close()
+    time.sleep(delay_s)
 
 
 def test_spawn_lane_reports_exact_complete_scope():
@@ -153,6 +160,26 @@ def test_spawn_lane_fails_closed_and_reaps_all_children() -> None:
         )
 
     assert {child.pid for child in multiprocessing.active_children()} == before
+
+
+def test_spawn_lane_allows_bounded_teardown_after_valid_outcome() -> None:
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_send_valid_outcome_then_delay,
+        args=(sender, 0.25),
+    )
+    child = _Child(receiver, sender, process)
+    process.start()
+    child.started = True
+    child_pid = process.pid
+    sender.close()
+
+    BoundedSpawnDeferredAnalysisLaneV1._wait(
+        [child], UtcNs(time.time_ns() + 5_000_000_000)
+    )
+
+    assert child_pid not in {item.pid for item in multiprocessing.active_children()}
 
 
 def test_spawn_lane_rejects_elapsed_deadline_before_spawning() -> None:
