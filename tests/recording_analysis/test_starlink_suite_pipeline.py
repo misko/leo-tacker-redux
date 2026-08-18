@@ -21,6 +21,9 @@ from leo_flow.analysis.recording.starlink_suite_codec import (
     decode_starlink_suite_bundle,
     encode_starlink_suite_bundle,
 )
+from leo_flow.analysis.recording.starlink_suite_recording import (
+    ExactStarlinkDetectorSuiteRecordingAnalyzerV0_2,
+)
 from leo_flow.analysis.recording.starlink_templates import (
     qin_edge_pilot_template_pair_v0_1,
 )
@@ -186,6 +189,46 @@ def test_submission_accepts_additive_focused_monitor_geometry() -> None:
     )
 
     assert len(submitted.request.stream_selections) == 2
+
+
+def test_two_receiver_suite_reads_and_decodes_shared_iq_prefix_once() -> None:
+    view, recording = make_view(SegmentFixture(b"\0" * 14_000 * 8, 2_500_000))
+    segment = view.manifest.segments[0]
+    manifest = replace(
+        view.manifest,
+        segments=(
+            replace(
+                segment,
+                requested=replace(
+                    segment.requested,
+                    tags=(
+                        ("edge", "lower"),
+                        ("pilot_band_fits", True),
+                        ("scan_schema", "org.leo-flow.starlink-focused-monitor/v1"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    config = StarlinkDetectorSuiteConfigV0_2((0,), (0.0,), (0.0,))
+    submitted = StarlinkSuiteAnalysisSubmissionServiceV0_2(
+        InMemoryJobLeaseRepository()
+    ).submit(
+        StarlinkSuiteAnalysisSubmissionV0_2(
+            PublishedRecordingRef(recording),
+            manifest,
+            starlink_detector_suite_algorithm_ref_v0_2(),
+            starlink_detector_suite_config_ref_v0_2(config),
+            14_000,
+        )
+    )
+
+    bundle = ExactStarlinkDetectorSuiteRecordingAnalyzerV0_2(
+        StarlinkDetectorSuiteV0_2(config, execution_context())
+    ).analyze_starlink_suite(view, submitted.request)
+
+    assert len(bundle.suites) == 2
+    assert view.calls == [(segment.segment_id, 0, 14_000)]
 
 
 def test_positive_and_negative_cfo_and_fractional_frame_cadence_are_searched() -> None:

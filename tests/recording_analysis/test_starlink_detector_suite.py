@@ -33,6 +33,7 @@ from leo_flow.analysis.recording.starlink_templates import (
 from leo_flow.contracts.core import (
     ArtifactRef,
     Digest,
+    DigestAlgorithm,
     RadioId,
     ReceiverChainId,
     RecordingId,
@@ -227,6 +228,42 @@ def test_injection_harness_runs_independent_whole_search_trials_without_verdicts
     assert (
         first[0].bundle.methods[0].reported_score
         > first[1].bundle.methods[0].reported_score
+    )
+
+
+def test_production_grid_preserves_frozen_exact_suite_digest() -> None:
+    templates = qin_edge_pilot_template_pair_v0_1(SAMPLE_RATE_HZ, StarlinkEdge.LOWER)
+    config = StarlinkDetectorSuiteConfigV0_2(
+        tuple(range(0, round(SAMPLE_RATE_HZ / 750.0), 64)),
+        tuple(float(value) for value in range(-100_000, 100_001, 20_000)),
+    )
+    values = synthesize_starlink_injection_v0_2(
+        templates,
+        StarlinkInjectionCaseV0_2(
+            "bench",
+            42,
+            20_000,
+            1.0,
+            0.2,
+            3,
+            20_000.0,
+            0.0,
+            (0, 1, 2, 3, 4),
+        ),
+    )
+
+    bundle = StarlinkDetectorSuiteV0_2(config, execution_context()).analyze_receiver(
+        values,
+        recording_id=RecordingId("rec_bench"),
+        recording_identity_digest=Digest.sha256(b"bench"),
+        segment_id=SegmentId("seg_bench"),
+        receiver_chain_id=ReceiverChainId("rx_bench"),
+        templates=templates,
+    )
+
+    assert bundle.digest == Digest(
+        DigestAlgorithm.SHA256,
+        "d8f08b41afdcd34dcb0c091baab19a2f4c0ca8992e76338a6b09be3cd7de4a49",
     )
 
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from leo_flow.contracts.core import SchemaRef, canonical_digest
+from array import array
+
+from leo_flow.contracts.core import SchemaRef, SegmentId, canonical_digest
+from leo_flow.contracts.starlink import StarlinkEdge
 from leo_flow.contracts.starlink_detector_suite import V0_2
 from leo_flow.contracts.starlink_suite_pipeline import (
     StarlinkDetectorSuiteRecordingBundleV0_2,
@@ -12,6 +15,7 @@ from leo_flow.contracts.starlink_suite_pipeline import (
 from leo_flow.storage.ports import RecordingView
 
 from .quality import decode_ci16
+from .starlink import KnownCodePilotTemplatePairV0_1
 from .starlink_detector_suite import StarlinkDetectorSuiteV0_2
 from .starlink_templates import qin_edge_pilot_template_pair_v0_1
 
@@ -50,6 +54,10 @@ class ExactStarlinkDetectorSuiteRecordingAnalyzerV0_2:
         segments = {
             segment.segment_id: segment for segment in recording.manifest.segments
         }
+        decoded_prefixes: dict[tuple[SegmentId, int], tuple[array[int], int]] = {}
+        template_pairs: dict[
+            tuple[float, StarlinkEdge], KnownCodePilotTemplatePairV0_1
+        ] = {}
         suites = []
         for selection in request.stream_selections:
             try:
@@ -63,19 +71,26 @@ class ExactStarlinkDetectorSuiteRecordingAnalyzerV0_2:
                 ) from error
             if selection.probe_sample_count > segment.sample_count:
                 raise ValueError("detector-suite probe exceeds selected segment")
-            templates = qin_edge_pilot_template_pair_v0_1(
-                segment.actual_sample_rate_hz, selection.edge
-            )
+            template_key = (segment.actual_sample_rate_hz, selection.edge)
+            templates = template_pairs.get(template_key)
+            if templates is None:
+                templates = qin_edge_pilot_template_pair_v0_1(*template_key)
+                template_pairs[template_key] = templates
             if (
                 templates.exact_ref != selection.exact_template_ref
                 or templates.conditioned_control_ref
                 != selection.conditioned_control_template_ref
             ):
                 raise ValueError("request does not pin the exact Qin templates")
-            raw = recording.read_iq_bytes(
-                selection.segment_id, 0, selection.probe_sample_count
-            )
-            values, count = decode_ci16(raw, len(segment.requested.receiver_chain_ids))
+            prefix_key = (selection.segment_id, selection.probe_sample_count)
+            decoded = decoded_prefixes.get(prefix_key)
+            if decoded is None:
+                raw = recording.read_iq_bytes(
+                    selection.segment_id, 0, selection.probe_sample_count
+                )
+                decoded = decode_ci16(raw, len(segment.requested.receiver_chain_ids))
+                decoded_prefixes[prefix_key] = decoded
+            values, count = decoded
             if count != selection.probe_sample_count:
                 raise ValueError("detector-suite reader returned another interval")
             stride = len(segment.requested.receiver_chain_ids) * 2

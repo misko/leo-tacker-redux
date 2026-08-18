@@ -678,18 +678,19 @@ class StarlinkDetectorSuiteV0_2:
             (StarlinkDetectorMethod.GLRT_64, tuple(range(2, 66)), "contiguous"),
         )
         results: dict[StarlinkDetectorMethod, StarlinkDetectorMethodEvidenceV0_2] = {}
+        coherent_phasors: dict[
+            tuple[tuple[float, ...], float], tuple[complex, ...]
+        ] = {}
+        relative_winners = self._search_relative_methods(
+            values,
+            templates.exact_samples,
+            templates.sample_rate_hz,
+            relative_specs,
+            coherent_phasors,
+        )
         for method, symbols, role in relative_specs:
-            winner = self._search_relative(values, templates, method, symbols)
-            exact = self._condition_relative(
-                values,
-                templates.exact_samples,
-                templates.sample_rate_hz,
-                method,
-                symbols,
-                winner.epoch,
-                winner.coarse_cfo_hz,
-                winner.scored.residual_cfo_hz,
-            )
+            winner = relative_winners[method]
+            exact = winner.scored
             control = self._condition_relative(
                 values,
                 templates.conditioned_control_samples,
@@ -699,6 +700,7 @@ class StarlinkDetectorSuiteV0_2:
                 winner.epoch,
                 winner.coarse_cfo_hz,
                 winner.scored.residual_cfo_hz,
+                coherent_phasors,
             )
             results[method] = self._evidence(
                 method,
@@ -722,10 +724,12 @@ class StarlinkDetectorSuiteV0_2:
                 None,
             )
 
+        full_frame_phases: dict[tuple[tuple[int, ...], float], tuple[complex, ...]] = {}
         acquire_winner = self._search_full_frame(
             values,
             templates,
             self._config.acquire_symbols,
+            full_frame_phases,
         )
         for method, symbols, role, mode in (
             (
@@ -747,13 +751,18 @@ class StarlinkDetectorSuiteV0_2:
                 StarlinkSearchMode.CONDITIONED_ON_ACQUIRE_WINNER,
             ),
         ):
-            exact = _full_frame_score(
-                values,
-                templates.exact_samples,
-                templates.sample_rate_hz,
-                acquire_winner.epoch,
-                acquire_winner.coarse_cfo_hz,
-                symbols,
+            exact = (
+                acquire_winner.scored
+                if method is StarlinkDetectorMethod.FULL_FRAME_ACQUIRE
+                else _full_frame_score(
+                    values,
+                    templates.exact_samples,
+                    templates.sample_rate_hz,
+                    acquire_winner.epoch,
+                    acquire_winner.coarse_cfo_hz,
+                    symbols,
+                    full_frame_phases,
+                )
             )
             control = _full_frame_score(
                 values,
@@ -762,6 +771,7 @@ class StarlinkDetectorSuiteV0_2:
                 acquire_winner.epoch,
                 acquire_winner.coarse_cfo_hz,
                 symbols,
+                full_frame_phases,
             )
             point = _Winner(
                 acquire_winner.epoch,
@@ -785,6 +795,59 @@ class StarlinkDetectorSuiteV0_2:
                 self._config.symbol_split_digest,
             )
         return tuple(results[method] for method in REPORT_METHOD_ORDER)
+
+    def _search_relative_methods(
+        self,
+        values: tuple[complex, ...],
+        template: tuple[complex, ...],
+        sample_rate_hz: float,
+        specs: tuple[tuple[StarlinkDetectorMethod, tuple[int, ...], str], ...],
+        coherent_phasors: dict[tuple[tuple[float, ...], float], tuple[complex, ...]],
+    ) -> dict[StarlinkDetectorMethod, _Winner]:
+        """Search method grids while sharing identical symbol correlations."""
+
+        winners: dict[StarlinkDetectorMethod, _Winner] = {}
+        contiguous_symbols = tuple(range(2, 66))
+        contiguous_prefix_lengths = (16, 32, 64)
+        for epoch in self._config.epoch_hypotheses_samples:
+            for coarse in self._config.coarse_cfo_hypotheses_hz:
+                frames_by_symbols = _symbol_correlation_prefixes(
+                    values,
+                    template,
+                    sample_rate_hz,
+                    epoch,
+                    coarse,
+                    contiguous_symbols,
+                    contiguous_prefix_lengths,
+                )
+                for method, symbols, _role in specs:
+                    frames = frames_by_symbols.get(symbols)
+                    if frames is None:
+                        frames = _symbol_correlations(
+                            values,
+                            template,
+                            sample_rate_hz,
+                            epoch,
+                            coarse,
+                            symbols,
+                        )
+                        frames_by_symbols[symbols] = frames
+                    if not frames.support:
+                        continue
+                    candidate = _Winner(
+                        epoch,
+                        coarse,
+                        self._score_relative_frames(frames, method, coherent_phasors),
+                    )
+                    incumbent = winners.get(method)
+                    if incumbent is None or _winner_key(candidate) > _winner_key(
+                        incumbent
+                    ):
+                        winners[method] = candidate
+        missing = tuple(method.value for method, _, _ in specs if method not in winners)
+        if missing:
+            raise ValueError(f"no complete frame supports {', '.join(missing)}")
+        return winners
 
     def _search_relative(
         self,
@@ -829,20 +892,32 @@ class StarlinkDetectorSuiteV0_2:
         return max(candidates, key=_winner_key)
 
     def _score_relative_frames(
-        self, frames: _Frames, method: StarlinkDetectorMethod
+        self,
+        frames: _Frames,
+        method: StarlinkDetectorMethod,
+        coherent_phasors: dict[tuple[tuple[float, ...], float], tuple[complex, ...]]
+        | None = None,
     ) -> _Scored:
         if not frames.support:
             return _Scored(0.0, 0.0, _empty_summary())
         if method is StarlinkDetectorMethod.ANCHOR_8:
-            return _coherent_symbol_score(frames, 0.0)
+            return _coherent_symbol_score(frames, 0.0, coherent_phasors)
         if method in (
             StarlinkDetectorMethod.DIFFERENTIAL_16,
             StarlinkDetectorMethod.DIFFERENTIAL_32,
         ):
             return _differential_score(frames)
+        denominators = tuple(
+            math.fsum(abs(value) for value in row) ** 2 for row in frames.rows
+        )
         return max(
             (
-                _coherent_symbol_score(frames, residual)
+                _coherent_symbol_score(
+                    frames,
+                    residual,
+                    coherent_phasors,
+                    denominators,
+                )
                 for residual in self._config.glrt_residual_cfo_hypotheses_hz
             ),
             key=lambda item: (
@@ -862,6 +937,8 @@ class StarlinkDetectorSuiteV0_2:
         epoch: int,
         coarse_cfo_hz: float,
         residual_cfo_hz: float,
+        coherent_phasors: dict[tuple[tuple[float, ...], float], tuple[complex, ...]]
+        | None = None,
     ) -> _Scored:
         frames = _symbol_correlations(
             values,
@@ -877,19 +954,22 @@ class StarlinkDetectorSuiteV0_2:
         ):
             scored = _differential_score(frames)
             return _Scored(scored.score, residual_cfo_hz, scored.summary)
-        return _coherent_symbol_score(frames, residual_cfo_hz)
+        return _coherent_symbol_score(frames, residual_cfo_hz, coherent_phasors)
 
     def _search_full_frame(
         self,
         values: tuple[complex, ...],
         templates: KnownCodePilotTemplatePairV0_1,
         symbols: tuple[int, ...],
+        full_frame_phases: dict[tuple[tuple[int, ...], float], tuple[complex, ...]]
+        | None = None,
     ) -> _Winner:
         return self._search_full_frame_template(
             values,
             templates.exact_samples,
             templates.sample_rate_hz,
             symbols,
+            full_frame_phases,
         )
 
     def _search_full_frame_template(
@@ -898,6 +978,8 @@ class StarlinkDetectorSuiteV0_2:
         template: tuple[complex, ...],
         sample_rate_hz: float,
         symbols: tuple[int, ...],
+        full_frame_phases: dict[tuple[tuple[int, ...], float], tuple[complex, ...]]
+        | None = None,
     ) -> _Winner:
         candidates = []
         for epoch in self._config.epoch_hypotheses_samples:
@@ -909,6 +991,7 @@ class StarlinkDetectorSuiteV0_2:
                     epoch,
                     cfo,
                     symbols,
+                    full_frame_phases,
                 )
                 if scored.summary.support:
                     candidates.append(_Winner(epoch, cfo, scored))
@@ -1452,17 +1535,97 @@ def _symbol_correlations(
     return _Frames(tuple(rows), tuple(moments))
 
 
-def _coherent_symbol_score(frames: _Frames, residual_cfo_hz: float) -> _Scored:
+def _symbol_correlation_prefixes(
+    values: tuple[complex, ...],
+    template: tuple[complex, ...],
+    sample_rate_hz: float,
+    epoch_sample: int,
+    coarse_cfo_hz: float,
+    symbols: tuple[int, ...],
+    prefix_lengths: tuple[int, ...],
+) -> dict[tuple[int, ...], _Frames]:
+    """Correlate nested contiguous methods once, retaining exact prefixes."""
+
+    period = sample_rate_hz / FRAME_RATE_HZ
+    symbol_period = sample_rate_hz * OFDM_SYMBOL_DURATION_S
+    lengths = set(prefix_lengths)
+    rows: dict[int, list[tuple[complex, ...]]] = {
+        length: [] for length in prefix_lengths
+    }
+    moments: dict[int, list[tuple[float, ...]]] = {
+        length: [] for length in prefix_lengths
+    }
+    frame = 0
+    while True:
+        frame_start = epoch_sample + round(frame * period)
+        if frame_start >= len(values):
+            break
+        row: list[complex] = []
+        row_moments: list[float] = []
+        complete = True
+        for symbol in symbols:
+            local_start = round(symbol * symbol_period)
+            local_stop = min(round((symbol + 1) * symbol_period), len(template))
+            count = local_stop - local_start
+            start = frame_start + local_start
+            if count < 2 or start + count > len(values):
+                complete = False
+                break
+            phase = cmath.exp(-2j * math.pi * coarse_cfo_hz * start / sample_rate_hz)
+            step = cmath.exp(-2j * math.pi * coarse_cfo_hz / sample_rate_hz)
+            numerator = 0j
+            for offset in range(count):
+                numerator += (
+                    template[local_start + offset].conjugate()
+                    * values[start + offset]
+                    * phase
+                )
+                phase *= step
+            row.append(numerator)
+            row_moments.append((local_start + (count - 1) / 2) / sample_rate_hz)
+            length = len(row)
+            if length in lengths:
+                rows[length].append(tuple(row))
+                moments[length].append(tuple(row_moments))
+        if not complete:
+            break
+        frame += 1
+    return {
+        symbols[:length]: _Frames(tuple(rows[length]), tuple(moments[length]))
+        for length in prefix_lengths
+    }
+
+
+def _coherent_symbol_score(
+    frames: _Frames,
+    residual_cfo_hz: float,
+    phasor_cache: dict[tuple[tuple[float, ...], float], tuple[complex, ...]]
+    | None = None,
+    denominators: tuple[float, ...] | None = None,
+) -> _Scored:
+    if not frames.support:
+        return _Scored(0.0, residual_cfo_hz, _empty_summary())
     numerators = []
-    denominators = []
-    for row, moments in zip(frames.rows, frames.moments_s, strict=True):
-        origin = moments[0]
-        coherent = sum(
-            value * cmath.exp(-2j * math.pi * residual_cfo_hz * (moment - origin))
-            for value, moment in zip(row, moments, strict=True)
+    moments = frames.moments_s[0]
+    origin = moments[0]
+    key = (moments, residual_cfo_hz)
+    phasors = None if phasor_cache is None else phasor_cache.get(key)
+    if phasors is None:
+        phasors = tuple(
+            cmath.exp(-2j * math.pi * residual_cfo_hz * (moment - origin))
+            for moment in moments
         )
+        if phasor_cache is not None:
+            phasor_cache[key] = phasors
+    for row in frames.rows:
+        coherent = 0j
+        for value, phasor in zip(row, phasors, strict=True):
+            coherent += value * phasor
         numerators.append(abs(coherent) ** 2)
-        denominators.append(math.fsum(abs(value) for value in row) ** 2)
+    if denominators is None:
+        denominators = tuple(
+            math.fsum(abs(value) for value in row) ** 2 for row in frames.rows
+        )
     return _ratio_score(numerators, denominators, residual_cfo_hz)
 
 
@@ -1508,11 +1671,21 @@ def _full_frame_score(
     epoch_sample: int,
     cfo_hz: float,
     symbols: tuple[int, ...],
+    phase_cache: dict[tuple[tuple[int, ...], float], tuple[complex, ...]] | None = None,
 ) -> _Scored:
     indexes = _pilot_sample_indexes(sample_rate_hz, len(template), symbols)
     if not indexes:
         return _Scored(0.0, 0.0, _empty_summary())
     template_energy = math.fsum(abs(template[index]) ** 2 for index in indexes)
+    phase_key = (symbols, cfo_hz)
+    phases = None if phase_cache is None else phase_cache.get(phase_key)
+    if phases is None:
+        phases = tuple(
+            cmath.exp(-2j * math.pi * cfo_hz * index / sample_rate_hz)
+            for index in indexes
+        )
+        if phase_cache is not None:
+            phase_cache[phase_key] = phases
     period = sample_rate_hz / FRAME_RATE_HZ
     per_frame = []
     frame = 0
@@ -1522,8 +1695,7 @@ def _full_frame_score(
             break
         numerator = 0j
         data_energy = 0.0
-        for index in indexes:
-            phase = cmath.exp(-2j * math.pi * cfo_hz * index / sample_rate_hz)
+        for index, phase in zip(indexes, phases, strict=True):
             received = values[start + index]
             numerator += template[index].conjugate() * received * phase
             data_energy += abs(received) ** 2
