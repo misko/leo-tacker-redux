@@ -136,8 +136,7 @@ class PostgresDashboardRepository:
         temporal_aggregate: TemporalPilotAggregateQueryPortV0_1 | None = None,
         doppler_aggregate: DopplerAggregateQueryPortV0_1 | None = None,
         full_dwell: RecordingStarlinkFullDwellQueryPortV0_1 | None = None,
-        acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3
-        | None = None,
+        acquired_qam: RecordingStarlinkAcquiredConstellationQueryPortV0_3 | None = None,
     ) -> None:
         if not 1 <= page_size <= _MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {_MAX_PAGE_SIZE}")
