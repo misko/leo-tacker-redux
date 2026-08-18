@@ -114,6 +114,18 @@ class StarlinkPatternTemplateV0_1:
 
 
 @dataclass(frozen=True)
+class StarlinkConditionedPatternControlV0_1:
+    """The frozen 17-symbol roll control for any known search pattern."""
+
+    template_ref: ArtifactRef
+    samples: tuple[complex, ...]
+
+    def __post_init__(self) -> None:
+        if template_samples_digest(self.samples) != self.template_ref.digest:
+            raise ValueError("conditioned pattern control digest differs")
+
+
+@dataclass(frozen=True)
 class StarlinkDetectionParametersV0_1:
     """One pattern plus the complete bounded v0.2 report-method search plan."""
 
@@ -379,6 +391,38 @@ def precommitted_surrogate_states_v0_1(
     if not 0 <= index < MAXIMUM_SURROGATES:
         raise ValueError("surrogate index must lie in [0,31]")
     return _qpsk_states(_splitmix64(SURROGATE_MASTER_SEED + index))
+
+
+def conditioned_pattern_control_v0_1(
+    pattern: StarlinkPatternTemplateV0_1,
+) -> StarlinkConditionedPatternControlV0_1:
+    """Apply the same frozen 17-symbol roll to Qin or any surrogate."""
+
+    if pattern.identity.role is StarlinkSearchPatternRole.QIN_EXACT:
+        pair = qin_edge_pilot_template_pair_v0_1(
+            pattern.identity.sample_rate_hz, pattern.identity.edge
+        )
+        return StarlinkConditionedPatternControlV0_1(
+            pair.conditioned_control_ref, pair.conditioned_control_samples
+        )
+    assert pattern.identity.codebook_index is not None
+    states = precommitted_surrogate_states_v0_1(pattern.identity.codebook_index)
+    rolled = tuple(states[(index - 17) % 300] for index in range(300))
+    samples = _match_template_energy(
+        _synthesize_edge_frame(
+            pattern.identity.sample_rate_hz, pattern.identity.edge, rolled
+        ),
+        pattern.samples,
+    )
+    digest = template_samples_digest(samples)
+    return StarlinkConditionedPatternControlV0_1(
+        ArtifactRef(
+            f"{pattern.identity.pattern_id}-roll17-control-{digest.value[:16]}",
+            digest,
+            PATTERN_TEMPLATE_SCHEMA,
+        ),
+        samples,
+    )
 
 
 def _surrogate_pattern(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 from leo_flow.analysis.qam_goodness import qam_goodness_v0_2
 from leo_flow.contracts.core import V0_1, Digest, SchemaRef, canonical_digest
@@ -26,6 +27,9 @@ from leo_flow.contracts.starlink_adaptive_response import (
     StarlinkAdaptiveResponseStreamV0_1,
 )
 from leo_flow.contracts.starlink_detector_suite import StarlinkDetectorMethod
+from leo_flow.contracts.starlink_pattern_symmetric_qam import (
+    PatternSymmetricAdaptiveQamBundleV0_5,
+)
 
 
 def adaptive_calibration_pattern_templates_v0_1(
@@ -94,13 +98,9 @@ def assemble_adaptive_calibration_input_v0_1(
     if (qam.digest if qam is not None else None) != spec.qam_bundle_digest:
         raise ValueError("adaptive QAM differs from frozen member")
     if qam is not None and spec.label is AdaptiveCalibrationLabel.NULL:
-        raise ValueError(
-            "null calibration requires pattern-symmetric QAM evidence"
-        )
+        raise ValueError("null calibration requires pattern-symmetric QAM evidence")
     templates = adaptive_calibration_pattern_templates_v0_1(response, spec.method)
-    search_identity = adaptive_calibration_search_identity_v0_1(
-        response, spec.method
-    )
+    search_identity = adaptive_calibration_search_identity_v0_1(response, spec.method)
     if templates != spec.pattern_template_digests:
         raise ValueError("pattern bank differs from frozen member")
     if search_identity != spec.search_identity_digest:
@@ -116,7 +116,9 @@ def assemble_adaptive_calibration_input_v0_1(
         (str(stream.radio_id), str(stream.receiver_chain_id))
         for stream in ordered_streams
     )
-    if identities != spec.receiver_identities or len(identities) != len(set(identities)):
+    if identities != spec.receiver_identities or len(identities) != len(
+        set(identities)
+    ):
         raise ValueError("receiver membership differs from frozen member")
     _verify_qam_source(response, qam)
     qam_by_receiver, coherent = _qam_goodness_by_receiver(response, qam)
@@ -183,6 +185,74 @@ def assemble_adaptive_calibration_input_v0_1(
         ("declared-time-windows", "coarse-cfo", "residual-cfo", "epoch"),
         "none",
         True,
+    )
+
+
+def assemble_pattern_symmetric_adaptive_calibration_input_v0_1(
+    spec: AdaptiveCalibrationAssemblySpecV0_1,
+    response: StarlinkAdaptiveResponseBundleV0_1,
+    qam: PatternSymmetricAdaptiveQamBundleV0_5,
+) -> AssembledAdaptiveCalibrationInputV0_1:
+    """Assemble Qin and surrogate QAM symmetrically for null or positive dwells."""
+
+    if (
+        spec.qam_bundle_digest != qam.digest
+        or qam.recording_id != response.recording_id
+        or qam.recording_identity_digest != response.recording_identity_digest
+        or qam.source_adaptive_response_digest != response.digest
+        or qam.pattern_template_digests != spec.pattern_template_digests
+    ):
+        raise ValueError("pattern-symmetric QAM differs from frozen member")
+    base = assemble_adaptive_calibration_input_v0_1(
+        replace(spec, qam_bundle_digest=None), response
+    )
+    qam_streams = {
+        (str(item.radio_id), str(item.receiver_chain_id)): item for item in qam.streams
+    }
+    expected = {
+        (str(item.radio_id), str(item.receiver_chain_id)) for item in response.streams
+    }
+    if set(qam_streams) != expected:
+        raise ValueError("pattern-symmetric QAM receiver membership differs")
+    coherent = (
+        len(qam_streams) >= 2
+        and len(
+            {
+                tuple(
+                    (window.start_sample, window.stop_sample)
+                    for window in stream.patterns[0].windows
+                )
+                for stream in qam.streams
+            }
+        )
+        == 1
+    )
+    patterns = []
+    for pattern in base.dwell.patterns:
+        receivers = []
+        for receiver in pattern.receiver_evidence:
+            evidence = qam_streams[receiver.identity].patterns[pattern.pattern_index]
+            receivers.append(
+                replace(
+                    receiver,
+                    qam_goodness=max(item.qam_goodness for item in evidence.windows),
+                    qam_complete_frame_count=sum(
+                        item.complete_frame_count for item in evidence.windows
+                    ),
+                )
+            )
+        patterns.append(
+            replace(
+                pattern,
+                receiver_evidence=tuple(receivers),
+                dual_rx_coherent_qam=coherent,
+            )
+        )
+    return replace(
+        base,
+        assembly_spec_digest=spec.digest,
+        qam_bundle_digest=qam.digest,
+        dwell=replace(base.dwell, patterns=tuple(patterns)),
     )
 
 
