@@ -89,7 +89,8 @@ def test_overview_discloses_duty_candidate_and_calibration_semantics() -> None:
         "Calibrated beacon detections unavailable",
     ):
         assert required in html
-    assert "/api/v6/observation-aggregate" in javascript
+    assert "/api/captures" in javascript
+    assert "/api/v" not in javascript
     assert "Candidate-positive means score > conditioned control" in javascript
     assert 'starlinkFilter === "detected"' in javascript
 
@@ -326,8 +327,7 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
         assert f'"{state}"' in javascript or f'[data-state="{state}"]' in css
     for route in (
         "/api/activity",
-        "/api/v2/capture-batches",
-        "/api/v3/recordings/",
+        "/api/captures",
         "/api/recordings",
         "/api/evaluations/",
         "/api/models/",
@@ -335,18 +335,15 @@ def test_ui_assets_expose_empty_loading_error_ready_stale_and_missing_states() -
         "/api/storage-health",
     ):
         assert route in javascript
+    assert "/api/v" not in javascript
     assert "Promise.allSettled" in javascript
     assert "captureBatchCursor" in javascript
-    assert "encodeURIComponent(nextCursor)" in javascript
+    assert "encodeURIComponent(cursor)" in javascript
     assert "captureRows" in javascript
-    assert "Searching all stable pages for this radio" in javascript
     assert "View capture details, waterfall, and analysis" in javascript
     assert "makeCaptureRowNavigable" in javascript
     assert "formatCompactUtcNs" in javascript
-    assert "MAX_CAPTURE_DURATION_LOADS = 1" in javascript
-    assert (
-        "Calibrated Anchor-8 and GLRT beacon detections are unavailable" in javascript
-    )
+    assert "Calibrated Anchor-8 and GLRT beacon detection counts" in javascript
     assert (
         'event.target.closest("a, button, input, select, textarea, summary")'
         in javascript

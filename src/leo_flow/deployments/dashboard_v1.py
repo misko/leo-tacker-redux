@@ -426,6 +426,7 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardPublicQ
         from psycopg.rows import dict_row
 
         from leo_flow.adapters.dashboard_master_capture_postgres import (
+            PostgresCaptureDopplerSnapshotRepositoryV0_1,
             PostgresMasterCaptureSnapshotRepositoryV0_1,
         )
         from leo_flow.adapters.dashboard_postgres import PostgresDashboardRepository
@@ -714,7 +715,9 @@ def _postgres_query_projection(context: AdapterBuildContext) -> DashboardPublicQ
             receiver_agnostic_cfo_qam_catalog,
         )
     master_captures = PostgresMasterCaptureSnapshotRepositoryV0_1(
-        connect, _retro_qam_canary()
+        connect,
+        _retro_qam_canary(),
+        doppler=PostgresCaptureDopplerSnapshotRepositoryV0_1(connect),
     )
     return PostgresDashboardRepository(
         connect,
