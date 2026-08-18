@@ -1,0 +1,136 @@
+{
+  "schema": "org.leo-flow.external-starlink-symbolwise-parity-corpus/v1",
+  "legacy_oracle": {
+    "commit": "0bb80d14759fd8496b74e7d3219a690be18565a6",
+    "method": "pilot_symbolwise_v3"
+  },
+  "format": {
+    "sample_rate_hz": 2500000,
+    "component_dtype": "<i2",
+    "layout": "sample,receiver,component",
+    "receiver_count": 2,
+    "bytes_per_sample": 8
+  },
+  "cases": [
+    {
+      "case_id": "retro-positive-68p7",
+      "object_path": "/mnt/qnap01/mouse9911/leo-store/2026_08_17_RETRO_QAM/raw/clip-002.ci16",
+      "object_byte_count": 500200000,
+      "object_sha256": "6d105ae645c0ac91e0e93ebc4ac5b456890025ebfb9bb9e1344423dc27c7c3fa",
+      "selected_byte_offset": 304000000,
+      "selected_byte_count": 200000,
+      "selected_sha256": "a80c3b0d94b95548d9ae0ab5d8243fee8cf6c760ccb6fa4ca4efeb6351176e50",
+      "calibration": {
+        "calibration_id": "legacy-retro-oracle-zero-center",
+        "source_path": "/mnt/qnap01/mouse9911/leo-store/2026_08_17_RETRO_QAM/oracle/followup.json",
+        "source_sha256": "89b901207ed6e3c3dbde531d6dc60b9b0a498677065e51c8cbe6fa71a3b37002",
+        "hardware_epoch_identity": "pluto-5d4d-20260813T211014Z",
+        "receiver_signal_path_identities": [
+          "pluto-5d4d-20260813T211014Z-rx0",
+          "pluto-5d4d-20260813T211014Z-rx1"
+        ],
+        "receiver_centers_hz": [0.0, 0.0]
+      },
+      "expected": [
+        {
+          "receiver_index": 0,
+          "selected_candidate_rank": 0,
+          "winning_epoch_sample": 2063,
+          "timing_coarse_cfo_hz": 320000.0,
+          "timing_score": 0.1895656682905722,
+          "timing_peak_to_median": 1.8224873679877847,
+          "symbolwise_coarse_cfo_hz": 350000.0,
+          "symbolwise_residual_cfo_hz": 12550.84767870029,
+          "winning_cfo_hz": 364150.8476787003,
+          "symbolwise_score": 0.19745446933096147,
+          "symbolwise_control_score": 0.09162649957002847,
+          "symbolwise_margin": 0.105827969760933,
+          "conditioned_score": 0.3561746139835538,
+          "conditioned_control_score": 0.014083643270631782,
+          "conditioned_margin": 0.34209097071292205,
+          "frame_support": 6,
+          "symbol_match_count": 2065
+        },
+        {
+          "receiver_index": 1,
+          "selected_candidate_rank": 0,
+          "winning_epoch_sample": 2063,
+          "timing_coarse_cfo_hz": -160000.0,
+          "timing_score": 0.2175020616848285,
+          "timing_peak_to_median": 2.089693030346147,
+          "symbolwise_coarse_cfo_hz": -160000.0,
+          "symbolwise_residual_cfo_hz": -32643.87435952469,
+          "winning_cfo_hz": -194343.8743595247,
+          "symbolwise_score": 0.21724810839052977,
+          "symbolwise_control_score": 0.09505207493477663,
+          "symbolwise_margin": 0.12219603345575314,
+          "conditioned_score": 0.385697358724729,
+          "conditioned_control_score": 0.015197132956533528,
+          "conditioned_margin": 0.37050022576819547,
+          "frame_support": 6,
+          "symbol_match_count": 2065
+        }
+      ]
+    },
+    {
+      "case_id": "j1-calibrated-positive-41p6",
+      "object_path": "/home/mouse9911/.local/share/leo-flow/objects/sha256/23/23cceb3a5223180ff92398214125513d4c32cc541ec1ae5b7c4c28fba5bbcc8c",
+      "object_byte_count": 1200000000,
+      "object_sha256": "23cceb3a5223180ff92398214125513d4c32cc541ec1ae5b7c4c28fba5bbcc8c",
+      "selected_byte_offset": 832000000,
+      "selected_byte_count": 200000,
+      "selected_sha256": "4fbd775f850124dab038e70dadba1ce1cbbfc16ebe58d9fb425430b51d61ce02",
+      "calibration": {
+        "calibration_id": "lnb-calibration-20260817T162153Z",
+        "source_path": "/mnt/qnap01/mouse9911/leo/reports/lnb-calibration.json",
+        "source_sha256": "141a489a08f236839cd1cbec8d31cc31611abd5941b91bca7269974b53d17f8d",
+        "hardware_epoch_identity": "radio-pluto-19f2-capture-1787027316948559690",
+        "receiver_signal_path_identities": [
+          "serial-10400056f695001322002d0010ad1719f2-rx0",
+          "serial-10400056f695001322002d0010ad1719f2-rx1"
+        ],
+        "receiver_centers_hz": [602869.4, 0.0]
+      },
+      "expected": [
+        {
+          "receiver_index": 0,
+          "selected_candidate_rank": 0,
+          "winning_epoch_sample": 1193,
+          "timing_coarse_cfo_hz": 442869.4,
+          "timing_score": 0.16364049475314085,
+          "timing_peak_to_median": 1.6463120453435276,
+          "symbolwise_coarse_cfo_hz": 442869.4,
+          "symbolwise_residual_cfo_hz": 3799.134323942437,
+          "winning_cfo_hz": 446568.53432394244,
+          "symbolwise_score": 0.1775073292511511,
+          "symbolwise_control_score": 0.09202249226022136,
+          "symbolwise_margin": 0.08548483699092974,
+          "conditioned_score": 0.32591768194101706,
+          "conditioned_control_score": 0.01492532202182863,
+          "conditioned_margin": 0.31099235991918844,
+          "frame_support": 7,
+          "symbol_match_count": 2141
+        },
+        {
+          "receiver_index": 1,
+          "selected_candidate_rank": 0,
+          "winning_epoch_sample": 1193,
+          "timing_coarse_cfo_hz": -160000.0,
+          "timing_score": 0.207079055006264,
+          "timing_peak_to_median": 2.0126910528198216,
+          "symbolwise_coarse_cfo_hz": -160000.0,
+          "symbolwise_residual_cfo_hz": -4850.376749251041,
+          "winning_cfo_hz": -165350.37674925104,
+          "symbolwise_score": 0.2024039649114968,
+          "symbolwise_control_score": 0.09384293404550276,
+          "symbolwise_margin": 0.10856103086599403,
+          "conditioned_score": 0.3622193042630086,
+          "conditioned_control_score": 0.013594024207192976,
+          "conditioned_margin": 0.3486252800558156,
+          "frame_support": 7,
+          "symbol_match_count": 2141
+        }
+      ]
+    }
+  ]
+}

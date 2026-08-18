@@ -67,6 +67,14 @@ from .starlink_suite_codec import (
     encode_starlink_suite_bundle,
 )
 from .starlink_suite_recording import ExactStarlinkDetectorSuiteRecordingAnalyzerV0_2
+from .starlink_symbolwise_replay import (
+    StarlinkSymbolwiseReplayAnalyzerV0_1,
+    StarlinkSymbolwiseReplayConfigV0_1,
+    StarlinkSymbolwiseReplayResourcePlanV0_1,
+    StarlinkSymbolwiseWindowReaderV0_1,
+    starlink_symbolwise_replay_algorithm_ref_v0_1,
+    starlink_symbolwise_replay_config_ref_v0_1,
+)
 from .starlink_templates import (
     qin_edge_pilot_artifacts_v0_1,
     qin_edge_pilot_frame_v1,
@@ -152,6 +160,10 @@ __all__ = [
     "StarlinkInjectionTrialResultV0_2",
     "StarlinkPssSssTemplateV0_2",
     "StarlinkRadioCandidateObservationV0_2",
+    "StarlinkSymbolwiseReplayAnalyzerV0_1",
+    "StarlinkSymbolwiseReplayConfigV0_1",
+    "StarlinkSymbolwiseReplayResourcePlanV0_1",
+    "StarlinkSymbolwiseWindowReaderV0_1",
     "ThresholdRule",
     "WaterfallConfigV0_1",
     "WaterfallConfigV0_2",
@@ -188,6 +200,8 @@ __all__ = [
     "run_starlink_injection_cases_v0_2",
     "starlink_detector_suite_algorithm_ref_v0_2",
     "starlink_detector_suite_config_ref_v0_2",
+    "starlink_symbolwise_replay_algorithm_ref_v0_1",
+    "starlink_symbolwise_replay_config_ref_v0_1",
     "synthesize_starlink_injection_v0_2",
     "template_samples_digest",
     "waterfall_algorithm_ref_v0_1",
