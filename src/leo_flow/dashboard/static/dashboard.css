@@ -277,6 +277,7 @@ code { color: var(--accent); }
 .candidate-warning { margin: 0.8rem 0; padding: 0.85rem 1rem; border: 1px solid #68572e; border-radius: 0.45rem; background: #221d10; color: var(--warning); line-height: 1.5; }
 .candidate-warning strong { display: block; }
 .doppler-summary-grid { display: grid; grid-template-columns: minmax(17rem, 0.8fr) minmax(25rem, 1.4fr); gap: 1rem; margin-top: 1rem; }
+.doppler-density-wide { grid-column: 1 / -1; }
 .doppler-candidate-list { display: grid; gap: 0.7rem; margin-top: 0.9rem; }
 .doppler-candidate-card { border: 1px solid var(--line); border-radius: 0.45rem; padding: 0.8rem; background: #0c1512; }
 .doppler-candidate-card h4 { margin: 0; font-size: 0.95rem; }

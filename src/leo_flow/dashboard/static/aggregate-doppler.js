@@ -72,23 +72,6 @@ function axes(ctx, width, height, xLabel, yLabel) {
   ctx.fillStyle = "#b8c7c0"; ctx.font = "14px sans-serif"; ctx.fillText(xLabel, width / 2 - 60, height - 18);
   ctx.save(); ctx.translate(20, height / 2 + 55); ctx.rotate(-Math.PI / 2); ctx.fillText(yLabel, 0, 0); ctx.restore();
 }
-function drawTimeSeries(series) {
-  const mode = byId("time-axis-mode").value;
-  const [canvas, ctx] = setupCanvas("frequency-time-canvas"); axes(ctx, canvas.width, canvas.height, mode === "utc" ? "UTC" : "Relative time (s)", "Frequency offset (Hz)");
-  const physical = series.filter((item) => item.points?.length > 1);
-  const points = physical.flatMap((item) => item.points);
-  if (!points.length) { ctx.fillStyle = "#b8c7c0"; ctx.fillText("No visible physical-frequency tracks", 90, 70); return; }
-  const timeValue = (point) => mode === "utc" ? Number(BigInt(point.midpoint_utc_ns)) / 1e9 : point.relative_time_s;
-  const xs = points.map(timeValue), ys = points.map((p) => p.frequency_offset_hz);
-  const xmin = Math.min(...xs), xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
-  const x = (v) => 70 + (v - xmin) / Math.max(xmax - xmin, 1e-9) * (canvas.width - 90);
-  const y = (v) => canvas.height - 55 - (v - ymin) / Math.max(ymax - ymin, 1e-9) * (canvas.height - 80);
-  for (const item of physical) {
-    ctx.strokeStyle = color(sourceKey(item)); ctx.globalAlpha = item.method === "advanced" ? 0.55 : 0.9; ctx.lineWidth = 1.5; ctx.beginPath();
-    item.points.forEach((point, index) => index ? ctx.lineTo(x(timeValue(point)), y(point.frequency_offset_hz)) : ctx.moveTo(x(timeValue(point)), y(point.frequency_offset_hz))); ctx.stroke();
-  }
-  ctx.globalAlpha = 1; ctx.fillStyle = "#b8c7c0"; ctx.fillText(`${ymin.toFixed(1)} to ${ymax.toFixed(1)} Hz`, 80, 45); ctx.fillText(mode === "utc" ? `${new Date(xmin * 1000).toISOString()} to ${new Date(xmax * 1000).toISOString()}` : `${xmin.toFixed(2)} to ${xmax.toFixed(2)} s`, mode === "utc" ? canvas.width - 520 : canvas.width - 190, canvas.height - 62);
-}
 function normalizedDensity(values, bins, min, max) {
   const binWidth = (max - min) / bins;
   const counts = Array.from({length: bins}, () => 0);
@@ -119,7 +102,6 @@ function replaceFacts(element, pairs) { element.replaceChildren(); for (const [t
 function render() {
   if (!aggregatePayload) return;
   const series = aggregatePayload.series.filter(visibleSeries);
-  drawTimeSeries(series);
   const bySource = [...new Set(series.map(sourceKey))].map((key) => ({key, color: color(key), items: series.filter((x) => sourceKey(x) === key)}));
   drawHistogram("drift-canvas", bySource, (x) => x.drift_rate_hz_s, "Drift rate (Hz/s)");
   const controls = aggregatePayload.controls.filter((item) => selected("radio", item.radio_id) && selected("receiver", item.receiver_chain_id) && selected("source", sourceKey(item)) && selected("control", item.control_class));
@@ -144,4 +126,3 @@ async function load() {
 }
 const stop = new Date(), start = new Date(stop.getTime() - 6 * 60 * 60 * 1000); byId("start-utc").value = isoInput(start); byId("stop-utc").value = isoInput(stop);
 byId("load-doppler").addEventListener("click", load); load();
-byId("time-axis-mode").addEventListener("change", render);

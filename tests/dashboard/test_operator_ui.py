@@ -151,8 +151,8 @@ def test_aggregate_doppler_page_separates_candidate_sources_and_controls() -> No
         JsonRequest("GET", "/assets/aggregate-doppler.js", {})
     ).body.decode()
     for required in (
-        'id="frequency-time-canvas"',
         'id="drift-canvas"',
+        'class="detail-card doppler-density-wide"',
         'id="control-canvas"',
         'id="source-filters"',
         "Candidate-only motion evidence",

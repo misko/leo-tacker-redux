@@ -17,7 +17,6 @@
     <a href="/full-dwell">Full-dwell responses</a>
     <a href="/aggregate-doppler" aria-current="page">Aggregate Doppler</a>
     <a href="#filter-panel">Evidence filters</a>
-    <a href="#frequency-time">Frequency tracks</a>
     <a href="#distributions">Distributions</a>
   </nav>
   <main id="aggregate-doppler-main" tabindex="-1">
@@ -40,20 +39,12 @@
       <p class="muted">These toggles only change visibility in the downloaded immutable response; they do not recompute or pool evidence.</p>
       <div id="source-filters" class="doppler-evidence-grid"></div>
     </section>
-    <section id="frequency-time" class="detail-card" aria-labelledby="time-series-heading">
-      <h2 id="time-series-heading">Physical frequency offset vs time</h2>
-      <p class="muted">Each trace is one basic candidate path. Offset is relative to that path’s fitted reference frequency; advanced bin-only paths are excluded from this physical-frequency plot.</p>
-      <label>Time axis
-        <select id="time-axis-mode"><option value="relative">Relative to fitted reference</option><option value="utc">UTC</option></select>
-      </label>
-      <canvas id="frequency-time-canvas" width="1280" height="520" role="img" aria-label="Candidate frequency offset versus relative time, separated by radio and receiver"></canvas>
-      <div id="series-legend" class="doppler-candidate-list"></div>
-    </section>
     <section id="distributions" class="doppler-summary-grid">
-      <article class="detail-card" aria-labelledby="drift-heading">
+      <article class="detail-card doppler-density-wide" aria-labelledby="drift-heading">
         <h2 id="drift-heading">Doppler drift-rate density</h2>
         <p class="muted">X: physical drift rate in Hz/s. Y: per-series probability density; each enabled radio/receiver distribution integrates to one.</p>
-        <canvas id="drift-canvas" width="720" height="480" role="img" aria-label="Normalized physical Doppler drift-rate density histogram by radio and receiver"></canvas>
+        <canvas id="drift-canvas" width="1280" height="520" role="img" aria-label="Normalized physical Doppler drift-rate density histogram by radio and receiver"></canvas>
+        <div id="series-legend" class="doppler-candidate-list"></div>
         <div id="drift-summary"></div>
       </article>
       <article class="detail-card" aria-labelledby="control-heading">
