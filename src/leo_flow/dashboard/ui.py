@@ -27,10 +27,7 @@ _SECURITY_HEADERS: Final = (
     ("permissions-policy", "camera=(), microphone=(), geolocation=()"),
 )
 _RETRO_QAM_SOURCE_PATH: Final = "/canaries/retro-qam/source-recording"
-_RETRO_QAM_SOURCE_URL: Final = (
-    "http://satpi01:8765/recordings/beacon/"
-    "ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z"
-)
+_RETRO_QAM_SOURCE_URL: Final = "/recordings/rec_retro_qam_20260813_clip002"
 _RETRO_QAM_REPORT_PATH: Final = "/canaries/retro-qam/report"
 _RETRO_QAM_REPORT_URL: Final = (
     "https://github.com/misko/leo-tracker-redux/blob/main/"

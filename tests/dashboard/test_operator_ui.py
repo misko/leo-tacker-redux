@@ -295,8 +295,7 @@ def test_retro_qam_source_recording_link_redirects_to_historical_detail() -> Non
     )
     assert response.status == 302
     assert dict(response.headers)["location"] == (
-        "http://satpi01:8765/recordings/beacon/"
-        "ch4-lower-edge-narrow-pluto-5d4d-20260813T211014Z"
+        "/recordings/rec_retro_qam_20260813_clip002"
     )
 
 
