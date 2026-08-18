@@ -25,6 +25,7 @@ leo-v5-supercycle-canary = "leo_flow.deployments.gauss_v5_supercycle_canary_oper
 leo-gauss-full-dwell = "leo_station.full_dwell_operator:main"
 leo-gauss-prompt-full-dwell = "leo_station.full_dwell_timeline_operator:main"
 leo-gauss-adaptive-response = "leo_station.adaptive_response_operator:main"
+leo-gauss-pilot-refinement = "leo_station.pilot_refinement_operator:main"
 leo-starlink-retro-qam-canary = "leo_flow.deployments.starlink_retro_qam_canary:main"
 
 [project.optional-dependencies]
